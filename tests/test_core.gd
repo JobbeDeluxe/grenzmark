@@ -1,0 +1,451 @@
+extends SceneTree
+
+## Headless-Selbsttests der Kern-Logik. Aufruf:
+##   Godot_v4.6.3-stable_win64_console.exe --headless --path . --script res://tests/test_core.gd
+
+var _ok := 0
+var _fail := 0
+
+
+func _initialize() -> void:
+	print("== Grenzmark — Kern-Tests ==")
+	_test_neighbors()
+	_test_triangles_around()
+	_test_map_generation()
+	_test_worldgen_96()
+	_test_bq_and_flags()
+	_test_building_spacing()
+	_test_road_and_route()
+	_test_economy()
+	_test_military()
+	_test_combat()
+	_test_ai()
+	_test_ai_plugin()
+	_test_catapult()
+	_test_promotion()
+	_test_roadsplit()
+	_test_saveload()
+	print("== Ergebnis: %d ok, %d fehlgeschlagen ==" % [_ok, _fail])
+	quit(1 if _fail > 0 else 0)
+
+
+func _check(cond: bool, msg: String) -> void:
+	if cond:
+		_ok += 1
+	else:
+		_fail += 1
+		print("  FEHLER: ", msg)
+
+
+func _test_neighbors() -> void:
+	# Nachbar-Reziprozität: Nachbar in dir, zurück in Gegenrichtung -> Ausgang.
+	for y in range(0, 6):
+		for x in range(0, 6):
+			for dir in Grid.DIRS:
+				var n := Grid.neighbor(x, y, dir)
+				var back := Grid.neighbor(n.x, n.y, Grid.opposite(dir))
+				_check(back == Vector2i(x, y),
+					"Reziprozität (%d,%d) dir %d -> %s -> %s" % [x, y, dir, n, back])
+
+
+func _test_triangles_around() -> void:
+	var x := 4
+	var y := 4
+	var tris := Grid.triangles_around(x, y)
+	_check(tris.size() == 6, "6 Dreiecke um einen Knoten")
+	# Jedes der 6 Dreiecke muss den Knoten selbst als Ecke enthalten.
+	for tri in tris:
+		var corners := Grid.triangle_corners(tri.pos.x, tri.pos.y, tri.kind)
+		_check(corners.has(Vector2i(x, y)),
+			"Dreieck %s enthält Knoten (%d,%d)" % [tri, x, y])
+
+
+func _test_map_generation() -> void:
+	var map := MapGenerator.generate(40, 40, 7)
+	var meadow := 0
+	var water := 0
+	for yy in map.height:
+		for xx in map.width:
+			match map.get_tri(Vector2i(xx, yy), Grid.TRI_R):
+				Terrain.MEADOW: meadow += 1
+				Terrain.WATER: water += 1
+	_check(meadow > 50, "Karte enthält Wiese (%d)" % meadow)
+	_check(water > 0, "Karte enthält Wasser am Rand (%d)" % water)
+
+
+func _test_bq_and_flags() -> void:
+	var map := MapGenerator.generate(40, 40, 7)
+	var state := WorldState.new(map)
+	# Finde einen bebaubaren Knoten und setze dort eine Flagge.
+	var placed := false
+	for yy in range(2, map.height - 2):
+		for xx in range(2, map.width - 2):
+			if state.compute_bq(xx, yy) >= WorldState.BQ_HUT:
+				var f := state.place_flag(xx, yy)
+				_check(f != null, "Flagge auf bebaubarem Knoten setzbar")
+				# Direkter Nachbar darf keine zweite Flagge erlauben.
+				var n := map.neighbor(xx, yy, Grid.E)
+				if n.x >= 0:
+					_check(not state.can_place_flag(n.x, n.y),
+						"Flaggen-Abstandsregel greift")
+				placed = true
+				break
+		if placed:
+			break
+	_check(placed, "Es gibt mindestens einen bebaubaren Knoten")
+
+
+func _test_road_and_route() -> void:
+	var map := MapGenerator.generate(40, 40, 7)
+	var state := WorldState.new(map)
+	# Startflagge auf bebaubarem Knoten.
+	var a := _find_buildable(state, map.width / 2, map.height / 2)
+	if a.x < 0:
+		_check(false, "Bebaubaren Startknoten gefunden")
+		return
+	state.place_flag(a.x, a.y)
+	# Ein in der Nähe erreichbares Ziel suchen (3..8 Knoten entfernt).
+	var road: WorldState.Road = null
+	for r in range(3, 9):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var b := Vector2i(a.x + dx, a.y + dy)
+				if b == a or not map.in_bounds(b.x, b.y):
+					continue
+				if not state.can_build_road(a, b):
+					continue
+				road = state.build_road(a, b)
+				break
+			if road != null: break
+		if road != null: break
+	_check(road != null, "Straße per Auto-Pfad baubar")
+	if road != null:
+		_check(road.nodes.size() >= 2, "Straße hat Knoten")
+		var route := state.find_route(a, road.b)
+		_check(route.size() >= 2, "Route über das Flaggennetz gefunden")
+
+
+func _test_economy() -> void:
+	# Flache Wiesenkarte, damit der Aufbau garantiert verbunden ist.
+	var map := _flat_map(28, 28)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+
+	# HQ (fertig, mit Einflussgebiet).
+	var hq := state.place_building(12, 12, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_check(hq != null, "HQ platzierbar")
+	if hq == null:
+		return
+	eco.resync()
+	_check(state.in_territory(12, 12), "HQ erzeugt Territorium")
+	_check(not state.in_territory(1, 1), "Außerhalb des Gebiets kein Territorium")
+	_check(not state.can_place_building(1, 1, WorldState.BQ_HUT),
+		"Bauen außerhalb des Gebiets verboten")
+
+	# Sägewerk als Baustelle: Holz -> Bretter, beides läuft über das HQ.
+	var saw := state.place_building(12, 7, WorldState.BQ_HOUSE, false, "sawmill", 0, true)
+	_check(saw != null, "Sägewerk im Gebiet platzierbar")
+	if saw == null:
+		return
+	var road := state.build_road(hq.flag_pos, saw.flag_pos)
+	_check(road != null, "Straße HQ <-> Sägewerk baubar")
+	eco.resync()
+	_check(eco.carriers.size() == 1, "Ein Träger pro Straße")
+
+	var wood_before: int = eco.hq_stock.get(Goods.WOOD, 0)
+	for t in 6000:
+		eco.tick()
+	_check(not saw.under_construction, "Sägewerk wird fertiggestellt")
+	_check(eco.hq_stock.get(Goods.WOOD, 0) < wood_before,
+		"Sägewerk verbraucht Holz aus dem HQ (Kette läuft)")
+
+	# Abriss der Straße über einen Zwischenknoten: Träger verschwindet.
+	_check(road.nodes.size() >= 3, "Straße hat einen Zwischenknoten zum Abreißen")
+	state.remove_at(road.nodes[1])
+	eco.resync()
+	_check(eco.carriers.is_empty(), "Träger nach Straßen-Abriss entfernt")
+
+
+func _test_military() -> void:
+	var map := _flat_map(36, 36)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(12, 12, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+
+	var gd := BuildingCatalog.get_def("guardhouse")
+	var gh := state.place_building(12, 20, gd.size, false, "guardhouse",
+		int(gd.influence), true)
+	_check(gh != null, "Wachhaus im Gebiet platzierbar")
+	if gh == null:
+		return
+	state.build_road(state.buildings[map.idx(12, 12)].flag_pos, gh.flag_pos)
+	eco.resync()
+	eco.hq_stock[Goods.SWORD] = 3
+
+	_check(not state.in_territory(12, 24), "Vor Garnison kein Gebiet am Wachhaus-Rand")
+	for t in 5000:
+		eco.tick()
+	_check(not gh.under_construction, "Wachhaus wird gebaut")
+	_check(gh.garrison >= 1, "Wachhaus erhält Soldaten (Garnison %d)" % gh.garrison)
+	_check(state.in_territory(12, 24), "Wachhaus erweitert das Gebiet nach Besatzung")
+
+
+func _test_combat() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	# Eigenes Wachhaus mit Garnison (im eigenen Gebiet).
+	var pg := state.place_building(13, 13, WorldState.BQ_HUT, false, "guardhouse", 5, false)
+	_check(pg != null, "Eigenes Wachhaus platzierbar")
+	if pg == null:
+		return
+	pg.garrison = 3
+	# Gegnerisches Wachhaus direkt einsetzen.
+	var eb := WorldState.Building.new()
+	eb.pos = Vector2i(20, 20)
+	eb.size = WorldState.BQ_HUT
+	eb.def_id = "guardhouse"
+	eb.influence = 5
+	eb.owner = 1
+	eb.under_construction = false
+	eb.garrison = 2
+	eb.capacity = 2
+	eb.flag_pos = map.neighbor(20, 20, Grid.SE)
+	state.buildings[map.idx(20, 20)] = eb
+	state.occupied[map.idx(20, 20)] = WorldState.OBJ_BUILDING
+	eco.resync()
+	_check(state.enemy_territory.size() > 0, "Gegner hat Territorium")
+
+	var n := eco.send_attackers(pg, eb)
+	_check(n == 3, "Drei Angreifer losgeschickt")
+	for t in 3000:
+		eco.tick()
+	_check(eb.owner == 0, "Gegnergebäude erobert (Besitzer %d)" % eb.owner)
+
+
+func _test_ai() -> void:
+	var map := _flat_map(50, 50)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(8, 8, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_raw(state, Vector2i(40, 40), "hq", 9, 1, 6, 6, true)
+	var eb := _raw(state, Vector2i(40, 35), "guardhouse", 5, 1, 0, 3, false)
+	eco.resync()
+	var before := _count_enemy_military(state)
+	for t in 3000:
+		eco.tick()
+	_check(eb.garrison > 0, "KI besetzt ihr Wachhaus (Garnison %d)" % eb.garrison)
+	_check(_count_enemy_military(state) > before, "KI expandiert (neue Militärgebäude)")
+	# KI baut auch Wirtschaftsgebäude (Besitzer 1, ohne Einfluss).
+	var econ := 0
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		if b.owner == 1 and not b.is_hq and b.influence == 0:
+			econ += 1
+	_check(econ > 0, "KI baut Wirtschaftsgebäude (%d)" % econ)
+
+
+func _raw(state: WorldState, pos: Vector2i, def: String, infl: int, owner: int,
+		gar: int, cap: int, is_hq: bool) -> WorldState.Building:
+	var b := WorldState.Building.new()
+	b.pos = pos; b.size = (WorldState.BQ_CASTLE if is_hq else WorldState.BQ_HUT)
+	b.def_id = def; b.influence = infl; b.owner = owner
+	b.under_construction = false; b.garrison = gar; b.capacity = cap; b.is_hq = is_hq
+	b.flag_pos = state.map.neighbor(pos.x, pos.y, Grid.SE)
+	var i := state.map.idx(pos.x, pos.y)
+	state.buildings[i] = b
+	state.occupied[i] = WorldState.OBJ_BUILDING
+	return b
+
+
+func _count_enemy_military(state: WorldState) -> int:
+	var n := 0
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		if b.owner == 1 and b.influence > 0 and not b.is_hq:
+			n += 1
+	return n
+
+
+func _test_ai_plugin() -> void:
+	var l := AIRegistry.list()
+	_check(l.size() >= 2, "KI-Registry liefert KIs (%d)" % l.size())
+	var has_default := false
+	var has_passive := false
+	for e in l:
+		if e.id == "default": has_default = true
+		if e.id == "passive": has_passive = true
+	_check(has_default and has_passive, "Eingebaute KIs (Standard/Passiv) vorhanden")
+	_check(AIRegistry.create({ path = "builtin:default" }) is DefaultAI, "create() → DefaultAI")
+	_check(AIRegistry.create({ path = "builtin:passive" }) is PassiveAI, "create() → PassiveAI")
+	# Passiv-KI tut nichts: Garnison bleibt 0.
+	var map := _flat_map(30, 30)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	eco.ai = PassiveAI.new()
+	state.place_building(8, 8, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_raw(state, Vector2i(22, 22), "hq", 9, 1, 6, 6, true)
+	var eb := _raw(state, Vector2i(22, 18), "guardhouse", 5, 1, 0, 3, false)
+	eco.resync()
+	for t in 1500:
+		eco.tick()
+	_check(eb.garrison == 0, "Passiv-KI besetzt nichts")
+
+
+func _test_worldgen_96() -> void:
+	# Die echte Spielkarte (Seed 1337, 96x96): Berge, Erz und Burgplatz müssen da sein.
+	var map := MapGenerator.generate(96, 96, 1337)
+	var mountain := 0
+	var ore := 0
+	for yy in map.height:
+		for xx in map.width:
+			if map.get_tri(Vector2i(xx, yy), Grid.TRI_R) == Terrain.MOUNTAIN:
+				mountain += 1
+	for k in map.objects:
+		if map.objects[k] == MapData.MO_ORE:
+			ore += 1
+	_check(mountain > 50, "Karte hat Gebirge (%d Dreiecke)" % mountain)
+	_check(ore > 0, "Gebirge enthält Erz (%d)" % ore)
+	# Es gibt einen Burgplatz (für Spieler- und Gegner-HQ).
+	var state := WorldState.new(map)
+	var castle := 0
+	for yy in range(2, map.height - 2):
+		for xx in range(2, map.width - 2):
+			if state.compute_bq(xx, yy) >= WorldState.BQ_CASTLE:
+				castle += 1
+	_check(castle >= 2, "Mindestens zwei Burgplätze (Spieler + Gegner): %d" % castle)
+
+
+func _test_building_spacing() -> void:
+	var map := _flat_map(30, 30)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	var b := state.place_building(15, 15, WorldState.BQ_HUT, false, "woodcutter", 0, true)
+	_check(b != null, "Gebäude im Gebiet platzierbar")
+	if b == null:
+		return
+	var n := map.neighbor(15, 15, Grid.E)
+	_check(state.effective_bq(n.x, n.y) <= WorldState.BQ_FLAG,
+		"Direkt neben Gebäude nur noch Flagge (eff. BQ %d)" % state.effective_bq(n.x, n.y))
+	_check(not state.can_place_building(n.x, n.y, WorldState.BQ_HUT),
+		"Kein zweites Gebäude direkt daneben")
+	_check(state.effective_bq(15, 25) >= WorldState.BQ_HOUSE,
+		"Freier, flacher Platz erlaubt großes Gebäude")
+
+
+func _test_catapult() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	var cat := state.place_building(13, 13, WorldState.BQ_HOUSE, false, "catapult", 4, false)
+	_check(cat != null, "Katapult baubar")
+	if cat == null:
+		return
+	cat.garrison = 1
+	var eb := _raw(state, Vector2i(17, 15), "guardhouse", 5, 1, 3, 3, false)
+	eco.resync()
+	for t in 2500:
+		eco.tick()
+	_check(eb.garrison < 3, "Katapult dezimiert Gegner-Garnison (%d)" % eb.garrison)
+
+
+func _test_promotion() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	var gh := state.place_building(13, 13, WorldState.BQ_HUT, false, "guardhouse", 5, false)
+	_check(gh != null, "Wachhaus baubar")
+	if gh == null:
+		return
+	gh.garrison = 3
+	state.build_road(state.buildings[map.idx(10, 10)].flag_pos, gh.flag_pos)
+	eco.resync()
+	eco.hq_stock[Goods.COINS] = 5
+	for t in 2500:
+		eco.tick()
+	_check(gh.promotions > 0, "Münzen befördern die Garnison (Rang +%d)" % gh.promotions)
+
+
+func _test_roadsplit() -> void:
+	var map := _flat_map(30, 30)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(12, 12, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	var hqflag: Vector2i = state.buildings[map.idx(12, 12)].flag_pos
+	var road := state.build_road(hqflag, Vector2i(12, 18))
+	_check(road != null, "Teststraße baubar")
+	if road == null:
+		return
+	_check(road.nodes.size() >= 4, "Straße hat innere Knoten")
+	var before := state.roads.size()
+	var midn: Vector2i = road.nodes[2]
+	var f := state.place_flag(midn.x, midn.y)
+	_check(f != null, "Flagge auf Straße setzbar (teilt)")
+	_check(state.roads.size() == before + 1, "Straße in zwei geteilt")
+	_check(state.flag_at(midn) != null, "Neue Flagge liegt auf dem Knoten")
+
+
+func _test_saveload() -> void:
+	# Serialisierungs-Primitive (PackedByteArray, Vector2i, verschachtelte Dicts).
+	var map := _flat_map(16, 16)
+	map.set_height(3, 4, 7)
+	map.set_map_object(5, 5, MapData.MO_TREE)
+	var state := WorldState.new(map)
+	state.place_building(8, 8, WorldState.BQ_CASTLE, true, "hq", 9, false)
+
+	var data := {
+		w = map.width, h = map.height,
+		heights = map.heights, terr_r = map.terr_r, terr_d = map.terr_d,
+		objects = map.objects.duplicate(),
+		buildings = [],
+	}
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		data.buildings.append({ pos = b.pos, def = b.def_id, hq = b.is_hq })
+
+	var path := "user://test_roundtrip.dat"
+	var fw := FileAccess.open(path, FileAccess.WRITE)
+	fw.store_var(data, true)
+	fw.close()
+	var fr := FileAccess.open(path, FileAccess.READ)
+	var back: Dictionary = fr.get_var(true)
+	fr.close()
+
+	_check(int(back.w) == 16 and int(back.h) == 16, "Save/Load: Kartengröße")
+	var map2 := MapData.new(int(back.w), int(back.h))
+	map2.heights = back.heights
+	map2.objects = back.objects
+	_check(map2.get_height(3, 4) == 7, "Save/Load: Höhe erhalten")
+	_check(map2.map_object(5, 5) == MapData.MO_TREE, "Save/Load: Objekt erhalten")
+	_check(back.buildings.size() == 1, "Save/Load: Gebäude erhalten")
+	_check(Vector2i(back.buildings[0].pos) == Vector2i(8, 8), "Save/Load: Vector2i erhalten")
+
+
+func _flat_map(w: int, h: int) -> MapData:
+	var map := MapData.new(w, h)
+	for y in h:
+		for x in w:
+			map.set_height(x, y, 10)
+			map.set_tri(Vector2i(x, y), Grid.TRI_R, Terrain.MEADOW)
+			map.set_tri(Vector2i(x, y), Grid.TRI_D, Terrain.MEADOW)
+	return map
+
+
+func _find_buildable(state: WorldState, sx: int, sy: int) -> Vector2i:
+	var map := state.map
+	for r in range(0, 8):
+		for yy in range(maxi(2, sy - r), mini(map.height - 2, sy + r + 1)):
+			for xx in range(maxi(2, sx - r), mini(map.width - 2, sx + r + 1)):
+				if state.compute_bq(xx, yy) >= WorldState.BQ_HUT and state._occ(xx, yy) == WorldState.OBJ_NONE:
+					return Vector2i(xx, yy)
+	return Vector2i(-1, -1)

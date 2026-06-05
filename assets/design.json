@@ -1,0 +1,17 @@
+{
+  "_hinweis": "Gebaeudegroessen & Eingang. Werte hier aendern, KEIN Code noetig. Godot danach neu starten.",
+  "texture_scale": 2.0,
+  "hq_scale": 1.35,
+  "sizes": {
+    "hut":    [22, 20],
+    "house":  [32, 30],
+    "castle": [46, 44],
+    "mine":   [26, 22]
+  },
+  "entrance": {
+    "_hinweis": "Tuer relativ zum Gebaeudeknoten in Pixeln. 'default' gilt fuer alle, je def_id ueberschreibbar.",
+    "default": [0, -6],
+    "hq":      [0, -10],
+    "catapult":[0, -6]
+  }
+}
