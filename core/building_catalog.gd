@@ -70,23 +70,52 @@ static func defs() -> Dictionary:
 			cost = { Goods.BOARDS: 2 }, inputs = {}, output = Goods.FISH,
 			work = 120, resource = "water", influence = 0, category = "nahrung",
 		},
+		"hunter": {
+			id = "hunter", name = "Jägerhütte", size = H,
+			cost = { Goods.BOARDS: 2 }, inputs = {}, output = Goods.MEAT,
+			work = 140, resource = "", influence = 0, category = "nahrung",
+		},
+		"pigfarm": {
+			id = "pigfarm", name = "Schweinefarm", size = C,
+			cost = { Goods.BOARDS: 3, Goods.STONE: 3 },
+			inputs = { Goods.GRAIN: 1, Goods.WATER: 1 }, output = Goods.PIG,
+			work = 200, resource = "", influence = 0, category = "nahrung",
+		},
+		"slaughterhouse": {
+			id = "slaughterhouse", name = "Schlachterei", size = M,
+			cost = { Goods.BOARDS: 3, Goods.STONE: 2 },
+			inputs = { Goods.PIG: 1 }, output = Goods.MEAT,
+			work = 120, resource = "", influence = 0, category = "nahrung",
+		},
+		"toolmaker": {
+			id = "toolmaker", name = "Werkzeugmacher", size = M,
+			cost = { Goods.BOARDS: 3, Goods.STONE: 2 },
+			inputs = { Goods.BOARDS: 1, Goods.IRON: 1 }, output = Goods.TOOLS,
+			work = 150, resource = "", influence = 0, category = "metall",
+		},
 		"coalmine": {
 			id = "coalmine", name = "Kohlemine", size = MINE,
 			cost = { Goods.BOARDS: 2 }, inputs = { Goods.BREAD: 1 },
-			output = Goods.COAL, work = 150, resource = "ore", influence = 0,
-			category = "bergbau",
+			output = Goods.COAL, work = 150, resource = "ore",
+			mineral = MapData.ORE_COAL, influence = 0, category = "bergbau",
 		},
 		"ironmine": {
 			id = "ironmine", name = "Eisenmine", size = MINE,
 			cost = { Goods.BOARDS: 2 }, inputs = { Goods.BREAD: 1 },
 			output = Goods.IRON_ORE, work = 150, resource = "ore",
-			influence = 0, category = "bergbau",
+			mineral = MapData.ORE_IRON, influence = 0, category = "bergbau",
 		},
 		"goldmine": {
 			id = "goldmine", name = "Goldmine", size = MINE,
 			cost = { Goods.BOARDS: 2 }, inputs = { Goods.BREAD: 1 },
 			output = Goods.GOLD_ORE, work = 170, resource = "ore",
-			influence = 0, category = "bergbau",
+			mineral = MapData.ORE_GOLD, influence = 0, category = "bergbau",
+		},
+		"granitemine": {
+			id = "granitemine", name = "Granitmine", size = MINE,
+			cost = { Goods.BOARDS: 2 }, inputs = { Goods.BREAD: 1 },
+			output = Goods.STONE, work = 160, resource = "ore",
+			mineral = MapData.ORE_GRANITE, influence = 0, category = "bergbau",
 		},
 		"smelter": {
 			id = "smelter", name = "Eisenschmelze", size = M,
@@ -143,9 +172,10 @@ static func defs() -> Dictionary:
 static func menu_order() -> Array:
 	return [
 		"woodcutter", "forester", "sawmill", "quarry",
-		"well", "farm", "mill", "bakery", "fishery",
-		"coalmine", "ironmine", "goldmine",
-		"smelter", "mint", "brewery", "smithy",
+		"well", "farm", "mill", "bakery", "fishery", "hunter",
+		"pigfarm", "slaughterhouse",
+		"coalmine", "ironmine", "goldmine", "granitemine",
+		"smelter", "mint", "brewery", "smithy", "toolmaker",
 		"guardhouse", "watchtower", "fortress", "catapult",
 	]
 

@@ -48,6 +48,7 @@ class Carrier:
 	var pickup_end := 0      # Ende, von dem geholt wird
 	var carrying: Good = null
 	var active := false      # erst aktiv, wenn der Träger vom HQ angekommen ist
+	var dispatched := false  # Träger wurde schon vom HQ losgeschickt (Marsch läuft)
 
 
 class Marcher:
@@ -72,6 +73,17 @@ class Marcher:
 	var work_bidx := -1
 
 
+# Tür↔Flagge-Träger (nur HQ/Lager): bewegt Waren zwischen Gebäudetür und Flagge.
+enum { H_IDLE, H_OUT, H_FETCH, H_IN, H_RETURN }
+
+
+class HouseCarrier:
+	extends RefCounted
+	var t := 0.0             # 0 = Tür, 1 = Flagge
+	var state := 0           # H_*
+	var carrying: Good = null
+
+
 class BState:
 	extends RefCounted
 	var idx: int
@@ -79,6 +91,7 @@ class BState:
 	var def: Dictionary
 	var flag_idx: int
 	var is_construction := false
+	var built := 0.0         # Baufortschritt in Material-Wert (0..Zielwert)
 	var delivered := {}      # good -> Anzahl (Baustoffe bzw. Eingangslager)
 	var incoming := {}       # good -> Anzahl unterwegs
 	var construct_progress := 0
@@ -100,6 +113,8 @@ var flag_goods: Dictionary = {}      # flag idx -> Array[Good]
 var hq_flag := -1
 var hq_idx := -1
 var hq_stock: Dictionary = {}        # good -> Anzahl
+var hq_outbox: Array = []             # Waren, die der HQ-Träger noch zur Flagge bringt
+var hq_house: HouseCarrier = null     # Tür↔Flagge-Träger des HQ
 var soldiers := 0                    # ausgebildete Soldaten im HQ (Reserve)
 var ai_enabled := true               # Gegner-KI aktiv? (zum Testen abschaltbar)
 var ai: AIBase = null                # austauschbare Gegner-KI (Plugin)
@@ -129,10 +144,15 @@ func resync() -> void:
 			var c := Carrier.new()
 			c.road = r
 			carriers[r] = c
-			_dispatch_carrier(c)
 	for r in carriers.keys():
 		if not state.roads.has(r):
 			carriers.erase(r)
+	# Noch unbesetzte Straßen versuchen, vom HQ aus zu besetzen (kein Fallback —
+	# ohne HQ-Verbindung bleibt die Straße unbesetzt, bis sie verbunden ist).
+	for r in carriers:
+		var c: Carrier = carriers[r]
+		if not c.active and not c.dispatched:
+			_dispatch_carrier(c)
 
 	# Gebäudezustände ↔ Gebäude
 	flag_to_building.clear()
@@ -148,6 +168,8 @@ func resync() -> void:
 			if not _hq_inited:
 				_init_hq_stock()
 				_hq_inited = true
+			if hq_house == null:
+				hq_house = HouseCarrier.new()
 			continue
 		flag_to_building[state.map.idx(b.flag_pos.x, b.flag_pos.y)] = i
 		if int(BuildingCatalog.get_def(b.def_id).get("influence", 0)) > 0:
@@ -174,6 +196,7 @@ func resync() -> void:
 			flag_goods.erase(fi)
 
 	state.recompute_territory()
+	state.recompute_visibility()
 	dirty = true
 
 
@@ -197,6 +220,7 @@ func tick() -> void:
 	_tick_soldiers()
 	_tick_promotions()
 	_tick_catapults()
+	_tick_house_carrier()
 	for i in state.buildings:
 		if bstates.has(i):
 			_tick_building(bstates[i])
@@ -413,7 +437,10 @@ func _arrive_marcher(m: Marcher) -> void:
 
 func _drop_marcher(m: Marcher) -> void:
 	if m.purpose_carrier:
-		_activate_carrier(m.car_road, m.car_end)  # Fallback: trotzdem aktivieren
+		# Anmarsch abgebrochen (Straße verändert) → nicht aktivieren, später neu
+		# versuchen (resync ruft _dispatch_carrier erneut).
+		if carriers.has(m.car_road):
+			carriers[m.car_road].dispatched = false
 		return
 	if m.purpose_worker:
 		if bstates.has(m.work_bidx):
@@ -428,6 +455,7 @@ func _activate_carrier(road: WorldState.Road, end: int) -> void:
 		return
 	var c: Carrier = carriers[road]
 	c.active = true
+	c.dispatched = true
 	c.seg_pos = 0.0 if end == 0 else float(road.length())
 	c.target = float(road.length()) * 0.5
 	c.state = C_IDLE
@@ -442,11 +470,11 @@ func _hq_flag_pos() -> Vector2i:
 	return Vector2i(-1, -1)
 
 
-## Schickt einen Träger vom HQ zur neuen Straße. Ohne Verbindung sofort aktiv.
+## Schickt einen Träger vom HQ zur neuen Straße. OHNE HQ-Verbindung passiert
+## nichts — die Straße bleibt unbesetzt, bis sie (später) verbunden ist.
 func _dispatch_carrier(c: Carrier) -> void:
 	var hq := _hq_flag_pos()
 	if hq.x < 0:
-		c.active = true
 		return
 	var best: Array[Vector2i] = []
 	var best_end := 0
@@ -457,8 +485,8 @@ func _dispatch_carrier(c: Carrier) -> void:
 			best = rt
 			best_end = endi
 	if best.is_empty():
-		c.active = true   # nicht mit HQ verbunden → sofort aktiv
-		return
+		return  # nicht mit HQ verbunden → unbesetzt lassen
+	c.dispatched = true
 	if best.size() < 2:
 		_activate_carrier(c.road, best_end)  # HQ-Flagge ist schon das Straßenende
 		return
@@ -469,7 +497,7 @@ func _dispatch_carrier(c: Carrier) -> void:
 	m.route = best
 	m.leg = 0
 	if not _load_leg(m):
-		c.active = true
+		c.dispatched = false  # Etappe nicht ladbar → später neu versuchen
 		return
 	marchers.append(m)
 
@@ -564,23 +592,47 @@ func _dispatch_worker(bs: BState) -> void:
 
 func _tick_construction(bs: BState) -> void:
 	var cost: Dictionary = bs.def.get("cost", {})
+	# Material immer anfordern (kann schon unterwegs sein).
 	for g in cost:
 		var need: int = cost[g]
 		var have: int = bs.delivered.get(g, 0) + bs.incoming.get(g, 0)
 		if have < need:
 			_request_from_hq(bs, g, need - have)
-	# Alle Materialien da?
+	# Bauarbeiter vom HQ holen — ohne ihn wird (noch) nicht gebaut.
+	if not bs.staffed:
+		if not bs.worker_sent:
+			_dispatch_worker(bs)
+		return
+	# Proportionaler Fortschritt: baut nur so weit, wie Material schon da ist.
+	var target := _cost_value(cost)
+	if target <= 0.0:
+		target = 1.0
+	var available := 0.0
 	for g in cost:
-		if bs.delivered.get(g, 0) < int(cost[g]):
-			return
-	bs.construct_progress += 1
-	if bs.construct_progress >= BUILD_TIME:
+		available += minf(bs.delivered.get(g, 0), float(cost[g])) * _mat_value(g)
+	bs.built = minf(bs.built + target / float(BUILD_TIME), available)
+	bs.construct_progress = int(float(BUILD_TIME) * bs.built / target)
+	if bs.built >= target - 0.001:
 		bs.bld.under_construction = false
 		bs.is_construction = false
+		bs.staffed = false      # Bauarbeiter geht; Produktionsarbeiter kommt danach
+		bs.worker_sent = false
 		bs.delivered.clear()
 		bs.incoming.clear()
 		state.recompute_territory()
 		dirty = true
+
+
+## Baustoff-Wert (Stein wertvoller als Holz/Bretter) für den Baufortschritt.
+func _mat_value(g: int) -> float:
+	return 2.0 if g == Goods.STONE else 1.0
+
+
+func _cost_value(cost: Dictionary) -> float:
+	var v := 0.0
+	for g in cost:
+		v += float(cost[g]) * _mat_value(g)
+	return v
 
 
 # --- Eingänge anfordern ---
@@ -600,15 +652,15 @@ func _request_from_hq(bs: BState, g: int, amount: int) -> void:
 			return
 		if _next_hop(hq_flag, bs.flag_idx) < 0:
 			return
-		var q: Array = flag_goods.get(hq_flag, [])
-		if q.size() >= FLAG_CAP:
+		if hq_outbox.size() >= FLAG_CAP:
 			return
 		hq_stock[g] = hq_stock[g] - 1
 		bs.incoming[g] = bs.incoming.get(g, 0) + 1
+		# Ware wartet im HQ; der Tür-Träger bringt sie zur Flagge hinaus.
 		var good := Good.new()
 		good.type = g
 		good.dest = bs.flag_idx
-		_push_good(hq_flag, good)
+		hq_outbox.append(good)
 
 
 # --- Produktion ---
@@ -669,7 +721,7 @@ func _resource_target(bs: BState) -> Vector2i:
 	match String(bs.def.get("resource", "")):
 		"tree": return _find_object(bs.bld.pos, MapData.MO_TREE, RES_RADIUS)
 		"stone": return _find_object(bs.bld.pos, MapData.MO_STONE, RES_RADIUS)
-		"ore": return _find_object(bs.bld.pos, MapData.MO_ORE, ORE_RADIUS)
+		"ore": return _find_ore(bs.bld.pos, int(bs.def.get("mineral", -1)), ORE_RADIUS)
 		"plant_tree": return _find_plant_spot(bs.bld.pos)
 		"water": return _find_water_edge(bs.bld.pos)
 	return Vector2i(-1, -1)
@@ -737,6 +789,24 @@ func _find_object(center: Vector2i, motype: int, radius: int) -> Vector2i:
 				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
 					continue
 				if state.map.map_object(x, y) == motype:
+					return Vector2i(x, y)
+	return Vector2i(-1, -1)
+
+
+## Erz der passenden Sorte suchen (mineral < 0 = beliebiges Erz).
+func _find_ore(center: Vector2i, mineral: int, radius: int) -> Vector2i:
+	for r in range(1, radius + 1):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var x := center.x + dx
+				var y := center.y + dy
+				if not state.map.in_bounds(x, y):
+					continue
+				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
+					continue
+				if state.map.map_object(x, y) != MapData.MO_ORE:
+					continue
+				if mineral < 0 or state.map.ore_kind_at(x, y) == mineral:
 					return Vector2i(x, y)
 	return Vector2i(-1, -1)
 
@@ -859,7 +929,8 @@ func _deliver(g: Good, flag_idx: int) -> void:
 
 func _consume_delivery(g: Good, flag_idx: int) -> void:
 	if flag_idx == hq_flag:
-		hq_stock[g.type] = hq_stock.get(g.type, 0) + 1
+		# Liegt an der HQ-Flagge; der Tür-Träger trägt sie ins Lager hinein.
+		_push_good(hq_flag, g)
 		return
 	if flag_to_building.has(flag_idx):
 		var bs: BState = bstates.get(flag_to_building[flag_idx])
@@ -873,6 +944,80 @@ func _consume_delivery(g: Good, flag_idx: int) -> void:
 
 func _push_good(flag_idx: int, g: Good) -> void:
 	flag_goods.get_or_add(flag_idx, []).append(g)
+
+
+# --------------------------------------------------------------------------
+#  HQ-Tür-Träger (Hausträger): trägt Waren zwischen Tür und Flagge des HQ
+# --------------------------------------------------------------------------
+
+const HOUSE_SPEED := 0.045
+
+
+func _tick_house_carrier() -> void:
+	if hq_house == null or hq_flag < 0:
+		return
+	var h := hq_house
+	match h.state:
+		H_IDLE:  # an der Tür
+			if not hq_outbox.is_empty() and goods_on_flag(hq_flag) < FLAG_CAP:
+				h.carrying = hq_outbox.pop_front()
+				h.state = H_OUT
+			elif _has_hq_incoming():
+				h.state = H_FETCH
+		H_OUT:   # Ware Tür → Flagge
+			h.t = minf(h.t + HOUSE_SPEED, 1.0)
+			if h.t >= 1.0:
+				_push_good(hq_flag, h.carrying)
+				h.carrying = null
+				var g = _take_hq_incoming()
+				h.carrying = g
+				h.state = H_IN if g != null else H_RETURN
+		H_FETCH: # leer Tür → Flagge, um Eingang zu holen
+			h.t = minf(h.t + HOUSE_SPEED, 1.0)
+			if h.t >= 1.0:
+				var g = _take_hq_incoming()
+				h.carrying = g
+				h.state = H_IN if g != null else H_RETURN
+		H_IN:    # Ware Flagge → Tür (ins Lager)
+			h.t = maxf(h.t - HOUSE_SPEED, 0.0)
+			if h.t <= 0.0:
+				if h.carrying != null:
+					hq_stock[h.carrying.type] = hq_stock.get(h.carrying.type, 0) + 1
+				h.carrying = null
+				h.state = H_IDLE
+		H_RETURN: # leer Flagge → Tür
+			h.t = maxf(h.t - HOUSE_SPEED, 0.0)
+			if h.t <= 0.0:
+				h.state = H_IDLE
+
+
+## Erste an der HQ-Flagge wartende Ware, die ins Lager soll (dest == HQ-Flagge).
+func _has_hq_incoming() -> bool:
+	for g in flag_goods.get(hq_flag, []):
+		if g.dest == hq_flag:
+			return true
+	return false
+
+
+func _take_hq_incoming():
+	var q: Array = flag_goods.get(hq_flag, [])
+	for k in q.size():
+		if q[k].dest == hq_flag:
+			var g = q[k]
+			q.remove_at(k)
+			return g
+	return null
+
+
+## Gebäudeknoten des HQ (für das Zeichnen des Tür-Trägers).
+func hq_building_pos() -> Vector2i:
+	if hq_idx < 0 or not state.buildings.has(hq_idx):
+		return Vector2i(-1, -1)
+	return state.buildings[hq_idx].pos
+
+
+func hq_flag_node() -> Vector2i:
+	return Vector2i(hq_flag % state.map.width, hq_flag / state.map.width) if hq_flag >= 0 else Vector2i(-1, -1)
 
 
 func _take_good_for(flag_idx: int, target_flag_idx: int):

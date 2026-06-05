@@ -10,7 +10,7 @@ automatisch. Fehlt eine Datei, wird die eingebaute Platzhalter-Form gezeichnet.
 3. Godot einmal öffnen (oder `--headless --import` ausführen) → die PNG wird
    importiert. Fertig, beim nächsten Start ist sie im Spiel.
 4. Für **Lauf-Animationen**: Sprite-Sheet nach dem Raster unten in
-   `assets/units/` ablegen (4 Phasen × 8 Richtungen).
+   `assets/units/` ablegen (4 Phasen × 6 Weg-Richtungen).
 
 Du kannst deine fertigen Designs einfach in diese Ordner kopieren. Wenn ein Name
 oder Format unklar ist: in der Tabelle bzw. den Abschnitten unten steht für jeden
@@ -24,7 +24,7 @@ Typ Ordner, Dateiname und empfohlene Größe.
 | `assets/buildings/` | `<def_id>.png` | Gebäude-Sprite (Boden = untere Kante) | ~64×64 |
 | `assets/objects/`   | `tree.png`, `stone.png`, `ore.png` | Karten-Objekte | ~32×32 |
 | `assets/goods/`     | `<nummer>.png` | Waren-Symbol | ~16×16 |
-| `assets/units/`     | `carrier.png`, `worker.png`, `soldier.png`, `builder.png` | Lauf-Sprite-Sheet (4×8) | Zelle ~32×32 |
+| `assets/units/`     | `carrier.png`, `worker.png`, `soldier.png`, `builder.png` | Lauf-Sprite-Sheet (4×6) | Zelle ~32×32 |
 
 ### Gebäude-Größen & Eingang anpassen (ohne Code) — `assets/design.json`
 Die Größen sind **nicht fest im Code**, sondern in `assets/design.json` einstellbar:
@@ -32,11 +32,34 @@ Die Größen sind **nicht fest im Code**, sondern in `assets/design.json` einste
 {
   "texture_scale": 2.0,
   "hq_scale": 1.35,
-  "sizes": { "hut":[22,20], "house":[32,30], "castle":[46,44], "mine":[26,22] },
+  "unit_size": 18,
+  "sizes": { "hut":[34,30], "house":[40,36], "castle":[50,46], "mine":[30,26] },
+  "building_sizes": { "woodcutter": [37,33] },
+  "building_offset": { "woodcutter": [0,0] },
   "entrance": { "default": [0,-6], "hq": [0,-10] }
 }
 ```
+- `sizes`: Größe je Größenklasse (hut/house/castle/mine).
+- `building_sizes`: einzelne Gebäude individuell überschreiben (per `def_id`).
+- `building_offset`: Bild-Versatz eines Gebäudes zur Flagge (Position), per `def_id`.
+- `unit_size`: Ziel-Höhe der Figuren in px — **stellt zu große Einheiten-Sprites
+  passend klein** (das Sheet wird auf diese Höhe skaliert).
+- `texture_scale`/`hq_scale`: Skalierung der Gebäude-Sprites.
+
 Werte ändern → Godot neu starten. Fehlt die Datei, gelten die Standardwerte.
+
+### Bequemer: der Design-Editor (Hauptmenü → „Design-Editor")
+Statt die JSON von Hand zu editieren, gibt es ein **DEV-Menü mit Live-Vorschau**:
+- Links ein Gebäude wählen, in der Mitte siehst du es **mit Flagge und Eingangsweg**.
+- Rechts per Regler einstellen: **Breite, Höhe**, **Eingang X/Y** (wo der Weg
+  von der Flagge zur Tür endet), **Textur-Skalierung**, **Einheiten-Höhe**.
+- Rechts auch: **Bild-Versatz X/Y** (verschiebt das Sprite gegenüber der Flagge)
+  und ein **Vergleichsobjekt** (zweites Gebäude daneben, um Größen zu vergleichen).
+- Änderungen sind **sofort sichtbar**; gespeichert wird per **Speichern-Button**
+  in `assets/design.json` (`building_sizes`/`building_offset`/`entrance` je `def_id`).
+
+So tunst du jedes Gebäude einzeln, ohne Code und ohne die Datei manuell zu öffnen.
+Jedes Gebäude ist damit individuell in Größe **und** Eingangspunkt einstellbar.
 
 ### Eingang & Weg zur Flagge — PRO Gebäude definierbar (modular)
 Wie in Die Siedler sitzt die **Eingangsflagge auf dem Knoten unten rechts** vom
@@ -64,6 +87,50 @@ Waren ins Gebäude bringen.
 0 Holz · 1 Bretter · 2 Steine · 3 Getreide · 4 Mehl · 5 Wasser · 6 Brot ·
 7 Fisch · 8 Fleisch · 9 Kohle · 10 Eisenerz · 11 Eisen · 12 Golderz ·
 13 Münzen · 14 Bier · 15 Werkzeug · 16 Schwert · 17 Schild.
+
+## UI-Design (austauschbar & skalierbar) — GEPLANT (Stufe 8)
+
+Die Oberfläche soll künftig wie in Die Siedler 2 / RTTR aussehen (Holz-/Pergament-
+Paneele, Icon-Buttons, Tooltips) und **als Skin austauschbar** sein. Damit ein
+eigener Skin sauber passt, gelten diese Vorgaben (Ablage unter `assets/ui/`):
+
+**Paneele/Rahmen (9-Patch):** `assets/ui/panel.png`, `button.png`,
+`button_hover.png`, `button_pressed.png`, `button_disabled.png`.
+- **9-Patch** heißt: das Bild wird in 3×3 Felder geteilt — die **vier Ecken
+  bleiben fix**, **Kanten** werden in einer Richtung, die **Mitte** in beide
+  Richtungen gestreckt. So sieht der Rahmen bei **jeder Größe scharf** aus.
+- Definiere die **Rand-Ränder** (links/rechts/oben/unten in px) in `assets/ui.json`,
+  z. B. `"panel_margin": [12,12,12,12]`. Außerhalb dieser Ränder darf kein wichtiges
+  Motiv liegen (wird gestreckt).
+- Empfohlene Quellgröße: 48×48–96×96 px, Ecken ~12–16 px.
+
+**Icons:** `assets/ui/icons/<name>.png`, quadratisch (z. B. 32×32, transparent).
+Benötigt u. a.: `select, flag, road, demolish, build, stop, stats, settings,
+play, pause, faster, slower`. Waren-Icons werden aus `assets/goods/` wiederverwendet.
+
+**Schrift:** `assets/ui/font.ttf` (optional). Sonst Standardschrift.
+
+**Layout/Skalierung:** `assets/ui.json`, z. B.
+```json
+{
+  "ui_scale": 1.0,
+  "font_size": 14,
+  "panel_margin": [12,12,12,12],
+  "icon_size": 32,
+  "colors": { "text": "#f0e6d0", "text_dim": "#b8a884" }
+}
+```
+`ui_scale` skaliert die gesamte Oberfläche; alle Maße sind relativ dazu.
+
+**So muss ein Skin aussehen (Kurz-Checkliste):**
+- Paneele/Buttons als **9-Patch-taugliche** PNGs (Motiv-Rand ≤ Margin).
+- Vier Button-Zustände in **gleicher Größe** und gleichem Rand.
+- Icons im **gleichen quadratischen Raster**, transparent, einheitlicher Stil.
+- Farben/Schrift in `ui.json`; nichts hartcodiert.
+- Fehlt der Skin, nutzt das Spiel sein Standard-Theme (kein Absturz).
+
+*(Hinweis: Das Skin-Lade-System wird in Stufe 8 umgesetzt; diese Vorgabe steht
+schon hier, damit du Designs passend vorbereiten kannst.)*
 
 ## Format
 - **PNG** mit Transparenz (Alpha).
@@ -117,16 +184,16 @@ kommt, sobald gewünscht).
 
 **Menschen / Animationen (Sprite-Sheets) — wird automatisch genutzt:**
 Ablage: `assets/units/<kind>.png` mit `kind` = `carrier`, `worker`, `soldier`,
-`builder`. **Raster: 4 Spalten (Lauf-Phasen) × 8 Zeilen (Richtungen)**, Reihenfolge
-der Zeilen im Uhrzeigersinn ab Osten: **E, SE, S, SW, W, NW, N, NE**. Die Zellgröße
-wird aus der Bildgröße abgeleitet (Breite/4 × Höhe/8); jede Zelle wird unten am
+`builder`. **Raster: 4 Spalten (Lauf-Phasen) × 6 Zeilen (Weg-Richtungen)**, Reihenfolge
+der Zeilen: **NE, E, SE, SW, W, NW**. Die Zellgröße
+wird aus der Bildgröße abgeleitet (Breite/4 × Höhe/6); jede Zelle wird unten am
 Knoten zentriert gezeichnet. Fehlt das Sheet, zeichnet das Spiel die Platzhalter-
-Figur. (Spaltenzahl 4 / Zeilenzahl 8 sind in `game/theme_db.gd` als `ANIM_FRAMES`
+Figur. (Spaltenzahl 4 / Zeilenzahl 6 sind in `game/theme_db.gd` als `ANIM_FRAMES`
 / `ANIM_DIRS` einstellbar.)
 
 KI-Prompt dafür:
-> `tiny medieval <ROLE> walk cycle sprite sheet, 4 frames per row, 8 rows for
-> 8 facing directions (E, SE, S, SW, W, NW, N, NE), top-down dimetric, uniform
+> `tiny medieval <ROLE> walk cycle sprite sheet, 4 frames per row, 6 rows for
+> 6 road directions (NE, E, SE, SW, W, NW), top-down dimetric, uniform
 > cell size, transparent background, pixel-clean` — ROLE z. B. `carrier with
 > sack`, `builder with hammer`, `soldier with sword and shield`, `worker`.
 

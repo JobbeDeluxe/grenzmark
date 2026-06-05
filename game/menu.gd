@@ -39,7 +39,12 @@ func _ready() -> void:
 	_button(box, "Neues Spiel", _on_new)
 	var load_btn := _button(box, "Spiel laden", _on_load)
 	load_btn.disabled = not FileAccess.file_exists(SAVE_PATH)
+	_button(box, "Design-Editor", _on_editor)
 	_button(box, "Beenden", _on_quit)
+
+
+func _on_editor() -> void:
+	get_tree().change_scene_to_file("res://game/design_editor.tscn")
 
 
 func _button(box: VBoxContainer, text: String, cb: Callable) -> Button:

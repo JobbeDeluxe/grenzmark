@@ -1,17 +1,50 @@
 {
-  "_hinweis": "Gebaeudegroessen & Eingang. Werte hier aendern, KEIN Code noetig. Godot danach neu starten.",
-  "texture_scale": 2.0,
-  "hq_scale": 1.35,
-  "sizes": {
-    "hut":    [22, 20],
-    "house":  [32, 30],
-    "castle": [46, 44],
-    "mine":   [26, 22]
+  "_hinweis": "Groessen & Eingang. Werte hier aendern, KEIN Code noetig. Godot danach neu starten.",
+  "building_sizes": {
+    "_hinweis": "Einzelne Gebaeude individuell groesser/kleiner (ueberschreibt sizes).",
+    "hq": [
+      50,
+      49
+    ],
+    "woodcutter": [
+      37.0,
+      33.0
+    ]
   },
   "entrance": {
     "_hinweis": "Tuer relativ zum Gebaeudeknoten in Pixeln. 'default' gilt fuer alle, je def_id ueberschreibbar.",
-    "default": [0, -6],
-    "hq":      [0, -10],
-    "catapult":[0, -6]
-  }
+    "catapult": [
+      0.0,
+      -6.0
+    ],
+    "default": [
+      0.0,
+      -6.0
+    ],
+    "hq": [
+      -37,
+      -10
+    ]
+  },
+  "hq_scale": 1.35,
+  "sizes": {
+    "castle": [
+      50.0,
+      46.0
+    ],
+    "house": [
+      40.0,
+      36.0
+    ],
+    "hut": [
+      34.0,
+      30.0
+    ],
+    "mine": [
+      30.0,
+      26.0
+    ]
+  },
+  "texture_scale": 1.9,
+  "unit_size": 18.0
 }

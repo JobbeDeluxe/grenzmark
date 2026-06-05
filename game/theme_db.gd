@@ -49,6 +49,7 @@ static func good_color(g: int) -> Color:
 		Goods.TOOLS: return Color(0.50, 0.50, 0.55)
 		Goods.SWORD: return Color(0.80, 0.80, 0.88)
 		Goods.SHIELD: return Color(0.65, 0.55, 0.40)
+		Goods.PIG: return Color(0.92, 0.70, 0.70)
 	return Color.WHITE
 
 
@@ -79,9 +80,14 @@ static func building_label(def_id: String) -> String:
 		"mill": return "Mü"
 		"bakery": return "Bä"
 		"fishery": return "Fi"
+		"hunter": return "Jä"
+		"pigfarm": return "Sw"
+		"slaughterhouse": return "Sl"
+		"toolmaker": return "Wz"
 		"coalmine": return "Ko"
 		"ironmine": return "Ei"
 		"goldmine": return "Go"
+		"granitemine": return "Gr"
 		"smelter": return "Sm"
 		"mint": return "Mz"
 		"brewery": return "Bi"
@@ -152,12 +158,12 @@ static func good_texture(good_id: int) -> Texture2D:
 
 # --- Einheiten-Animation --------------------------------------------------
 # Optionales Sprite-Sheet je Einheitstyp: assets/units/<kind>.png
-# Raster: ANIM_FRAMES Spalten (Lauf-Phasen) × 8 Zeilen (Richtungen, im
-# Uhrzeigersinn ab Osten: E, SE, S, SW, W, NW, N, NE). Zellgröße wird aus der
+# Raster: ANIM_FRAMES Spalten (Lauf-Phasen) x 6 Zeilen (Weg-Richtungen:
+# NE, E, SE, SW, W, NW). Zellgroesse wird aus der
 # Bildgröße abgeleitet. kind = "carrier" | "worker" | "soldier" | "builder".
 # Fehlt das Sheet, zeichnet der UnitRenderer die Platzhalter-Figur.
 const ANIM_FRAMES := 4
-const ANIM_DIRS := 8
+const ANIM_DIRS := 6
 
 
 static func unit_texture(kind: String) -> Texture2D:
@@ -199,8 +205,14 @@ static func _size_key(size: int) -> String:
 
 
 ## Zeichengröße eines Gebäudes (Platzhalter-Maße). Aus design.json oder Standard.
-static func building_dims(size: int) -> Vector2:
-	var sizes: Dictionary = _design().get("sizes", {})
+## Pro Gebäude überschreibbar via "building_sizes": { "<def_id>": [w,h] }.
+static func building_dims(size: int, def_id := "") -> Vector2:
+	var cfg := _design()
+	var per: Dictionary = cfg.get("building_sizes", {})
+	if def_id != "" and per.has(def_id):
+		var b = per[def_id]
+		return Vector2(float(b[0]), float(b[1]))
+	var sizes: Dictionary = cfg.get("sizes", {})
 	var key := _size_key(size)
 	if sizes.has(key):
 		var a = sizes[key]
@@ -209,7 +221,7 @@ static func building_dims(size: int) -> Vector2:
 		WorldState.BQ_CASTLE: return Vector2(46, 44)
 		WorldState.BQ_HOUSE: return Vector2(32, 30)
 		WorldState.BQ_MINE: return Vector2(26, 22)
-	return Vector2(22, 20)
+	return Vector2(30, 28)
 
 
 ## Faktor, mit dem Gebäude-Texturen ggü. den Platzhalter-Maßen skaliert werden.
@@ -220,6 +232,20 @@ static func texture_scale() -> float:
 ## Zusätzlicher Skalierungsfaktor für das Hauptquartier.
 static func hq_scale() -> float:
 	return float(_design().get("hq_scale", 1.35))
+
+
+## Ziel-Höhe einer Einheiten-Figur in Pixeln (skaliert große Sprite-Sheets herunter).
+static func unit_size() -> float:
+	return float(_design().get("unit_size", 18.0))
+
+
+## Bild-Versatz eines Gebäudes gegenüber seinem Knoten (Position zur Flagge).
+## design.json "building_offset": { "<def_id>": [x,y] }. Standard (0,0).
+static func building_offset(def_id := "") -> Vector2:
+	var per: Dictionary = _design().get("building_offset", {})
+	if def_id != "" and per.has(def_id):
+		return _to_vec(per[def_id])
+	return Vector2.ZERO
 
 
 ## Eingangspunkt (Tür) relativ zum Gebäudeknoten — PRO Gebäude konfigurierbar.

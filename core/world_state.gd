@@ -49,6 +49,7 @@ var roads: Array[Road] = []
 var occupied: Dictionary = {}   # idx -> OBJ_*
 var territory: Dictionary = {}        # idx -> true (Spieler-Gebiet, Besitzer 0)
 var enemy_territory: Dictionary = {}  # idx -> true (Gegner-Gebiet, Besitzer 1)
+var explored: Dictionary = {}         # idx -> true (vom Spieler aufgedeckt)
 
 var _next_flag_id := 1
 
@@ -86,6 +87,29 @@ func has_object(x: int, y: int) -> bool:
 
 func in_territory(x: int, y: int) -> bool:
 	return territory.has(map.idx(x, y))
+
+
+## Sichtbarkeit: deckt Knoten rund um eigene Gebäude/Flaggen/Straßen auf.
+## Aufgedecktes bleibt aufgedeckt (wie in S2 die erkundete Karte).
+func recompute_visibility() -> void:
+	for i in buildings:
+		var b: Building = buildings[i]
+		if b.owner == 0:
+			_reveal(b.pos, 7)
+	for i in flags:
+		_reveal(flags[i].pos, 5)
+	for r in roads:
+		for n in r.nodes:
+			_reveal(n, 3)
+
+
+func _reveal(center: Vector2i, radius: int) -> void:
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var x := center.x + dx
+			var y := center.y + dy
+			if map.in_bounds(x, y) and hex_distance(center, Vector2i(x, y)) <= radius:
+				explored[map.idx(x, y)] = true
 
 
 ## Hex-Distanz zweier Knoten (für kreisförmiges Einflussgebiet).

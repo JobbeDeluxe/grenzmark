@@ -35,25 +35,47 @@ func _unit(kind: String, p: Vector2, facing: Vector2, body: Color, carrying := -
 		return
 	var cols := GameTheme.ANIM_FRAMES
 	var rows := GameTheme.ANIM_DIRS
-	var cw := float(tex.get_width()) / cols
+	var cw := float(tex.get_width()) / cols    # Zellengröße im Sheet
 	var ch := float(tex.get_height()) / rows
+	# Auf Ziel-Höhe skalieren (Config), damit große PNGs nicht riesig wirken.
+	var target_h := GameTheme.unit_size()
+	var sc := target_h / maxf(ch, 1.0)
+	var dw := cw * sc
+	var dh := ch * sc
 	var moving := facing.length() > 0.01
-	var diri := _dir8(facing) if moving else 2  # 2 = nach unten (Standardblick)
+	var diri := _dir6(facing) if moving else 2  # 2 = SE/front-ish idle pose.
 	var frame := (int(_anim_time * 7.0) % cols) if moving else 0
 	var region := Rect2(frame * cw, diri * ch, cw, ch)
-	draw_texture_rect_region(tex, Rect2(p.x - cw * 0.5, p.y - ch, cw, ch), region)
+	draw_texture_rect_region(tex, Rect2(p.x - dw * 0.5, p.y - dh, dw, dh), region)
 	if carrying >= 0:
 		var gt := GameTheme.good_texture(carrying)
 		if gt != null:
-			draw_texture_rect(gt, Rect2(p.x - 5.0, p.y - ch - 8.0, 10.0, 10.0), false)
+			draw_texture_rect(gt, Rect2(p.x - 5.0, p.y - dh - 8.0, 10.0, 10.0), false)
 		else:
-			draw_rect(Rect2(p.x - 2.0, p.y - ch - 6.0, 4.0, 4.0), GameTheme.good_color(carrying))
+			draw_rect(Rect2(p.x - 2.0, p.y - dh - 6.0, 4.0, 4.0), GameTheme.good_color(carrying))
 
 
-## Richtungsindex 0..7 im Uhrzeigersinn ab Osten (E,SE,S,SW,W,NW,N,NE).
-func _dir8(v: Vector2) -> int:
-	var step := TAU / 8.0
-	return int(round(v.angle() / step) + 8) % 8
+## Richtungsindex 0..5: NE, E, SE, SW, W, NW.
+func _dir6(v: Vector2) -> int:
+	if v.length() <= 0.01:
+		return 2
+	var dirs := [
+		Vector2(1.0, -1.0).normalized(), # NE
+		Vector2(1.0, 0.0),               # E
+		Vector2(1.0, 1.0).normalized(),  # SE
+		Vector2(-1.0, 1.0).normalized(), # SW
+		Vector2(-1.0, 0.0),              # W
+		Vector2(-1.0, -1.0).normalized() # NW
+	]
+	var n := v.normalized()
+	var best := 0
+	var best_dot := -999999.0
+	for i in range(dirs.size()):
+		var dot := n.dot(dirs[i])
+		if dot > best_dot:
+			best_dot = dot
+			best = i
+	return best
 
 
 func _draw() -> void:
@@ -65,7 +87,26 @@ func _draw() -> void:
 	_draw_carriers()
 	_draw_workers()
 	_draw_marchers()
+	_draw_house_carrier()
 	_draw_hover()
+
+
+func _draw_house_carrier() -> void:
+	var h: Economy.HouseCarrier = economy.hq_house
+	if h == null or economy.hq_idx < 0:
+		return
+	if h.state == Economy.H_IDLE:
+		return  # wartet im HQ → nicht zeichnen (erscheint erst beim Tragen)
+	var hqpos := economy.hq_building_pos()
+	var flagpos := economy.hq_flag_node()
+	if hqpos.x < 0 or flagpos.x < 0:
+		return
+	var door := state.map.node_world(hqpos.x, hqpos.y) + GameTheme.entrance_offset("hq")
+	var flag := state.map.node_world(flagpos.x, flagpos.y)
+	var p := door.lerp(flag, clampf(h.t, 0.0, 1.0))
+	var facing := (flag - door) if (h.state == Economy.H_OUT or h.state == Economy.H_FETCH) else (door - flag)
+	var carry := h.carrying.type if h.carrying != null else -1
+	_unit("carrier", p, facing, Color(0.80, 0.66, 0.42), carry)
 
 
 ## Kleine Menschen-Figur (Körper + Kopf + Schatten).
@@ -86,11 +127,11 @@ func _draw_construction() -> void:
 		var bs: Economy.BState = economy.bstates[i]
 		if not bs.is_construction:
 			continue
-		var p := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
+		var p := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y) + GameTheme.building_offset(bs.bld.def_id)
 		var frac: float = clampf(float(bs.construct_progress) / float(Economy.BUILD_TIME), 0.0, 1.0)
 		# Das Gebäude "wächst" mit dem Baufortschritt aus dem Boden.
 		if frac > 0.02:
-			var base := _bld_dims(bs.bld.size)
+			var base := _bld_dims(bs.bld.size, bs.bld.def_id)
 			var tex := GameTheme.building_texture(bs.bld.def_id)
 			if tex != null:
 				var sz := base.x * GameTheme.texture_scale()
@@ -105,11 +146,10 @@ func _draw_construction() -> void:
 		var bar := Vector2(p.x - w * 0.5, p.y - 34)
 		draw_rect(Rect2(bar, Vector2(w, 4)), Color(0, 0, 0, 0.6))
 		draw_rect(Rect2(bar, Vector2(w * frac, 4)), Color(0.4, 0.85, 0.4))
-		_figure(p + Vector2(base_offset(bs.bld.size), 0), Color(0.85, 0.75, 0.35))
 
 
-func _bld_dims(size: int) -> Vector2:
-	return GameTheme.building_dims(size)
+func _bld_dims(size: int, def_id := "") -> Vector2:
+	return GameTheme.building_dims(size, def_id)
 
 
 func base_offset(size: int) -> float:
@@ -138,6 +178,8 @@ func _draw_goods() -> void:
 func _draw_carriers() -> void:
 	for r in economy.carriers:
 		var c: Economy.Carrier = economy.carriers[r]
+		if not c.active:
+			continue  # unbesetzte Straße (kein Träger zugeteilt) → nichts zeichnen
 		var carry := c.carrying.type if c.carrying != null else -1
 		_unit("carrier", economy.carrier_world(c), economy.carrier_facing(c),
 			Color(0.78, 0.62, 0.40), carry)

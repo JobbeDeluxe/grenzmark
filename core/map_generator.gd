@@ -68,6 +68,12 @@ static func _scatter_objects(map: MapData, seed: int) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed + 99
 
+	# Niederfrequente Maske für zusammenhängende Erz-Adern je Sorte.
+	var vein := FastNoiseLite.new()
+	vein.noise_type = FastNoiseLite.TYPE_VALUE
+	vein.seed = seed + 7
+	vein.frequency = 0.07
+
 	for y in map.height:
 		for x in map.width:
 			# Knoten gilt als Wiese/Berg, wenn alle umgebenden Dreiecke passen.
@@ -80,12 +86,24 @@ static func _scatter_objects(map: MapData, seed: int) -> void:
 			if all_mountain:
 				if rng.randf() < 0.18:
 					map.set_map_object(x, y, MapData.MO_ORE)
+					map.set_ore_kind(x, y, _ore_kind_for(vein.get_noise_2d(x, y) * 0.5 + 0.5))
 			elif all_meadow:
 				var f := forest.get_noise_2d(x, y) * 0.5 + 0.5
 				if f > 0.62:
 					map.set_map_object(x, y, MapData.MO_TREE)
 				elif rng.randf() < 0.03:
 					map.set_map_object(x, y, MapData.MO_STONE)
+
+
+## Erzsorte aus dem Adern-Rauschwert (0..1): Kohle häufig, Gold selten.
+static func _ore_kind_for(v: float) -> int:
+	if v < 0.42:
+		return MapData.ORE_COAL
+	elif v < 0.72:
+		return MapData.ORE_IRON
+	elif v < 0.90:
+		return MapData.ORE_GRANITE
+	return MapData.ORE_GOLD
 
 
 static func _assign_tri(map: MapData, x: int, y: int, kind: int) -> void:

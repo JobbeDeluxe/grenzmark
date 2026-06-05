@@ -18,6 +18,10 @@ var terr_d: PackedByteArray    # Terrain des unteren Dreiecks pro Knoten
 enum { MO_TREE, MO_STONE, MO_ORE }
 var objects: Dictionary = {}   # idx -> MO_*
 
+# Erzsorte je Erz-Knoten (nur gesetzt, wo objects == MO_ORE).
+enum { ORE_COAL, ORE_IRON, ORE_GOLD, ORE_GRANITE }
+var ore_kind: Dictionary = {}  # idx -> ORE_*
+
 
 func _init(w: int, h: int) -> void:
 	width = w
@@ -74,6 +78,15 @@ func set_map_object(x: int, y: int, obj: int) -> void:
 
 func clear_map_object(x: int, y: int) -> void:
 	objects.erase(idx(x, y))
+	ore_kind.erase(idx(x, y))
+
+
+func ore_kind_at(x: int, y: int) -> int:
+	return ore_kind.get(idx(x, y), -1)
+
+
+func set_ore_kind(x: int, y: int, kind: int) -> void:
+	ore_kind[idx(x, y)] = kind
 
 
 ## Bildschirmposition eines Knotens inklusive seiner Höhe.

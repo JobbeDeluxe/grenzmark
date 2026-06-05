@@ -22,9 +22,10 @@ enum {
 	TOOLS,     # Werkzeug
 	SWORD,     # Schwert
 	SHIELD,    # Schild
+	PIG,       # Schwein (Schweinefarm -> Schlachterei -> Fleisch)
 }
 
-const COUNT := 18
+const COUNT := 19
 
 
 static func name_of(g: int) -> String:
@@ -47,4 +48,5 @@ static func name_of(g: int) -> String:
 		TOOLS: return "Werkzeug"
 		SWORD: return "Schwert"
 		SHIELD: return "Schild"
+		PIG: return "Schwein"
 	return "?"

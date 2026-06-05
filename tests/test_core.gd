@@ -13,6 +13,9 @@ func _initialize() -> void:
 	_test_triangles_around()
 	_test_map_generation()
 	_test_worldgen_96()
+	_test_ore_types()
+	_test_catalog_complete()
+	_test_visibility()
 	_test_bq_and_flags()
 	_test_building_spacing()
 	_test_road_and_route()
@@ -317,6 +320,37 @@ func _test_worldgen_96() -> void:
 			if state.compute_bq(xx, yy) >= WorldState.BQ_CASTLE:
 				castle += 1
 	_check(castle >= 2, "Mindestens zwei Burgplätze (Spieler + Gegner): %d" % castle)
+
+
+func _test_catalog_complete() -> void:
+	for id in ["hunter", "pigfarm", "slaughterhouse", "toolmaker", "granitemine"]:
+		_check(not BuildingCatalog.get_def(id).is_empty(), "Gebäude im Katalog: %s" % id)
+
+
+func _test_visibility() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	_check(state.explored.has(map.idx(10, 10)), "HQ-Umgebung aufgedeckt")
+	_check(not state.explored.has(map.idx(34, 34)), "Ferne Karte bleibt im Nebel")
+
+
+func _test_ore_types() -> void:
+	var map := _flat_map(20, 20)
+	map.set_map_object(10, 8, MapData.MO_ORE)
+	map.set_ore_kind(10, 8, MapData.ORE_COAL)
+	map.set_map_object(12, 12, MapData.MO_ORE)
+	map.set_ore_kind(12, 12, MapData.ORE_IRON)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	_check(eco._find_ore(Vector2i(10, 10), MapData.ORE_IRON, 6) == Vector2i(12, 12),
+		"Eisenmine findet Eisenerz, nicht Kohle")
+	_check(eco._find_ore(Vector2i(10, 10), MapData.ORE_COAL, 6) == Vector2i(10, 8),
+		"Kohlemine findet Kohle")
+	_check(eco._find_ore(Vector2i(10, 10), MapData.ORE_GOLD, 6).x < 0,
+		"Keine Goldader in der Nähe → kein Fund")
 
 
 func _test_building_spacing() -> void:

@@ -56,7 +56,9 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Fenster-Skalierung (Stretch canvas_items) — UI skaliert mit
 - [ ] Höhen-Picking exakt (aktuell ignoriert Höhe leicht)
 - [ ] Bessere Karten-Generierung (Inseln, Flüsse, Berg-Adern mit Erzen)
-- [ ] Rodungs-/Sichtbarkeitsradius beim Bauen
+- [x] Nebel des Krieges + Sicht umschaltbar (Taste F); Karte wird um eigene
+      Gebäude/Flaggen/Straßen aufgedeckt (recompute_visibility)
+- [x] Bauplatz-Anzeige (Leertaste): blendet alle baubaren Plätze mit BQ-Farbe ein
 
 ### Stufe 2 — Träger & Warenfluss (Herzstück von S2)
 - [x] Träger-Einheiten, einer pro Straße
@@ -65,7 +67,7 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Hauptquartier als Senke/Lager mit Inventar
 - [ ] Feinere Stau-/Prioritätslogik, mehrere Träger pro Straße
 - [ ] Esel/Boten-Wege später
-- [ ] Animierte Lauf-Sprites (4–8 Richtungen)
+- [ ] Animierte Lauf-Sprites (6 Weg-Richtungen)
 
 ### Stufe 3 — Wirtschaft & Produktionsketten
 - [x] Lagerhaus/HQ als Quelle & Senke (zentrales Inventar)
@@ -73,11 +75,22 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Produktionsketten: Holz→Bretter; Getreide→Mehl→Brot; Erz+Kohle→Eisen→Schwert; Gold+Kohle→Münzen; Bier; usw.
 - [x] Terrain-Ressourcen: Holzfäller fällt Bäume, Förster pflanzt, Steinbruch, Minen verbrauchen Erz, Fischer am Wasser
 - [x] Baustelle + Materialanlieferung (Bretter/Steine) + Baufortschritt
+- [x] Baufortschritt proportional zum gelieferten Material (Stein wertvoller als Holz)
+- [x] Bauarbeiter kommt vom HQ; gebaut wird erst nach seiner Ankunft
+- [x] HQ-Tür-Träger: trägt Waren sichtbar aus der HQ-Tür zur Flagge hinaus und
+      eingehende Waren von der Flagge ins Lager hinein (Eingangsweg). Nur HQ/Lager;
+      normale Gebäude regeln den letzten Schritt selbst (Ware liegt an der Flagge).
+- [x] Kein Fallback-Träger mehr: ohne HQ-Verbindung bleibt die Straße unbesetzt
+      (Träger kommt, sobald sie ans Netz angeschlossen ist)
+- [ ] Tür-Träger auch für zusätzliche Lagerhäuser (sobald Mehr-Lager existiert)
 - [x] Bauanimation: Gebäude wächst sichtbar aus dem Boden (Gerüst → fertig)
 - [x] Bauplatz-Größenlogik wie S2: große Gebäude brauchen Abstand, Nachbar-
       bauplätze schrumpfen (effective_bq); Gebäude optisch nach Größe gestaffelt
 - [x] Kurzer Eingangsweg Flagge → Gebäudetür mitgezeichnet (fester Eingangspunkt)
 - [x] Gebäudegrößen/Eingang per Config (assets/design.json), nicht hartcodiert
+- [x] Jedes Gebäude einzeln einstellbar (Größe & Eingang je def_id)
+- [x] Design-Editor im Hauptmenü: Live-Vorschau, Größe/Eingang per Regler,
+      automatische Speicherung in design.json
 - [x] Bedarf/Angebot über das HQ (Gebäude fordern Eingänge an, liefern Ausgänge)
 - [x] Träger stehen mittig auf der Straße und laufen zur Ware (sichtbare Bewegung)
 - [x] Träger kommen beim Straßenbau vom HQ übers Netz angelaufen (erst dann aktiv)
@@ -109,11 +122,12 @@ Das Skelett, auf dem alles aufbaut.
 ### Stufe 5 — Spielfluss & Inhalt
 - [x] Speichern/Laden (Struktur + HQ-Lager) — F2/F3
 - [x] In-Game-UI: Bau-Menü als Kategorie-Leiste unten, Minikarte, Vorrats-Anzeige
-- [ ] UI weiter wie Original: Icons statt Text, Bau-Vorschau, Statistik-Tabs
-- [ ] Hauptmenü, Spielgeschwindigkeit/Pause
-- [ ] Spielziele, Sieg/Niederlage
-- [ ] KI-Gegner (Single-Player)
-- [ ] Ton, Musik, Optionen (RTTR-Stil)
+- [x] Bau-Menü zeigt Gebäude-Sprites als Button-Icons (wenn vorhanden)
+- [x] Hauptmenü + Spielgeschwindigkeit/Pause + Sieg/Niederlage (siehe Stufe 4)
+- [x] Design-Editor (Hauptmenü) für Gebäudegrößen/Position/Eingang
+- [ ] Große UI-Überarbeitung → eigene **Stufe 8** (siehe unten)
+- [ ] Spielziele/Missionen wählbar; Statistik-Bildschirme
+- [ ] Ton, Musik, Optionen (ganz zuletzt)
 
 ### Stufe 6 — Multiplayer
 - [ ] Lockstep-Netzwerkmodell auf Basis der deterministischen Simulation
@@ -122,10 +136,55 @@ Das Skelett, auf dem alles aufbaut.
 
 ### Stufe 7 — Eigenes Gesicht
 - [x] Automatisches Laden austauschbarer Texturen aus `assets/` (sonst Platzhalter)
-- [x] Gerichtete Lauf-Animationen (8 Richtungen) per Sprite-Sheet aus assets/units/
+- [x] Gerichtete Lauf-Animationen (6 Weg-Richtungen) per Sprite-Sheet aus assets/units/
 - [x] Terrain-Texturierung (assets/terrain/, getilte UVs) — sonst Flächenfarbe
 - [ ] Vollständiger eigener Grafiksatz (alle Gebäude/Waren/Einheiten)
 - [ ] Eigene Mechanik-Erweiterungen nach Geschmack
+
+### Stufe 8 — UI-Überarbeitung (austauschbar & skalierbar) ⭐ NÄCHSTER GROSSER PUNKT
+
+Ziel: weg von schlichten Standard-Buttons/Text hin zu einer **stimmigen Oberfläche
+im Stil von Die Siedler 2 / RTTR** (Holz-/Pergament-Paneele, verzierte Rahmen,
+Icon-Buttons, Tooltips) — und das **komplett austauschbar über ein Theme/Skin**,
+ohne Code, **bei jeder Auflösung scharf** (9-Patch).
+
+**A) Konkrete UI-Bausteine, die schöner/neu werden müssen**
+- [ ] **Untere Bauleiste**: Icon-Buttons statt Text, Kategorie-Reiter mit Symbolen,
+      ausgewählte Kategorie/Gebäude hervorgehoben, **Tooltip** (Name, Kosten,
+      Ein-/Ausgänge) beim Überfahren.
+- [ ] **Cursor-Bauvorschau**: „Geist" des gewählten Gebäudes am Mauszeiger +
+      BQ-Markierung am Knoten (grün=geht/rot=geht nicht), Eingangsflagge/-weg
+      schon in der Vorschau.
+- [ ] **Gebäude-Infofenster** (bei Auswahl): Gebäude-Bild, Produktivität in %,
+      Eingangs-/Ausgangslager mit Waren-Icons, Garnison/Rang, Buttons
+      (Produktion an/aus, Abreißen, Priorität).
+- [ ] **Ressourcen-/Lagerleiste oben**: Waren als **Icons mit Zahl** statt Textliste.
+- [ ] **Minikarte** in gerahmtem Panel; Umschalter für Overlays (Gebiet, Bauplätze, Nebel).
+- [ ] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion) und
+      **Einstellungs-Fenster** (Verteilung, Werkzeug-/Militär-Prioritäten).
+- [ ] **Nachrichten-/Ereignisleiste** (Angriff, „Gebäude fertig", „Lager voll" …).
+- [ ] **Tooltips** durchgängig; Cursor-Symbole je Modus (Flagge/Straße/Abriss).
+
+**B) Austauschbares, skalierbares UI-Design (Skin-System)**
+- [ ] Godot-**`Theme`-Ressource** zentral: alle Controls beziehen Styles daraus.
+      Skin liegt unter `assets/ui/` und wird beim Start geladen (sonst Standard).
+- [ ] Panel-/Button-Hintergründe als **9-Patch** (`StyleBoxTexture`/`NinePatchRect`):
+      Ecken bleiben fix, Kanten/Mitte werden gestreckt → **bei jeder Größe scharf**.
+- [ ] **Button-Zustände** (normal/hover/pressed/disabled) als 9-Patch bzw. je ein PNG.
+- [ ] **Icon-Set** unter `assets/ui/icons/` (build/flag/road/demolish/stop/stats/…),
+      Waren-Icons aus `assets/goods/` wiederverwenden.
+- [ ] **`assets/ui.json`** für Layout: globale UI-Skalierung, Schriftgröße,
+      Panel-Größen/-Positionen, Icon-Rastergröße → ohne Code anpassbar.
+- [ ] **Eigener UI-Editor/Vorschau** (analog Design-Editor) wäre Bonus.
+- [ ] **Detaillierte Design-Vorgabe** für eigene Skins in `assets/README.md`
+      (9-Patch-Ränder, Maße, Zustände, Schrift, Farben) — Pflicht, damit andere
+      Skins „einfach passen".
+
+**C) Technisch (für die Umsetzung)**
+- UI strikt von der Spiel-Logik trennen (eigene Skin-/Theme-Schicht analog
+  `GameTheme`, z. B. `game/ui_skin.gd`). Stretch-Modus bleibt `canvas_items`
+  (skaliert die UI mit dem Fenster); 9-Patch hält Rahmen scharf.
+- Tooltips/Infofenster lesen aus `core/` (read-only), kein Logik-Code im UI.
 
 ## Lücken zu den Originalen (Die Siedler 2 / RTTR) — Prüfliste
 
@@ -142,12 +201,13 @@ Arbeitsliste, bis das Spiel „vollständig" ist (Ton/Musik kommt ganz zuletzt).
 Vorhanden (21): HQ, Holzfäller, Förster, Sägewerk, Steinbruch, Brunnen, Bauernhof,
 Mühle, Bäckerei, Fischerhütte, Kohle-/Eisen-/Goldmine, Eisenschmelze,
 Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
-- [ ] Lagerhaus / Vorratshaus (zweites Lager)
-- [ ] Jägerhütte (→ Fleisch)
-- [ ] Schweinefarm (Getreide + Wasser → Schwein) + Schlachterei (→ Fleisch/Schinken)
-- [ ] Eselzüchter (Getreide + Wasser → Esel)
-- [ ] Werkzeugmacher/Schlosserei (Eisen + Bretter → Werkzeug)
-- [ ] Granitmine (4. Erzsorte) — getrennte Erz-/Bergwerksarten
+- [x] Jägerhütte (→ Fleisch)
+- [x] Schweinefarm (Getreide + Wasser → Schwein) + Schlachterei (Schwein → Fleisch)
+- [x] Werkzeugmacher (Bretter + Eisen → Werkzeug)
+- [x] 4 Erzsorten (Kohle/Eisen/Gold/Granit) als Adern + Granitmine; jede Mine
+      baut nur ihr passendes Mineral ab (Erz farblich unterscheidbar)
+- [ ] Lagerhaus / Vorratshaus (zweites Lager) — braucht Mehr-Lager-System
+- [ ] Eselzüchter (→ Esel) — braucht Esel-auf-Straßen-System
 - [ ] Waffenschmiede mit Schwert UND Schild (statt nur Schwert)
 - [ ] Hafen + Werft (Schiffe/Boote)
 - [ ] Baracke / weitere Militär-Stufen, Spähturm
@@ -158,12 +218,12 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [x] Gebäude-Produktion an/aus schalten (Taste P am gewählten Gebäude)
 - [ ] Produktion drosseln (Prozent), Eingangsmengen begrenzen
 - [ ] Direkte Gebäude→Gebäude-Lieferung (nicht alles über HQ)
-- [ ] Felder: Bauer pflügt/erntet Getreide-Felder; Schweinezucht; Jäger braucht Tiere
-- [ ] 4 Erzsorten im Berg (Kohle/Eisen/Gold/Granit) statt generischem Erz
+- [ ] Felder: Bauer pflügt/erntet Getreide-Felder (Acker als Map-Objekt)
+- [ ] Produktivitäts-Anzeige je Gebäude (% wie im Original)
 
 **Karte & Erkundung (hoch):**
-- [ ] Geologen: erkunden Berge auf Vorkommen (Schilder), bevor Minen lohnen
-- [ ] Nebel des Krieges / Sichtbarkeit nur im erkundeten Gebiet
+- [ ] Geologen: erkunden Berge & decken die Erzsorte auf (Schilder), bevor Minen lohnen
+- [x] Nebel des Krieges / Sichtbarkeit nur im erkundeten Gebiet (Taste F)
 - [ ] Erdarbeiter (Planierer) ebnen Bauland; Höhe beeinflusst Bau stärker
 - [ ] Tiere (Wild) und nachwachsende Ressourcen, Fisch erschöpft sich
 
@@ -177,11 +237,17 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [ ] Häfen, Werften, Schiffe; Warentransport über Wasser
 - [ ] Expedition/Besiedlung von Inseln
 
-**Spielfluss & UI (mittel):**
-- [ ] Statistik-Bildschirme (Waren, Gebäude, Militär, Produktion)
+**Spielfluss & UI (mittel):** → gesammelt in **Stufe 8 (UI)** oben; zusätzlich:
 - [ ] Spielziele/Missionen, Sieg-/Niederlage-Bedingungen wählbar
-- [ ] Einstellungen: Verteilung, Werkzeug-Priorität, Militär-Stärke
-- [ ] Mehr/stärkere KI-Gegner, Bündnisse
+- [ ] Mehr/stärkere KI-Gegner, Bündnisse, Schwierigkeitsgrade
+
+**Neu beim Original-Abgleich aufgefallen (offen):**
+- [ ] Spähturm/Aussichtsturm: deckt Umgebung im Nebel auf (passt zu Stufe 1 Nebel)
+- [ ] Spezial-Einheiten ohne Gebäude: Geologe, Späher, Pionier (Geologe siehe oben)
+- [ ] Eroberte Gebäude brennen kurz / Übergangsanimation
+- [ ] Gebäude-Abriss gibt einen Teil der Baustoffe zurück
+- [ ] Träger-Stau sichtbar (volle Flagge blockiert), Vorfahrtsregeln an Kreuzungen
+- [ ] „Goldene" Grenzsteine je Spielerfarbe (passt zu austauschbarem Grenzstein-Design)
 
 **Multiplayer (später):** Lockstep über die deterministische Simulation.
 **Ton/Musik (ganz zuletzt).**
@@ -200,27 +266,41 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 core/                 # reine Simulation, KEIN Godot-Szenenbaum
   grid.gd             # Gitter-Geometrie: Nachbarn, Dreiecke, Bildschirm-Koords
   terrain.gd          # Terrain-Typen + Eigenschaften
-  map_data.gd         # Karte: Höhen + Terrain pro Knoten
-  map_generator.gd    # prozedurale Kartenerzeugung
-  world_state.gd      # Spielzustand: Flaggen, Straßen, Gebäude, BQ, Pfadfindung
-game/                 # Godot: zeichnen + Eingabe
-  world.gd            # Aufbau, Eingabe, Bau-Modi, HUD
-  map_renderer.gd     # zeichnet Terrain/Objekte/Highlights
+  goods.gd            # Warentypen
+  map_data.gd         # Karte: Höhen + Terrain + Objekte/Erzsorten pro Knoten
+  map_generator.gd    # prozedurale Kartenerzeugung (Insel, Berge, Erzadern)
+  building_catalog.gd # alle Gebäudedefinitionen (datengetrieben)
+  world_state.gd      # Spielzustand: Flaggen/Straßen/Gebäude/BQ/Territorium/Pfade
+  economy.gd          # Wirtschaftsherz: Träger, Waren, Produktion, Soldaten, HQ-Träger
+  ai/ai_base.gd       # KI-Schnittstelle (austauschbar)
+  ai/ai_default.gd    # Standard-Gegner-KI   ai/ai_passive.gd  ai/ai_registry.gd
+game/                 # Godot: zeichnen + Eingabe + UI
+  world.gd            # Aufbau, Eingabe, Bau-Modi, HUD, Save/Load
+  map_renderer.gd     # statische Ebene (Terrain/Objekte/Gebäude/Gebiet)
+  unit_renderer.gd    # dynamische Ebene (Träger/Arbeiter/Soldaten/Hover/Vorschau)
   camera_controller.gd# Schwenken + Zoom
-  main.tscn           # Startszene
-tests/
-  test_core.gd        # Headless-Selbsttests
-ROADMAP.md            # dieses Dokument
-README.md             # Steuerung & Start
+  minimap.gd          # Minikarte
+  theme_db.gd         # class GameTheme: austauschbare Optik + Config (design.json)
+  menu.gd / menu.tscn # Hauptmenü
+  design_editor.gd / design_preview.gd # DEV-Design-Editor (Größe/Position/Eingang)
+  main.tscn           # Spiel-Szene
+ai/                   # optionale eigene KI-Skripte des Nutzers (.gd)
+assets/               # austauschbare Grafik + design.json (siehe assets/README.md)
+tests/test_core.gd    # Headless-Selbsttests (aktuell 290)
+ROADMAP.md • README.md • assets/README.md • ai/README.md
 ```
 
-## Steuerung
+## Steuerung (Stand aktuell)
 - **Rechte/mittlere Maustaste ziehen**: Karte schwenken  •  **Mausrad**: Zoom
-- **Bau-Menü links**: Modus & Gebäude wählen (oder Tasten **1** Flagge, **2** Straße, **9** Abriss, **0** Auswahl)
-- **Linksklick**: ausführen (Flagge/Straße/Gebäude/Abriss)
-- **F2** Speichern  •  **F3** Laden  •  **F5** Neues Spiel
+- **Untere Werkzeugleiste**: Modi & Kategorie-Tabs & Gebäude
+  (Tasten **1** Flagge, **2** Straße, **9** Abriss, **0** Auswahl)
+- **Linksklick**: ausführen / im Auswahl-Modus Gebäude wählen bzw. Gegner angreifen
+- **Leertaste**: Bauplätze einblenden  •  **F**: Nebel an/aus  •  **Pause**: pausieren
+- **+/-**: Tempo  •  **P**: Produktion des gewählten Gebäudes an/aus
+- **K**: Gegner-KI an/aus  •  **J**: Gegner-KI wechseln
+- **F2/F3** Speichern/Laden  •  **F5** Neues Spiel
 - **Minikarte unten rechts**: Klick zentriert die Kamera
-- **K**: Gegner-KI an/aus (zum Testen)  •  **Leertaste** Pause  •  **+/-** Tempo
+- **Hauptmenü → Design-Editor**: Gebäudegrößen/Position/Eingang live einstellen
 
 ## Architektur-Notizen (für Wiedereinstieg)
 - `core/economy.gd` ist das Wirtschaftsherz: HQ-zentriert. Gebäude fordern

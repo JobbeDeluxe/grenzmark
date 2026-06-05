@@ -14,6 +14,9 @@ const TERRAIN_UV_WORLD_SIZE := 192.0
 var state: WorldState
 var _font: Font = ThemeDB.fallback_font
 
+var fog_enabled := false        # Nebel des Krieges an/aus (zum Testen)
+var show_build_spots := false   # Bauplätze einblenden (Leertaste)
+
 
 func setup(world_state: WorldState) -> void:
 	state = world_state
@@ -34,6 +37,53 @@ func _draw() -> void:
 	_draw_enemy_markers()
 	_draw_flags()
 	_draw_border()
+	if show_build_spots:
+		_draw_build_spots()
+	if fog_enabled:
+		_draw_fog()
+
+
+## Bauplatz-Anzeige (Leertaste): farbiger Punkt je effektiver BauQualität.
+func _draw_build_spots() -> void:
+	var map := state.map
+	for y in map.height:
+		for x in map.width:
+			var bq := state.effective_bq(x, y)
+			if bq < WorldState.BQ_FLAG:
+				continue
+			draw_circle(map.node_world(x, y), 3.0, _spot_color(bq))
+
+
+func _spot_color(bq: int) -> Color:
+	match bq:
+		WorldState.BQ_CASTLE: return Color(0.2, 0.9, 0.2)
+		WorldState.BQ_HOUSE:  return Color(0.7, 0.9, 0.2)
+		WorldState.BQ_HUT:    return Color(0.95, 0.85, 0.2)
+		WorldState.BQ_MINE:   return Color(0.6, 0.4, 0.9)
+		WorldState.BQ_FLAG:   return Color(0.95, 0.55, 0.2)
+	return Color(0.6, 0.6, 0.6, 0.6)
+
+
+## Nebel des Krieges: unerkundete Dreiecke abdunkeln.
+func _draw_fog() -> void:
+	var fog := Color(0.03, 0.03, 0.05, 0.92)
+	var map := state.map
+	for y in map.height:
+		for x in map.width:
+			_fog_tri(x, y, Grid.TRI_R, fog)
+			_fog_tri(x, y, Grid.TRI_D, fog)
+
+
+func _fog_tri(x: int, y: int, kind: int, col: Color) -> void:
+	var corners := Grid.triangle_corners(x, y, kind)
+	var pts := PackedVector2Array()
+	for c in corners:
+		if not state.map.in_bounds(c.x, c.y):
+			return
+		if state.explored.has(state.map.idx(c.x, c.y)):
+			return  # mindestens eine Ecke erkundet → nicht abdunkeln
+		pts.append(state.map.node_world(c.x, c.y))
+	draw_colored_polygon(pts, col)
 
 
 # --- Terrain (scharf, flach pro Dreieck) ---------------------------------
@@ -135,7 +185,7 @@ func _draw_objects() -> void:
 		match map.objects[i]:
 			MapData.MO_TREE: _paint_tree(p)
 			MapData.MO_STONE: _paint_stone(p)
-			MapData.MO_ORE: _paint_ore(p)
+			MapData.MO_ORE: _paint_ore(p, map.ore_kind_at(x, y))
 
 
 func _paint_tree(p: Vector2) -> void:
@@ -157,12 +207,22 @@ func _paint_stone(p: Vector2) -> void:
 		C_STONE.darkened(0.15))
 
 
-func _paint_ore(p: Vector2) -> void:
+func _paint_ore(p: Vector2, kind: int) -> void:
 	draw_colored_polygon(PackedVector2Array([
 		p + Vector2(-6, 0), p + Vector2(-2, -7), p + Vector2(5, -5),
 		p + Vector2(7, 0)]), Color(0.42, 0.40, 0.44))
-	draw_circle(p + Vector2(-1, -3), 1.6, Color(0.80, 0.50, 0.25))
-	draw_circle(p + Vector2(3, -2), 1.4, Color(0.75, 0.60, 0.25))
+	var c := _ore_color(kind)
+	draw_circle(p + Vector2(-1, -3), 1.8, c)
+	draw_circle(p + Vector2(3, -2), 1.5, c)
+
+
+func _ore_color(kind: int) -> Color:
+	match kind:
+		MapData.ORE_COAL: return Color(0.12, 0.12, 0.14)
+		MapData.ORE_IRON: return Color(0.70, 0.45, 0.30)
+		MapData.ORE_GOLD: return Color(0.95, 0.80, 0.25)
+		MapData.ORE_GRANITE: return Color(0.75, 0.75, 0.78)
+	return Color(0.80, 0.55, 0.30)
 
 
 # --- Straßen -------------------------------------------------------------
@@ -190,14 +250,14 @@ func _draw_entrance_paths() -> void:
 func _draw_buildings() -> void:
 	for i in state.buildings:
 		var b: WorldState.Building = state.buildings[i]
-		var p := state.map.node_world(b.pos.x, b.pos.y)
+		var p := state.map.node_world(b.pos.x, b.pos.y) + GameTheme.building_offset(b.def_id)
 		# Baustelle: nur das Gerüst (das wachsende Gebäude zeichnet der UnitRenderer).
 		if b.under_construction:
 			_paint_site(p, b)
 			continue
 		var tex := GameTheme.building_texture(b.def_id)
 		if tex != null:
-			var sz := _dims(b.size).x * GameTheme.texture_scale()
+			var sz := _dims(b.size, b.def_id).x * GameTheme.texture_scale()
 			if b.is_hq:
 				sz *= GameTheme.hq_scale()  # Hauptquartier sticht heraus
 			draw_texture_rect(tex, Rect2(p.x - sz * 0.5, p.y - sz, sz, sz), false)
@@ -218,18 +278,18 @@ func _draw_enemy_markers() -> void:
 		var b: WorldState.Building = state.buildings[i]
 		if b.owner != 1:
 			continue
-		var p := state.map.node_world(b.pos.x, b.pos.y)
-		var d := _dims(b.size)
+		var p := state.map.node_world(b.pos.x, b.pos.y) + GameTheme.building_offset(b.def_id)
+		var d := _dims(b.size, b.def_id)
 		# Kein roter Rahmen mehr — nur ein kleines Besitzer-Fähnchen.
 		_paint_flag(p + Vector2(0, -d.y - 6), Color(0.95, 0.15, 0.15))
 
 
-func _dims(size: int) -> Vector2:
-	return GameTheme.building_dims(size)
+func _dims(size: int, def_id := "") -> Vector2:
+	return GameTheme.building_dims(size, def_id)
 
 
 func _paint_house(p: Vector2, b: WorldState.Building) -> void:
-	var d := _dims(b.size)
+	var d := _dims(b.size, b.def_id)
 	var w := d.x
 	var h := d.y
 	var wall_h := h * 0.6
@@ -246,7 +306,7 @@ func _paint_house(p: Vector2, b: WorldState.Building) -> void:
 
 
 func _paint_tower(p: Vector2, b: WorldState.Building) -> void:
-	var d := _dims(b.size)
+	var d := _dims(b.size, b.def_id)
 	var w := d.x * 0.8
 	var h := d.y * 1.15
 	var body := Rect2(p.x - w * 0.5, p.y - h, w, h)
@@ -295,7 +355,7 @@ func _paint_mine(p: Vector2) -> void:
 
 
 func _paint_site(p: Vector2, b: WorldState.Building) -> void:
-	var d := _dims(b.size)
+	var d := _dims(b.size, b.def_id)
 	var rect := Rect2(p.x - d.x * 0.5, p.y - d.y, d.x, d.y)
 	draw_rect(rect, Color(0.6, 0.55, 0.4, 0.35))
 	var y := Color(0.95, 0.88, 0.35)

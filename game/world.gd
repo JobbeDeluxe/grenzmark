@@ -297,8 +297,12 @@ func _show_category(cat: String) -> void:
 		ch.queue_free()
 	for id in BuildingCatalog.menu_order():
 		if String(BuildingCatalog.get_def(id).get("category", "")) == cat:
-			_tbutton(_build_row, String(BuildingCatalog.get_def(id).get("name", id)),
+			var btn := _tbutton(_build_row, String(BuildingCatalog.get_def(id).get("name", id)),
 				_select_building.bind(id))
+			var tex := GameTheme.building_texture(id)
+			if tex != null:
+				btn.icon = tex
+				btn.expand_icon = true
 
 
 func _make_label(layer: CanvasLayer, pos: Vector2) -> Label:
@@ -317,13 +321,14 @@ func _row(layer: CanvasLayer, pos: Vector2) -> HBoxContainer:
 	return h
 
 
-func _tbutton(row: HBoxContainer, text: String, cb: Callable) -> void:
+func _tbutton(row: HBoxContainer, text: String, cb: Callable) -> Button:
 	var btn := Button.new()
 	btn.text = text
 	btn.custom_minimum_size = Vector2(96, 26)
 	btn.add_theme_font_size_override("font_size", 12)
 	btn.pressed.connect(cb)
 	row.add_child(btn)
+	return btn
 
 
 func _select_building(id: String) -> void:
@@ -347,7 +352,7 @@ func _update_labels() -> void:
 	var spd := "PAUSE" if paused else (str(sim_speed) + "x")
 	var ai_name := String(ai_list[ai_choice].name) if ai_choice < ai_list.size() else "?"
 	var ai := ("KI:%s" % ai_name) if economy.ai_enabled else "KI:AUS"
-	_mode_label.text = "Modus: %s   [%s · %s]   (Leertaste Pause · +/- Tempo · K KI an/aus · J KI wechseln · F5 Neu)" % [m, spd, ai]
+	_mode_label.text = "Modus: %s  [%s · %s]  (Leertaste Bauplätze · F Nebel · +/- Tempo · K/J KI · P Stop · F2/F3 · F5 Neu)" % [m, spd, ai]
 
 	var info := "Knoten: -"
 	if map.in_bounds(hover.x, hover.y):
@@ -398,7 +403,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				if selected != null and not selected.is_hq and selected.owner == 0:
 					var st := economy.toggle_production(selected)
 					_flash("Produktion " + ("gestoppt" if st else "läuft"))
-			KEY_SPACE: paused = not paused; _update_labels()
+			KEY_SPACE:
+				renderer.show_build_spots = not renderer.show_build_spots
+				renderer.queue_redraw()
+			KEY_F:
+				renderer.fog_enabled = not renderer.fog_enabled
+				renderer.queue_redraw()
+				_flash("Nebel " + ("AN" if renderer.fog_enabled else "AUS"))
+			KEY_PAUSE: paused = not paused; _update_labels()
 			KEY_EQUAL, KEY_KP_ADD: sim_speed = minf(sim_speed * 2.0, 8.0); _update_labels()
 			KEY_MINUS, KEY_KP_SUBTRACT: sim_speed = maxf(sim_speed * 0.5, 0.25); _update_labels()
 		return
@@ -535,6 +547,7 @@ func _save_game() -> void:
 		w = map.width, h = map.height,
 		heights = map.heights, terr_r = map.terr_r, terr_d = map.terr_d,
 		objects = map.objects.duplicate(),
+		ore_kind = map.ore_kind.duplicate(),
 		buildings = [], flags = [], roads = [],
 		hq_stock = economy.hq_stock.duplicate(),
 		soldiers = economy.soldiers,
@@ -573,6 +586,7 @@ func _load_game() -> void:
 	map.terr_r = data.terr_r
 	map.terr_d = data.terr_d
 	map.objects = data.objects
+	map.ore_kind = data.get("ore_kind", {})
 	state = WorldState.new(map)
 
 	for fp in data.flags:
