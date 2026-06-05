@@ -1,0 +1,31 @@
+GRENZMARK — BEKANNTE FEHLER (KNOWN BUGS)
+========================================
+Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
+Status: OFFEN | IN ARBEIT | BEHOBEN
+
+
+[2026-06-05] (OFFEN) Klick-Lag: Spiel hängt ~1 Sekunde beim Linksklick
+------------------------------------------------------------------------
+Beobachtung:
+  Beim Bauen eines Gebäudes ODER bei einem einzelnen Linksklick stoppt für
+  ca. 1 Sekunde alles (kurzer Freeze/Lag), danach läuft es normal weiter.
+
+Verdacht (zu prüfen):
+  - world._handle_click() ruft am Ende IMMER economy.resync() auf — auch im
+    reinen Auswahl-Modus. resync() macht u.a.:
+      * state.recompute_territory()  (Schleife über alle Gebäude × Radius)
+      * state.recompute_visibility() (Schleife über Gebäude/Flaggen/Straßen × Radius)
+      * Träger/Bauzustände neu abgleichen
+    Auf der großen 96x96-Karte kann das einen spürbaren Spike geben.
+  - Zusätzlich: nach dem Klick renderer.queue_redraw() → MapRenderer zeichnet
+    die GANZE Karte neu (96x96 × 2 Dreiecke + ggf. Terrain-Texturen). Einmalig
+    ok, aber zusammen mit resync evtl. der Ruckler.
+  - Eventuell auch _find_route/_dispatch (Dijkstra) beim Träger-Verteilen.
+
+Mögliche Lösungen (für später):
+  - resync() NICHT im Auswahl-/Hover-Klick aufrufen, nur bei echten
+    Struktur-Änderungen (Bauen/Abriss/Straße).
+  - recompute_territory/visibility nur bei Bedarf (dirty-Flag), nicht bei jedem
+    Klick; bzw. inkrementell statt komplett.
+  - MapRenderer-Redraw nur für geänderten Bereich statt ganzer Karte.
+  - Profilen mit dem Godot-Profiler, welcher Aufruf den Spike verursacht.
