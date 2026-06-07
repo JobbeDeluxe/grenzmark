@@ -4,15 +4,13 @@ extends Control
 
 const WORLD_SCENE := "res://game/main.tscn"
 const SAVE_PATH := "user://settlers_save.dat"
+const MENU_BACKGROUND_PATH := "res://assets/ui/main_menu_background.png"
 
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 
-	var bg := ColorRect.new()
-	bg.color = Color(0.10, 0.14, 0.10)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	_add_background()
 
 	# CenterContainer zentriert sein Kind in jeder Fenstergröße.
 	var center := CenterContainer.new()
@@ -41,6 +39,35 @@ func _ready() -> void:
 	load_btn.disabled = not FileAccess.file_exists(SAVE_PATH)
 	_button(box, "Design-Editor", _on_editor)
 	_button(box, "Beenden", _on_quit)
+
+
+func _add_background() -> void:
+	var tex: Texture2D = null
+	if ResourceLoader.exists(MENU_BACKGROUND_PATH):
+		tex = load(MENU_BACKGROUND_PATH) as Texture2D
+	if tex == null and FileAccess.file_exists(MENU_BACKGROUND_PATH):
+		var image_data := Image.new()
+		if image_data.load(MENU_BACKGROUND_PATH) == OK:
+			tex = ImageTexture.create_from_image(image_data)
+	if tex != null:
+		var image := TextureRect.new()
+		image.texture = tex
+		image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		image.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		image.set_anchors_preset(Control.PRESET_FULL_RECT)
+		add_child(image)
+	else:
+		var fallback := ColorRect.new()
+		fallback.color = Color(0.10, 0.14, 0.10)
+		fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fallback.set_anchors_preset(Control.PRESET_FULL_RECT)
+		add_child(fallback)
+
+	var shade := ColorRect.new()
+	shade.color = Color(0.02, 0.025, 0.018, 0.28)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(shade)
 
 
 func _on_editor() -> void:

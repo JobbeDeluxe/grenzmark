@@ -1,6 +1,8 @@
 class_name Economy
 extends RefCounted
 
+const Tuning := preload("res://core/tuning.gd")
+
 ## Träger-, Waren- und Produktionssimulation — das Wirtschaftsherz.
 ##
 ## Lager-zentriertes Modell (wie S2 warenhaus-orientiert ist):
@@ -71,10 +73,16 @@ class Marcher:
 	# Arbeiter-Anmarsch vom HQ (besetzt ein Gebäude):
 	var purpose_worker := false
 	var work_bidx := -1
+	# Bauarbeiter-Rückweg zur HQ-Tür (nach fertigem Bau): läuft hin und verschwindet.
+	var purpose_return := false
 
 
 # Tür↔Flagge-Träger (nur HQ/Lager): bewegt Waren zwischen Gebäudetür und Flagge.
 enum { H_IDLE, H_OUT, H_FETCH, H_IN, H_RETURN }
+
+# Arbeiter-Phasen eines Ressourcen-Gebäudes (konstante Laufgeschwindigkeit):
+# leer wartend → Hinweg → Aktion am Ziel → Rückweg → Pause am Gebäude.
+enum { WK_IDLE, WK_OUT, WK_WORK, WK_BACK, WK_WAIT }
 
 
 class HouseCarrier:
@@ -100,6 +108,9 @@ class BState:
 	var out_stock := 0
 	var worker_target := Vector2i(-1, -1)  # Knoten, zu dem der Arbeiter geht
 	var consumed_mid := false              # Ressourcen-Aktion am Wendepunkt erledigt?
+	var wphase := 0                        # WK_* — aktuelle Arbeiter-Phase
+	var ph_t := 0.0                        # verbleibende Ticks der aktuellen Phase
+	var ph_total := 1.0                    # Gesamtticks der aktuellen Phase (Interpolation)
 	var staffed := false                   # Arbeiter ist vom HQ angekommen?
 	var worker_sent := false               # Arbeiter wurde schon angefordert?
 	var stopped := false                   # Produktion vom Spieler angehalten?
@@ -126,11 +137,13 @@ var _hq_inited := false
 var _soldier_timer := SOLDIER_TICKS
 var _promo_timer := PROMO_TICKS
 var _cata_timer := CATAPULT_TICKS
+var _growing_trees: Dictionary = {} # map idx -> Restticks bis zur nächsten Baumstufe
 
 
 func _init(world_state: WorldState) -> void:
 	state = world_state
 	ai = DefaultAI.new()  # Standard-Gegner-KI (austauschbar über world)
+	_init_tree_growth_from_map()
 
 
 # --------------------------------------------------------------------------
@@ -146,6 +159,12 @@ func resync() -> void:
 			carriers[r] = c
 	for r in carriers.keys():
 		if not state.roads.has(r):
+			# Straße entfernt/geteilt: trägt der Träger gerade eine Ware, darf sie
+			# NICHT verschwinden — sonst bleibt bs.incoming hängen und es wird nie
+			# nachgefordert. Ware zurück ins Netz geben (läuft sofort weiter).
+			var old: Carrier = carriers[r]
+			if old.carrying != null:
+				_return_carried_good(old)
 			carriers.erase(r)
 	# Noch unbesetzte Straßen versuchen, vom HQ aus zu besetzen (kein Fallback —
 	# ohne HQ-Verbindung bleibt die Straße unbesetzt, bis sie verbunden ist).
@@ -217,6 +236,7 @@ func _init_hq_stock() -> void:
 func tick() -> void:
 	if ai_enabled and ai != null:
 		ai.think(self, 1)
+	_tick_tree_growth()
 	_tick_soldiers()
 	_tick_promotions()
 	_tick_catapults()
@@ -234,6 +254,67 @@ func _capacity_for(size: int) -> int:
 		WorldState.BQ_CASTLE: return 6
 		WorldState.BQ_HOUSE: return 4
 	return 2
+
+
+func _init_tree_growth_from_map() -> void:
+	_growing_trees.clear()
+	if state == null or state.map == null:
+		return
+	for key in state.map.tree_stage:
+		var i := int(key)
+		if state.map.objects.get(i, -1) != MapData.MO_TREE:
+			continue
+		var stage := int(state.map.tree_stage[key])
+		if stage < MapData.TREE_BIG:
+			_growing_trees[i] = float(Tuning.tree_growth_ticks(stage))
+
+
+func tree_growth_state() -> Dictionary:
+	return _growing_trees.duplicate()
+
+
+func restore_tree_growth(data: Dictionary) -> void:
+	_growing_trees.clear()
+	for key in data:
+		var i := int(key)
+		if state.map.objects.get(i, -1) == MapData.MO_TREE:
+			var stage := state.map.tree_stage_at(i % state.map.width, int(i / state.map.width))
+			if stage < MapData.TREE_BIG:
+				_growing_trees[i] = maxf(float(data[key]), 1.0)
+	for key in state.map.tree_stage:
+		var i := int(key)
+		if _growing_trees.has(i):
+			continue
+		if state.map.objects.get(i, -1) != MapData.MO_TREE:
+			continue
+		var stage := int(state.map.tree_stage[key])
+		if stage < MapData.TREE_BIG:
+			_growing_trees[i] = float(Tuning.tree_growth_ticks(stage))
+
+
+func _tick_tree_growth() -> void:
+	for key in _growing_trees.keys():
+		var i := int(key)
+		if state.map.objects.get(i, -1) != MapData.MO_TREE:
+			_growing_trees.erase(i)
+			continue
+		var x := i % state.map.width
+		var y := int(i / state.map.width)
+		var left := float(_growing_trees[i]) - 1.0
+		if left > 0.0:
+			_growing_trees[i] = left
+			continue
+		var stage := state.map.tree_stage_at(x, y)
+		if stage >= MapData.TREE_BIG:
+			_growing_trees.erase(i)
+			continue
+		stage += 1
+		state.map.set_tree_stage(x, y, stage)
+		dirty = true
+		if stage < MapData.TREE_BIG:
+			_growing_trees[i] = float(Tuning.tree_growth_ticks(stage))
+		else:
+			_growing_trees.erase(i)
 
 
 func hq_pos_of(owner: int) -> Vector2i:
@@ -424,6 +505,8 @@ func _arrive_marcher(m: Marcher) -> void:
 	if m.purpose_carrier:
 		_activate_carrier(m.car_road, m.car_end)
 		return
+	if m.purpose_return:
+		return  # Bauarbeiter ist zurück im HQ → verschwindet
 	if m.purpose_worker:
 		if bstates.has(m.work_bidx):
 			bstates[m.work_bidx].staffed = true
@@ -442,6 +525,8 @@ func _drop_marcher(m: Marcher) -> void:
 		if carriers.has(m.car_road):
 			carriers[m.car_road].dispatched = false
 		return
+	if m.purpose_return:
+		return  # Rückweg abgebrochen → einfach verschwinden
 	if m.purpose_worker:
 		if bstates.has(m.work_bidx):
 			bstates[m.work_bidx].staffed = true  # Fallback: trotzdem besetzen
@@ -567,16 +652,20 @@ func toggle_production(bld: WorldState.Building) -> bool:
 
 ## Schickt einen Arbeiter vom HQ, der das Gebäude besetzt (dann läuft Produktion).
 func _dispatch_worker(bs: BState) -> void:
-	bs.worker_sent = true
 	var hq := _hq_flag_pos()
 	var w := state.map.width
 	if hq.x < 0:
-		bs.staffed = true
+		bs.staffed = true   # keine HQ (z. B. Testkarte ohne Lager) → sofort besetzen
+		bs.worker_sent = true
 		return
 	var route := state.find_route(hq, Vector2i(bs.flag_idx % w, bs.flag_idx / w))
 	if route.size() < 2:
-		bs.staffed = true  # HQ direkt daneben / nicht verbunden → sofort besetzen
+		# Noch nicht ans HQ-Netz angeschlossen: NICHT sofort besetzen, sondern
+		# erneut versuchen, sobald eine Straße liegt — der Arbeiter soll sichtbar
+		# vom HQ kommen (statt unsichtbar aus dem Nichts zu erscheinen).
+		bs.worker_sent = false
 		return
+	bs.worker_sent = true
 	var m := Marcher.new()
 	m.purpose_worker = true
 	m.work_bidx = bs.idx
@@ -615,12 +704,64 @@ func _tick_construction(bs: BState) -> void:
 	if bs.built >= target - 0.001:
 		bs.bld.under_construction = false
 		bs.is_construction = false
+		_dispatch_builder_return(bs)  # Bauarbeiter läuft sichtbar zurück zum HQ
 		bs.staffed = false      # Bauarbeiter geht; Produktionsarbeiter kommt danach
 		bs.worker_sent = false
 		bs.delivered.clear()
 		bs.incoming.clear()
 		state.recompute_territory()
 		dirty = true
+
+
+## Bauarbeiter kehrt nach fertigem Bau von der Baustellenflagge zum HQ zurück.
+func _dispatch_builder_return(bs: BState) -> void:
+	if not bs.staffed:
+		return  # war nie wirklich da (Fallback-Besetzung) → kein Rückläufer
+	var hq := _hq_flag_pos()
+	if hq.x < 0:
+		return
+	var w := state.map.width
+	var route := state.find_route(Vector2i(bs.flag_idx % w, bs.flag_idx / w), hq)
+	if route.size() < 2:
+		return
+	var m := Marcher.new()
+	m.purpose_return = true
+	m.route = route
+	m.leg = 0
+	if not _load_leg(m):
+		return
+	marchers.append(m)
+
+
+## Bauphasen-Info für die 2-stufige Bau-Darstellung.
+## Stufe 1 = Holzbau (alle Nicht-Stein-Baustoffe), Stufe 2 = Steinbau/Fertigstellung.
+## Hat ein Gebäude keinen Stein, wird der Fortschritt gleichmäßig auf beide Stufen
+## verteilt (z. B. 2 Holz: Stufe 1 nach dem 1., Stufe 2 nach dem 2. Holz).
+func construct_stage_info(bs: BState) -> Dictionary:
+	var cost: Dictionary = bs.def.get("cost", {})
+	var wood_val := 0.0
+	var stone_val := 0.0
+	for g in cost:
+		var v := float(cost[g]) * _mat_value(g)
+		if g == Goods.STONE:
+			stone_val += v
+		else:
+			wood_val += v
+	var target := wood_val + stone_val
+	if target <= 0.0:
+		target = 1.0
+	# Stufe-1-Ende: mit Stein = reiner Holzanteil; ohne Stein = halber Bau.
+	var stage1_end := wood_val if stone_val > 0.0 else target * 0.5
+	if stage1_end <= 0.0:
+		stage1_end = target * 0.5
+	var built: float = clampf(bs.built, 0.0, target)
+	var stage := 1 if built < stage1_end - 0.0001 else 2
+	var sfrac := 0.0
+	if stage == 1:
+		sfrac = clampf(built / stage1_end, 0.0, 1.0)
+	else:
+		sfrac = clampf((built - stage1_end) / maxf(target - stage1_end, 0.001), 0.0, 1.0)
+	return { stage = stage, stage_frac = sfrac, overall = clampf(built / target, 0.0, 1.0) }
 
 
 ## Baustoff-Wert (Stein wertvoller als Holz/Bretter) für den Baufortschritt.
@@ -670,36 +811,69 @@ func _tick_work(bs: BState) -> void:
 	var resource: String = String(bs.def.get("resource", ""))
 	if output == -1 and resource != "plant_tree":
 		return  # Lager / Militär: keine Produktion
+	var gather := resource != ""   # läuft der Arbeiter zu einem Zielknoten?
 
-	if not bs.producing:
-		if bs.out_stock >= OUT_CAP:
-			return
-		if not _has_inputs(bs):
-			return
-		# Ressourcen-Gebäude: Ziel suchen, wohin der Arbeiter geht.
-		if resource != "":
-			var tgt := _resource_target(bs)
-			if tgt.x < 0:
+	match bs.wphase:
+		WK_IDLE:
+			if bs.out_stock >= OUT_CAP:
 				return
-			bs.worker_target = tgt
-		else:
-			bs.worker_target = Vector2i(-1, -1)
-		_consume_inputs(bs)
-		bs.producing = true
-		bs.consumed_mid = false
-		bs.work_timer = int(bs.def.get("work", 100))
-	else:
-		bs.work_timer -= 1
-		# Am Wendepunkt (Arbeiter am Ziel angekommen): Aktion ausführen.
-		var work := int(bs.def.get("work", 100))
-		if not bs.consumed_mid and bs.work_timer <= work / 2:
-			_do_resource_action(bs)
-			bs.consumed_mid = true
-		if bs.work_timer <= 0:
-			bs.producing = false
-			bs.worker_target = Vector2i(-1, -1)
-			if output != -1:
-				bs.out_stock += 1
+			if not _has_inputs(bs):
+				return
+			if gather:
+				var tgt := _resource_target(bs)
+				if tgt.x < 0:
+					return  # nichts zu tun (kein fällbarer Baum / Pflanzplatz)
+				bs.worker_target = tgt
+				_consume_inputs(bs)
+				bs.producing = true
+				_enter_wphase(bs, WK_OUT, _worker_walk_ticks(bs, tgt))
+			else:
+				# Stationäre Produktion (z. B. Sägewerk): kein Weg, nur Arbeitszeit.
+				bs.worker_target = Vector2i(-1, -1)
+				_consume_inputs(bs)
+				bs.producing = true
+				_enter_wphase(bs, WK_WORK, float(bs.def.get("work", 100)))
+		WK_OUT:
+			bs.ph_t -= 1.0
+			if bs.ph_t <= 0.0:
+				_enter_wphase(bs, WK_WORK, float(Tuning.work_action(bs.bld.def_id, resource)))
+		WK_WORK:
+			bs.ph_t -= 1.0
+			if bs.ph_t <= 0.0:
+				if gather:
+					_do_resource_action(bs)
+					_enter_wphase(bs, WK_BACK, _worker_walk_ticks(bs, bs.worker_target))
+				else:
+					if output != -1:
+						bs.out_stock += 1
+					_enter_wphase(bs, WK_WAIT, float(Tuning.work_wait(bs.bld.def_id, resource)))
+		WK_BACK:
+			bs.ph_t -= 1.0
+			if bs.ph_t <= 0.0:
+				if output != -1:
+					bs.out_stock += 1
+				_enter_wphase(bs, WK_WAIT, float(Tuning.work_wait(bs.bld.def_id, resource)))
+		WK_WAIT:
+			bs.ph_t -= 1.0
+			if bs.ph_t <= 0.0:
+				bs.producing = false
+				bs.worker_target = Vector2i(-1, -1)
+				bs.wphase = WK_IDLE
+
+
+## Eine Arbeiter-Phase starten (Dauer in Ticks, mind. 1).
+func _enter_wphase(bs: BState, phase: int, ticks: float) -> void:
+	bs.wphase = phase
+	bs.ph_total = maxf(ticks, 1.0)
+	bs.ph_t = bs.ph_total
+
+
+## Laufzeit für eine Strecke bei KONSTANTER Geschwindigkeit (Weltpixel/Tick).
+func _worker_walk_ticks(bs: BState, target: Vector2i) -> float:
+	var a := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
+	var b := state.map.node_world(target.x, target.y)
+	var resource := String(bs.def.get("resource", ""))
+	return maxf(a.distance_to(b) / maxf(Tuning.worker_speed(bs.bld.def_id, resource), 0.1), 1.0)
 
 
 func _has_inputs(bs: BState) -> bool:
@@ -719,7 +893,7 @@ func _consume_inputs(bs: BState) -> void:
 ## Knoten, zu dem der Arbeiter für diesen Produktionszyklus laufen muss.
 func _resource_target(bs: BState) -> Vector2i:
 	match String(bs.def.get("resource", "")):
-		"tree": return _find_object(bs.bld.pos, MapData.MO_TREE, RES_RADIUS)
+		"tree": return _find_mature_tree(bs.bld.pos, RES_RADIUS)
 		"stone": return _find_object(bs.bld.pos, MapData.MO_STONE, RES_RADIUS)
 		"ore": return _find_ore(bs.bld.pos, int(bs.def.get("mineral", -1)), ORE_RADIUS)
 		"plant_tree": return _find_plant_spot(bs.bld.pos)
@@ -733,13 +907,31 @@ func _do_resource_action(bs: BState) -> void:
 	if n.x < 0:
 		return
 	match String(bs.def.get("resource", "")):
-		"tree", "stone", "ore":
-			if state.map.map_object(n.x, n.y) >= 0:
+		"tree":
+			if state.map.map_object(n.x, n.y) == MapData.MO_TREE \
+					and state.map.tree_stage_at(n.x, n.y) == MapData.TREE_BIG:
+				state.map.clear_map_object(n.x, n.y)
+				_growing_trees.erase(state.map.idx(n.x, n.y))
+				dirty = true
+		"stone":
+			if state.map.map_object(n.x, n.y) == MapData.MO_STONE:
+				var stage := state.map.stone_stage_at(n.x, n.y)
+				if stage > MapData.STONE_SMALL:
+					state.map.set_stone_stage(n.x, n.y, stage - 1)
+				else:
+					state.map.clear_map_object(n.x, n.y)
+				dirty = true
+		"ore":
+			if state.map.map_object(n.x, n.y) == MapData.MO_ORE:
 				state.map.clear_map_object(n.x, n.y)
 				dirty = true
 		"plant_tree":
 			if not state.has_object(n.x, n.y):
+				# Förster pflanzt einen SETZLING, der über mehrere Stufen wächst.
 				state.map.set_map_object(n.x, n.y, MapData.MO_TREE)
+				state.map.set_tree_stage(n.x, n.y, MapData.TREE_SEED)
+				state.map.set_tree_type(n.x, n.y, state.map.deterministic_tree_type(n.x, n.y))
+				_growing_trees[state.map.idx(n.x, n.y)] = float(Tuning.tree_growth_ticks(MapData.TREE_SEED))
 				dirty = true
 
 
@@ -789,6 +981,22 @@ func _find_object(center: Vector2i, motype: int, radius: int) -> Vector2i:
 				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
 					continue
 				if state.map.map_object(x, y) == motype:
+					return Vector2i(x, y)
+	return Vector2i(-1, -1)
+
+
+func _find_mature_tree(center: Vector2i, radius: int) -> Vector2i:
+	for r in range(1, radius + 1):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var x := center.x + dx
+				var y := center.y + dy
+				if not state.map.in_bounds(x, y):
+					continue
+				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
+					continue
+				if state.map.map_object(x, y) == MapData.MO_TREE \
+						and state.map.tree_stage_at(x, y) == MapData.TREE_BIG:
 					return Vector2i(x, y)
 	return Vector2i(-1, -1)
 
@@ -919,6 +1127,29 @@ func _tick_carrier(c: Carrier) -> void:
 # --------------------------------------------------------------------------
 #  Waren / Wegewahl
 # --------------------------------------------------------------------------
+
+## Eine Ware, deren Träger gerade verschwindet (Straße geteilt/abgerissen), wieder
+## ins Netz geben: bevorzugt auf ein noch existierendes Straßenende, das Richtung
+## Ziel zeigt — so wird sie sofort weiterbefördert statt verloren zu gehen.
+func _return_carried_good(c: Carrier) -> void:
+	var g: Good = c.carrying
+	c.carrying = null
+	if g == null:
+		return
+	for endp in [c.road.b, c.road.a]:
+		var fi := state.map.idx(endp.x, endp.y)
+		if state.flags.has(fi) and _next_hop(fi, g.dest) >= 0:
+			_push_good(fi, g)
+			return
+	# Nicht mehr zustellbar (Ziel abgeschnitten) → zurück ins Lager und beim
+	# Zielgebäude als „nicht mehr unterwegs" verbuchen, damit neu angefordert wird.
+	if flag_to_building.has(g.dest):
+		var bs: BState = bstates.get(flag_to_building[g.dest])
+		if bs != null:
+			bs.incoming[g.type] = maxi(0, bs.incoming.get(g.type, 0) - 1)
+	if hq_flag >= 0:
+		hq_stock[g.type] = hq_stock.get(g.type, 0) + 1
+
 
 func _deliver(g: Good, flag_idx: int) -> void:
 	if flag_idx == g.dest:
@@ -1118,26 +1349,31 @@ func building_status(bld: WorldState.Building) -> String:
 
 ## Hat dieses Gebäude gerade einen sichtbaren, herumlaufenden Arbeiter?
 func has_worker(bs: BState) -> bool:
-	return bs.producing and bs.worker_target.x >= 0
+	return bs.producing and bs.worker_target.x >= 0 \
+		and (bs.wphase == WK_OUT or bs.wphase == WK_WORK or bs.wphase == WK_BACK)
 
 
-## Weltposition des Arbeiters (läuft Gebäude → Ziel → Gebäude über die Arbeitszeit).
+## Weltposition des Arbeiters über die Arbeitsphasen.
 func worker_world(bs: BState) -> Vector2:
 	var b := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
 	var t := state.map.node_world(bs.worker_target.x, bs.worker_target.y)
-	var work := float(bs.def.get("work", 100))
-	var half := maxf(work * 0.5, 1.0)
-	if float(bs.work_timer) > half:
-		# Hinweg: Gebäude → Ziel
-		var prog: float = clampf((work - bs.work_timer) / half, 0.0, 1.0)
-		return b.lerp(t, prog)
-	# Rückweg: Ziel → Gebäude
-	var prog2: float = clampf((half - bs.work_timer) / half, 0.0, 1.0)
-	return t.lerp(b, prog2)
+	var prog: float = clampf(1.0 - (bs.ph_t / maxf(bs.ph_total, 1.0)), 0.0, 1.0)
+	match bs.wphase:
+		WK_OUT:
+			return b.lerp(t, prog)
+		WK_WORK:
+			return t
+		WK_BACK:
+			return t.lerp(b, prog)
+	return b
 
 
 func worker_facing(bs: BState) -> Vector2:
 	var b := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
 	var t := state.map.node_world(bs.worker_target.x, bs.worker_target.y)
-	var half := maxf(float(bs.def.get("work", 100)) * 0.5, 1.0)
-	return (t - b) if float(bs.work_timer) > half else (b - t)
+	match bs.wphase:
+		WK_OUT, WK_WORK:
+			return t - b
+		WK_BACK:
+			return b - t
+	return Vector2.ZERO

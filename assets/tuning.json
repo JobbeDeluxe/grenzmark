@@ -1,0 +1,40 @@
+{
+  "_hinweis": "Balance-Werte fuer die Simulation. 30 Ticks = 1 Sekunde. Aenderbar ohne Code; spaeter direkt aus einem Optionsmenue ladbar.",
+  "_quellen": {
+    "s2_10ae_forester": "Forester durchschnittlich ca. 60 s; Baumwachstum 26 s + 74 s = 100 s.",
+    "s2_dng_laborwerte": "Holzfaeller/Foerster/Saegewerk unter Idealbedingungen ca. 45 s pro Einheit."
+  },
+  "worker_speed_default": 1.45,
+  "worker_speed_by_building": {
+    "woodcutter": 1.45,
+    "forester": 1.45,
+    "quarry": 1.35,
+    "fishery": 1.35
+  },
+  "work_action_ticks_default": 450,
+  "work_action_ticks_by_building": {
+    "woodcutter": 360,
+    "forester": 300,
+    "quarry": 420,
+    "fishery": 420,
+    "coalmine": 600,
+    "ironmine": 600,
+    "goldmine": 660,
+    "granitemine": 600
+  },
+  "work_wait_ticks_default": 900,
+  "work_wait_ticks_by_building": {
+    "woodcutter": 900,
+    "forester": 1020,
+    "quarry": 900,
+    "fishery": 900,
+    "coalmine": 900,
+    "ironmine": 900,
+    "goldmine": 960,
+    "granitemine": 900
+  },
+  "tree_growth_stage_ticks": [
+    780,
+    2220
+  ]
+}

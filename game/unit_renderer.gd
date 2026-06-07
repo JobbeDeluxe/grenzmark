@@ -13,6 +13,7 @@ var hover := Vector2i(-1, -1)
 var road_start := Vector2i(-1, -1)
 var preview_path: Array[Vector2i] = []
 var preview_ok := false
+var build_preview_id := ""   # im Bau-Modus: Geist dieses Gebäudes am Mauszeiger
 var _anim_time := 0.0
 
 
@@ -88,7 +89,38 @@ func _draw() -> void:
 	_draw_workers()
 	_draw_marchers()
 	_draw_house_carrier()
+	_draw_build_preview()
 	_draw_hover()
+
+
+## Geist-Vorschau des gewählten Gebäudes am Mauszeiger (Stufe 8):
+## grün = baubar / rot = nicht baubar, plus Eingangsflagge und kurzer Eingangsweg.
+func _draw_build_preview() -> void:
+	if build_preview_id == "" or not state.map.in_bounds(hover.x, hover.y):
+		return
+	var d := BuildingCatalog.get_def(build_preview_id)
+	if d.is_empty():
+		return
+	var size: int = d.get("size", WorldState.BQ_HUT)
+	var ok := state.can_place_building(hover.x, hover.y, size)
+	var p := state.map.node_world(hover.x, hover.y) + GameTheme.building_offset(build_preview_id)
+	var tint := Color(0.45, 1.0, 0.45, 0.55) if ok else Color(1.0, 0.4, 0.4, 0.55)
+	var tex := GameTheme.building_texture(build_preview_id)
+	if tex != null:
+		var sz := _bld_dims(size, build_preview_id).x * GameTheme.texture_scale()
+		draw_texture_rect(tex, Rect2(p.x - sz * 0.5, p.y - sz, sz, sz), false, tint)
+	else:
+		var base := _bld_dims(size, build_preview_id)
+		draw_rect(Rect2(p.x - base.x * 0.5, p.y - base.y, base.x, base.y), tint)
+	# Eingangsflagge am SE-Nachbarn + kurzer Eingangsweg (wie im fertigen Bau).
+	var fl := state.map.neighbor(hover.x, hover.y, Grid.SE)
+	if state.map.in_bounds(fl.x, fl.y):
+		var fp := state.map.node_world(fl.x, fl.y)
+		draw_line(fp, p, Color(1, 1, 1, 0.35), 1.5)
+		draw_circle(fp, 3.0, Color(0.95, 0.85, 0.2, 0.7))
+	# Markierung am Bauknoten: grün (geht) / rot (geht nicht).
+	var mark := Color(0.2, 0.95, 0.2, 0.9) if ok else Color(0.95, 0.2, 0.2, 0.9)
+	draw_circle(state.map.node_world(hover.x, hover.y), 5.0, mark)
 
 
 func _draw_house_carrier() -> void:
@@ -127,25 +159,50 @@ func _draw_construction() -> void:
 		var bs: Economy.BState = economy.bstates[i]
 		if not bs.is_construction:
 			continue
-		var p := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y) + GameTheme.building_offset(bs.bld.def_id)
-		var frac: float = clampf(float(bs.construct_progress) / float(Economy.BUILD_TIME), 0.0, 1.0)
-		# Das Gebäude "wächst" mit dem Baufortschritt aus dem Boden.
-		if frac > 0.02:
-			var base := _bld_dims(bs.bld.size, bs.bld.def_id)
-			var tex := GameTheme.building_texture(bs.bld.def_id)
-			if tex != null:
-				var sz := base.x * GameTheme.texture_scale()
-				var vis := sz * frac
-				var region := Rect2(0, tex.get_height() * (1.0 - frac), tex.get_width(), tex.get_height() * frac)
-				draw_texture_rect_region(tex, Rect2(p.x - sz * 0.5, p.y - vis, sz, vis), region)
+		var def_id: String = bs.bld.def_id
+		var p := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y) + GameTheme.building_offset(def_id)
+		var base := _bld_dims(bs.bld.size, def_id)
+		var sz := base.x * GameTheme.texture_scale()
+		var fin := GameTheme.building_texture(def_id)          # fertiges Gebäude (Stufe 2)
+		var stage1 := GameTheme.construction_stage1_texture(def_id)  # Holzbau (Stufe 1)
+		var info := economy.construct_stage_info(bs)
+		var overall: float = info.overall
+
+		if stage1 != null:
+			# ZWEI STUFEN: erst Holzkonstruktion, dann fertiger Bau (Stein) darüber.
+			if int(info.stage) == 1:
+				_grow_tex(stage1, p, sz, maxf(float(info.stage_frac), 0.02))
 			else:
-				var col := GameTheme.building_color(bs.bld.def_id)
-				draw_rect(Rect2(p.x - base.x * 0.5, p.y - base.y * frac, base.x, base.y * frac), col.darkened(0.1))
-		# Fortschrittsbalken + Bauarbeiter
+				draw_texture_rect(stage1, Rect2(p.x - sz * 0.5, p.y - sz, sz, sz), false)
+				if float(info.stage_frac) > 0.02:
+					_grow_finished(p, base, sz, fin, def_id, float(info.stage_frac))
+		else:
+			# EINE STUFE: alles ins fertige PNG aufteilen (wie bisher).
+			if overall > 0.02:
+				_grow_finished(p, base, sz, fin, def_id, overall)
+
+		# Fortschrittsbalken
 		var w := 22.0
 		var bar := Vector2(p.x - w * 0.5, p.y - 34)
 		draw_rect(Rect2(bar, Vector2(w, 4)), Color(0, 0, 0, 0.6))
-		draw_rect(Rect2(bar, Vector2(w * frac, 4)), Color(0.4, 0.85, 0.4))
+		draw_rect(Rect2(bar, Vector2(w * overall, 4)), Color(0.4, 0.85, 0.4))
+
+
+## Eine Textur von unten nach oben "wachsen" lassen (Baufortschritt).
+func _grow_tex(tex: Texture2D, p: Vector2, sz: float, frac: float) -> void:
+	var f: float = clampf(frac, 0.0, 1.0)
+	var vis := sz * f
+	var region := Rect2(0, tex.get_height() * (1.0 - f), tex.get_width(), tex.get_height() * f)
+	draw_texture_rect_region(tex, Rect2(p.x - sz * 0.5, p.y - vis, sz, vis), region)
+
+
+## Fertiges Gebäude wachsend zeichnen — Textur wenn vorhanden, sonst Platzhalter.
+func _grow_finished(p: Vector2, base: Vector2, sz: float, fin: Texture2D, def_id: String, frac: float) -> void:
+	if fin != null:
+		_grow_tex(fin, p, sz, frac)
+	else:
+		var col := GameTheme.building_color(def_id)
+		draw_rect(Rect2(p.x - base.x * 0.5, p.y - base.y * frac, base.x, base.y * frac), col.darkened(0.1))
 
 
 func _bld_dims(size: int, def_id := "") -> Vector2:
@@ -199,7 +256,7 @@ func _draw_marchers() -> void:
 		var facing := economy.marcher_facing(m)
 		if m.purpose_carrier:
 			_unit("carrier", economy.marcher_world(m), facing, Color(0.78, 0.62, 0.40))
-		elif m.purpose_worker:
+		elif m.purpose_worker or m.purpose_return:
 			_unit("worker", economy.marcher_world(m), facing, Color(0.40, 0.55, 0.85))
 		else:
 			# Soldaten: eigene blau, gegnerische rot (nur Platzhalter ohne Sprite).

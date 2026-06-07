@@ -21,10 +21,93 @@ Typ Ordner, Dateiname und empfohlene Größe.
 | Ordner | Dateiname | Inhalt | empf. Größe |
 |---|---|---|---|
 | `assets/terrain/`   | `water.png`, `meadow.png`, `mountain.png`, `sand.png`, `swamp.png`, `snow.png` | Terrain-Textur (kachelbar) | ~256×256 |
-| `assets/buildings/` | `<def_id>.png` | Gebäude-Sprite (Boden = untere Kante) | ~64×64 |
-| `assets/objects/`   | `tree.png`, `stone.png`, `ore.png` | Karten-Objekte | ~32×32 |
+| `assets/roads/`     | `road.png` (Standard) + optional `<terrain>.png` (`meadow.png`, `mountain.png`, `sand.png`, `swamp.png`) | Straßen-Textur, längs gekachelt | ~32×16 |
+| `assets/construction/` | `site.png` (Bauplatz), `stage1.png` (Holzbau-Stufe) + optional `<def_id>_site.png` / `<def_id>_stage1.png` | Bauplatz & Baustufe 1 | ~64×64 |
+| `assets/buildings/` | `<def_id>.png` | Gebäude-Sprite = **fertiger Bau / Baustufe 2** (Boden = untere Kante) | ~64×64 |
+| `assets/objects/`   | `tree_<typ>.png`, `tree_<typ>_seed.png`, `tree_<typ>_small.png`, `stone.png`, `stone_stage2.png`, `stone_stage3.png`, `ore.png` | Karten-Objekte, Baumtypen & Stein-Stufen | ~16×20 bis 58×44 |
 | `assets/goods/`     | `<nummer>.png` | Waren-Symbol | ~16×16 |
 | `assets/units/`     | `carrier.png`, `worker.png`, `soldier.png`, `builder.png` | Lauf-Sprite-Sheet (4×6) | Zelle ~32×32 |
+| `assets/ui/`        | `main_menu_background.png` | Hauptmenü-Hintergrund | 16:9, z. B. 1920×1080 |
+
+### Straßen-Texturen (`assets/roads/`)
+Straßen werden **segmentweise entlang der Wegrichtung gekachelt**. Lege `road.png`
+als Standard ab; pro Untergrund kannst du zusätzlich eine eigene PNG geben
+(`meadow.png`, `mountain.png`, `sand.png`, `swamp.png`) — der jeweilige Boden des
+Segments bestimmt die Textur. Fehlt alles, zeichnet das Spiel eine schlichte Linie.
+Die Textur sollte **horizontal kachelbar** sein (linke und rechte Kante passen
+aneinander); die Laufrichtung der Straße ist die **Breite** (X) der Textur.
+
+### Karten-Objekte (`assets/objects/`)
+Bäume haben jetzt **3 Typen** und **3 Wachstumsstufen**:
+- Typen: `oak`, `pine`, `birch`
+- Stufen: `seed` = Setzling, `small` = kleiner Baum, ohne Suffix = großer Baum
+- Dateinamen: `tree_oak_seed.png`, `tree_oak_small.png`, `tree_oak.png`
+  (analog `tree_pine_*` und `tree_birch_*`)
+- Legacy-Fallbacks `tree.png`, `tree_seed.png`, `tree_small.png` bleiben gültig.
+
+Die Karte wählt beim Generieren einen zufälligen Baumtyp aus dem Seed. Der Förster
+setzt beim Pflanzen deterministisch einen Typ aus der Knotenposition, damit die
+Simulation reproduzierbar bleibt. Nur **große Bäume** dürfen gefällt werden.
+
+Steine haben **3 Abbau-Stufen**:
+- `stone_stage3.png`: großer Stein, liefert 3 Arbeitsgänge
+- `stone_stage2.png`: mittlerer Stein, liefert noch 2 Arbeitsgänge
+- `stone.png`: kleiner Stein, liefert den letzten Arbeitsgang und verschwindet
+
+### Bauplatz & 2-stufiger Baufortschritt (`assets/construction/`)
+Der Bau läuft in **zwei sichtbaren Stufen**:
+1. **Bauplatz** — solange noch nichts hochgezogen ist, zeigt das Spiel `site.png`
+   (statt des gelben Platzhalter-Gerüsts). Pro Gebäude überschreibbar mit
+   `<def_id>_site.png`.
+2. **Stufe 1 = Holzkonstruktion** — `stage1.png` (oder `<def_id>_stage1.png`)
+   „wächst" zuerst aus dem Boden (der Holz-Anteil der Baukosten).
+3. **Stufe 2 = fertiger Bau** — danach wächst das normale Gebäude-Sprite aus
+   `assets/buildings/<def_id>.png` darüber (der Stein-Anteil).
+
+**Aufteilung der Stufen auf die Baukosten:**
+- Gebäude **mit Stein**: Stufe 1 entspricht dem **Holz/Bretter-Anteil**, Stufe 2
+  dem **Stein-Anteil** (z. B. 3 Bretter + 2 Stein → Stufe 1 bis alle Bretter da,
+  dann Stufe 2 mit dem Stein).
+- Gebäude **ohne Stein**: der Fortschritt wird **gleichmäßig halbiert**
+  (2 Bretter → Stufe 1 nach dem 1., Stufe 2 nach dem 2. Brett).
+- Fehlt `stage1.png`: das Spiel fällt automatisch auf **eine Stufe** zurück und
+  zieht alles aus dem fertigen Gebäude-Sprite hoch (wie bisher).
+
+### Balance-Tuning (`assets/tuning.json`)
+Zeiten und Laufgeschwindigkeiten liegen in `assets/tuning.json` und können später
+direkt aus einem Optionsmenü geändert werden. Alle Zeiten sind **Ticks**; das Spiel
+rechnet mit **30 Ticks pro Sekunde**.
+
+Wichtige Felder:
+- `worker_speed_default`: Standard-Gehgeschwindigkeit in Weltpixeln pro Tick.
+- `worker_speed_by_building`: Gehgeschwindigkeit je `def_id`, z. B.
+  `woodcutter` oder `forester`.
+- `work_action_ticks_by_building`: Dauer der Aktion am Ziel
+  (Baum fällen, Setzling pflanzen, Stein schlagen, Erz abbauen).
+- `work_wait_ticks_by_building`: Pause am Gebäude zwischen zwei Arbeitsgängen.
+- `tree_growth_stage_ticks`: `[Setzling→kleiner Baum, kleiner Baum→großer Baum]`.
+  Erst der große Baum darf vom Holzfäller gefällt werden.
+
+Die aktuellen Defaults orientieren sich an öffentlich dokumentierten Siedler-II-
+Werten: Baumwachstum 26 s + 74 s und Produktionszyklen grob im Bereich 45–60 s,
+bleiben aber bewusst einstellbar.
+
+### Untergrund-Arten (Terrain) & Bebaubarkeit
+Es gibt **6 Untergründe** (`core/terrain.gd`), angelehnt an Die Siedler 2:
+
+| Typ | Bebaubar? | Begehbar (Straße/Träger)? | Nutzung |
+|---|---|---|---|
+| **Wiese** (meadow) | ✅ ja | ✅ ja | normale Gebäude, Bäume/Steine |
+| **Berg** (mountain) | ⛏ nur Minen | ✅ ja | Erz/Granit, Minen |
+| **Sand** (sand) | ❌ nein | ✅ ja | Küsten/Wüste, nur Flaggen/Wege |
+| **Sumpf** (swamp) | ❌ nein | ✅ ja | feuchtes Tiefland, nur Wege/Flaggen |
+| **Wasser** (water) | ❌ nein | ❌ nein | Meer/Seen, blockiert (später Häfen/Schiffe) |
+| **Schnee/Fels** (snow) | ❌ nein | ❌ nein | hohe Gipfel, gesperrt |
+
+Ein Gebäude braucht, dass **alle umliegenden Dreiecke** bebaubar (Wiese) bzw. bei
+Minen Berg sind. **Sumpf und Sand sind also bewusst nicht bebaubar**, aber man
+kann Straßen darüber legen — genau wie im Original. Der Karten-Generator streut
+Sumpf in niedrige, feuchte Bereiche nahe dem Wasser.
 
 ### Gebäude-Größen & Eingang anpassen (ohne Code) — `assets/design.json`
 Die Größen sind **nicht fest im Code**, sondern in `assets/design.json` einstellbar:
@@ -61,6 +144,14 @@ Statt die JSON von Hand zu editieren, gibt es ein **DEV-Menü mit Live-Vorschau*
 So tunst du jedes Gebäude einzeln, ohne Code und ohne die Datei manuell zu öffnen.
 Jedes Gebäude ist damit individuell in Größe **und** Eingangspunkt einstellbar.
 
+### Hauptmenü-Hintergrund austauschen
+Das Hauptmenü lädt optional `assets/ui/main_menu_background.png`. Du kannst die
+Datei jederzeit durch ein eigenes PNG ersetzen; das Bild wird bildschirmfüllend
+zugeschnitten und leicht abgedunkelt, damit Titel und Buttons lesbar bleiben.
+
+Empfohlen ist ein 16:9-Bild ohne Schrift, Logos oder UI-Elemente. Fehlt die Datei,
+nutzt das Hauptmenü automatisch den einfachen grünen Fallback-Hintergrund.
+
 ### Eingang & Weg zur Flagge — PRO Gebäude definierbar (modular)
 Wie in Die Siedler sitzt die **Eingangsflagge auf dem Knoten unten rechts** vom
 Gebäude, und ein **kurzer Weg** führt von der Flagge zur **Tür**. Wohin der Weg
@@ -78,10 +169,11 @@ Richtung des Wegs ergeben sich daraus). `def_id` = Katalog-ID (siehe unten). Der
 Weg wird automatisch dorthin gezeichnet und ist der Punkt, an dem Träger die
 Waren ins Gebäude bringen.
 
-`<def_id>` = ID aus `core/building_catalog.gd`, z. B.
+`<def_id>` = ID aus `core/building_catalog.gd`:
 `hq, woodcutter, forester, sawmill, quarry, well, farm, mill, bakery, fishery,`
-`coalmine, ironmine, goldmine, smelter, mint, brewery, smithy, guardhouse,`
-`watchtower, fortress, catapult`.
+`hunter, pigfarm, slaughterhouse, coalmine, ironmine, goldmine, granitemine,`
+`smelter, mint, brewery, smithy, toolmaker, guardhouse, watchtower, fortress,`
+`catapult`.
 
 `<nummer>` der Waren (aus `core/goods.gd`):
 0 Holz · 1 Bretter · 2 Steine · 3 Getreide · 4 Mehl · 5 Wasser · 6 Brot ·
@@ -173,14 +265,32 @@ no text, no border`.
 - Wachturm/Festung: `stone medieval watchtower with battlements and flag`
 - Hauptquartier: `large stone medieval keep / castle headquarters with flag`
 
-**Bauzustand (optional, je Gebäude eine Reihe von Stufen):**
-> `same building under construction, wooden scaffolding, partially built walls,
-> stage 1 of 4 (foundation), stage 2 (walls), stage 3 (roof), stage 4 (finished)`
-Ablage später z. B. als `assets/buildings/sawmill_build1.png` … (Loader dafür
-kommt, sobald gewünscht).
+**Bauplatz & Baustufe 1 (`assets/construction/`) — wird automatisch genutzt:**
+Das Spiel zeigt beim Bauen zuerst den **Bauplatz** (`site.png`), zieht dann die
+**Holzkonstruktion** (`stage1.png`) hoch und darüber das **fertige Gebäude**
+(`assets/buildings/<def_id>.png`). Beide Bauplatz-/Holz-PNGs dürfen generisch
+sein (für alle Gebäude) oder pro Gebäude (`<def_id>_site.png` / `<def_id>_stage1.png`).
+- Bauplatz: `> medieval building site, flattened dirt plot with wooden stakes,
+  ropes and a few planks and stone blocks lying ready, no building yet`
+- Holzkonstruktion (Stufe 1): `> medieval timber-frame house skeleton, bare
+  wooden support beams and scaffolding, no walls or roof yet, viewed from front`
+  (Boden = untere Kante, gleicher Maßstab/Perspektive wie das fertige Gebäude.)
+
+**Straßen (`assets/roads/`) — horizontal kachelbar:**
+> `seamless horizontally tileable medieval dirt path / packed earth road
+> texture, top-down, trodden ground, small pebbles, left and right edges match`
+Pro Untergrund eigene Variante möglich (`mountain.png` = steiniger Pfad,
+`sand.png` = sandige Spur, `swamp.png` = matschiger Knüppeldamm/Holzbohlen).
+
+**Terrain-Texturen (`assets/terrain/`) — kachelbar, 6 Typen:**
+> `seamless tileable top-down medieval terrain texture, <NAME>` — NAME z. B.
+> `lush green meadow grass`, `deep blue water with gentle ripples`, `grey rocky
+> mountain stone`, `sandy desert ground`, `dark wet swamp marsh with mud and
+> reeds`, `white snow over rock`. (Dateinamen: `meadow/water/mountain/sand/swamp/snow.png`.)
 
 **Karten-Objekte:**
-- `single pine tree`, `cluster of grey boulders`, `rocky ore vein with metallic specks`
+- `single pine tree`, `tiny pine sapling`, `small young pine tree`,
+  `cluster of grey boulders`, `rocky ore vein with metallic specks`
 
 **Menschen / Animationen (Sprite-Sheets) — wird automatisch genutzt:**
 Ablage: `assets/units/<kind>.png` mit `kind` = `carrier`, `worker`, `soldier`,

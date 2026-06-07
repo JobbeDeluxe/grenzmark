@@ -4,9 +4,17 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
-[2026-06-05] (OFFEN) Klick-Lag: Spiel hängt ~1 Sekunde beim Linksklick
+[2026-06-05] (BEHOBEN 2026-06-07) Klick-Lag: Spiel hängt ~1 Sekunde beim Linksklick
 ------------------------------------------------------------------------
-Beobachtung:
+Behoben:
+  1) world._handle_click() ruft economy.resync() jetzt NUR noch bei echten
+     Struktur-Änderungen (Bauen/Flagge/Straße/Abriss), nicht mehr bei reiner
+     Auswahl/Angriff (_handle_click gibt `changed` zurück).
+  2) plan_road() (A*) hatte bei unerreichbarem Ziel (z. B. übers Wasser ziehen)
+     die GANZE Karte mit O(n²)-pop durchsucht → Freeze. Jetzt ROAD_SEARCH_CAP
+     (6000 Knoten) als Abbruch.
+
+Beobachtung (Original):
   Beim Bauen eines Gebäudes ODER bei einem einzelnen Linksklick stoppt für
   ca. 1 Sekunde alles (kurzer Freeze/Lag), danach läuft es normal weiter.
 
@@ -29,3 +37,37 @@ Mögliche Lösungen (für später):
     Klick; bzw. inkrementell statt komplett.
   - MapRenderer-Redraw nur für geänderten Bereich statt ganzer Karte.
   - Profilen mit dem Godot-Profiler, welcher Aufruf den Spike verursacht.
+
+
+[2026-06-07] (BEHOBEN) Bauarbeiter lief nie zur Baustelle hin (nur zurück)
+------------------------------------------------------------------------
+  Ursache: _dispatch_worker setzte staffed=true sofort, wenn beim Platzieren noch
+  keine Straße zum HQ lag (Fallback). Beim späteren Verbinden war das Gebäude schon
+  „besetzt". Fix: ohne Route wird NICHT besetzt, sondern erneut versucht (worker_sent
+  bleibt false), bis eine Straße liegt — dann marschiert der Bauarbeiter sichtbar vom HQ.
+
+
+[2026-06-07] (BEHOBEN) Material verschwand bei Flagge auf dem Lieferweg
+------------------------------------------------------------------------
+  Ursache: Flagge auf eine Straße setzen teilt/löscht die Straße; der Träger wurde in
+  resync() entfernt — samt der getragenen Ware. bs.incoming zählte sie weiter → nie
+  Nachschub. Fix: _return_carried_good() gibt die Ware wieder ins Netz (Richtung Ziel
+  weiter) bzw. zurück ins Lager + incoming dekrementiert.
+
+
+[2026-06-07] (BEHOBEN) Straßen liefen sichtbar durch große Gebäude
+------------------------------------------------------------------------
+  Ursache: Gebäude belegt logisch nur 1 Knoten, das Sprite ist aber ~2x so groß
+  (texture_scale). Straßen durften die direkt angrenzenden Knoten nutzen. Fix:
+  plan_road meidet Knoten direkt neben mittleren/großen Gebäuden (road_margin_blocked)
+  — Straßen laufen um den Fußabdruck herum (wie in S2). Kleine Hütten blocken nur
+  ihren eigenen Knoten, damit man von Holzfäller/Förster wieder sauber wegbauen kann.
+  Sprite-Größe bleibt per design.json einstellbar (texture_scale), falls weiter
+  verkleinert gewünscht.
+
+
+[2026-06-07] (OFFEN) Lager hält keine Bevölkerung (S2: Personen im HQ)
+------------------------------------------------------------------------
+  In S2 sind Träger/Arbeiter eine endliche Bevölkerung, die aus dem Lager kommt und
+  bei Gebäudeabriss/Bedarf zurückkehrt. Aktuell sind Träger/Arbeiter „unendlich".
+  Größeres Feature (Bevölkerungssystem) — bewusst noch offen, separat planen.

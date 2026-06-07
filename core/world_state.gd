@@ -418,6 +418,47 @@ func _remove_road(r: Road) -> void:
 #  Straßen — Auto-Pfad (A*) zwischen einer Flagge und einem Zielknoten
 # --------------------------------------------------------------------------
 
+const ROAD_SEARCH_CAP := 6000   # max. A*-Knoten beim Straßenplanen (Freeze-Schutz)
+
+
+## Mittlere/große Gebäude bekommen einen Straßen-Sperrkranz, damit Wege nicht
+## sichtbar durch den Sprite-Fuß laufen. Kleine Hütten blocken nur ihren Knoten.
+func _building_blocks_road_margin(b: Building) -> bool:
+	return b.size >= BQ_HOUSE or b.is_hq
+
+
+## Ist dieser freie Knoten für Straßen durch einen nahen Gebäude-Fuß blockiert?
+## Die Eingangsflagge selbst ist OBJ_FLAG (kein Gebäude) und bleibt nutzbar.
+func road_margin_blocked(x: int, y: int) -> bool:
+	for dir in Grid.DIRS:
+		var n := map.neighbor(x, y, dir)
+		if n.x < 0:
+			continue
+		var b: Building = buildings.get(map.idx(n.x, n.y), null)
+		if b != null and _building_blocks_road_margin(b):
+			return true
+	return false
+
+
+func _adjacent_to_building(x: int, y: int) -> bool:
+	return road_margin_blocked(x, y)
+
+
+func can_place_road_flag(x: int, y: int) -> bool:
+	if not map.in_bounds(x, y) or _occ(x, y) != OBJ_ROAD:
+		return false
+	for dir in Grid.DIRS:
+		var n := map.neighbor(x, y, dir)
+		if n.x >= 0 and _occ(n.x, n.y) == OBJ_FLAG:
+			return false
+	var pos := Vector2i(x, y)
+	for r in roads:
+		var k := r.nodes.find(pos)
+		if k > 0 and k < r.nodes.size() - 1:
+			return true
+	return false
+
+
 ## Plant eine Straße von [param from] (muss eine Flagge sein) nach [param to].
 ## Liefert die Knotenfolge inkl. Endpunkten, oder leeres Array wenn unmöglich.
 func plan_road(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
@@ -436,8 +477,14 @@ func plan_road(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 	var came_from := {}
 	var g := { start_i: 0.0 }
 	var open := { start_i: _heuristic(from, to) }  # idx -> f-Wert
+	var iter := 0
 
 	while not open.is_empty():
+		# Sicherung gegen Endlos-/Komplettsuche (z. B. unerreichbares Ziel über
+		# Wasser): sonst durchsucht A* die GANZE Karte → ~1 s Freeze beim Ziehen.
+		iter += 1
+		if iter > ROAD_SEARCH_CAP:
+			return empty
 		var cur_i := _pop_lowest(open)
 		var cur := Vector2i(cur_i % map.width, cur_i / map.width)
 		if cur_i == goal_i:
@@ -453,6 +500,10 @@ func plan_road(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 			if ni != goal_i:
 				# Zwischenknoten müssen begehbar UND frei sein.
 				if not node_walkable(n.x, n.y) or _occ(n.x, n.y) != OBJ_NONE:
+					continue
+				# Straßen laufen nicht direkt an mittleren/großen Gebäuden entlang,
+				# sonst kreuzen sie sichtbar den Sprite-Fußabdruck.
+				if road_margin_blocked(n.x, n.y):
 					continue
 			else:
 				# Ziel: begehbar; entweder frei (neue Flagge) oder bestehende Flagge.

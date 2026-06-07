@@ -27,6 +27,12 @@ func _initialize() -> void:
 	_test_catapult()
 	_test_promotion()
 	_test_roadsplit()
+	_test_swamp()
+	_test_tree_types_and_stone_stages()
+	_test_construction_stages()
+	_test_build_needs_connection()
+	_test_material_after_split()
+	_test_road_avoids_building()
 	_test_saveload()
 	print("== Ergebnis: %d ok, %d fehlgeschlagen ==" % [_ok, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -463,6 +469,154 @@ func _test_saveload() -> void:
 	_check(map2.map_object(5, 5) == MapData.MO_TREE, "Save/Load: Objekt erhalten")
 	_check(back.buildings.size() == 1, "Save/Load: Gebäude erhalten")
 	_check(Vector2i(back.buildings[0].pos) == Vector2i(8, 8), "Save/Load: Vector2i erhalten")
+
+
+## Sumpf wird erzeugt und ist begehbar, aber NICHT bebaubar (wie in S2).
+func _test_swamp() -> void:
+	# Eigenschaften des Terrains.
+	_check(Terrain.is_walkable(Terrain.SWAMP), "Sumpf ist begehbar (Straßen/Träger)")
+	_check(not Terrain.is_buildable(Terrain.SWAMP), "Sumpf ist NICHT bebaubar")
+	# Der Generator erzeugt tatsächlich Sumpf auf der echten Karte.
+	var map := MapGenerator.generate(96, 96, 1337)
+	var swamp := 0
+	for yy in map.height:
+		for xx in map.width:
+			if map.get_tri(Vector2i(xx, yy), Grid.TRI_R) == Terrain.SWAMP:
+				swamp += 1
+			if map.get_tri(Vector2i(xx, yy), Grid.TRI_D) == Terrain.SWAMP:
+				swamp += 1
+	_check(swamp > 0, "Karte enthält Sumpf (%d Dreiecke)" % swamp)
+	# Ein Knoten, der nur von Sumpf umgeben ist, darf kein Gebäude zulassen.
+	var sm := _flat_map(20, 20)
+	for yy in 20:
+		for xx in 20:
+			sm.set_tri(Vector2i(xx, yy), Grid.TRI_R, Terrain.SWAMP)
+			sm.set_tri(Vector2i(xx, yy), Grid.TRI_D, Terrain.SWAMP)
+	var ss := WorldState.new(sm)
+	_check(ss.compute_bq(10, 10) < WorldState.BQ_HUT, "Auf reinem Sumpf kein Gebäude")
+
+
+func _test_tree_types_and_stone_stages() -> void:
+	var map := _flat_map(20, 20)
+	map.set_map_object(5, 5, MapData.MO_TREE)
+	map.set_tree_stage(5, 5, MapData.TREE_SEED)
+	map.set_tree_type(5, 5, MapData.TREE_BIRCH)
+	_check(map.tree_stage_at(5, 5) == MapData.TREE_SEED, "Baumstufe gespeichert")
+	_check(map.tree_type_at(5, 5) == MapData.TREE_BIRCH, "Baumtyp gespeichert")
+
+	map.set_map_object(10, 10, MapData.MO_STONE)
+	map.set_stone_stage(10, 10, MapData.STONE_BIG)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var bs := Economy.BState.new()
+	bs.def = { resource = "stone" }
+	bs.worker_target = Vector2i(10, 10)
+	eco._do_resource_action(bs)
+	_check(map.map_object(10, 10) == MapData.MO_STONE
+			and map.stone_stage_at(10, 10) == MapData.STONE_MEDIUM,
+		"Großer Stein wird zu mittlerem Stein")
+	eco._do_resource_action(bs)
+	_check(map.map_object(10, 10) == MapData.MO_STONE
+			and map.stone_stage_at(10, 10) == MapData.STONE_SMALL,
+		"Mittlerer Stein wird zu kleinem Stein")
+	eco._do_resource_action(bs)
+	_check(map.map_object(10, 10) == -1, "Kleiner Stein ist nach drittem Abbau weg")
+
+
+## 2-stufiger Baufortschritt: mit Stein erst Holzstufe, dann Steinstufe;
+## ohne Stein gleichmäßig auf beide Stufen aufgeteilt.
+func _test_construction_stages() -> void:
+	var map := _flat_map(28, 28)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(12, 12, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	# Sägewerk: Bretter (Holz, Wert 3) + Stein (Wert 4) → Stufe 1 endet bei Holz=3.
+	var saw := state.place_building(12, 7, WorldState.BQ_HOUSE, false, "sawmill", 0, true)
+	var wc := state.place_building(8, 12, WorldState.BQ_HUT, false, "woodcutter", 0, true)
+	eco.resync()
+	if saw != null:
+		var bs: Economy.BState = eco.bstates[map.idx(12, 7)]
+		bs.built = 1.0
+		_check(int(eco.construct_stage_info(bs).stage) == 1,
+			"Bau mit Stein: kleiner Fortschritt ist Stufe 1 (Holz)")
+		bs.built = 5.0
+		_check(int(eco.construct_stage_info(bs).stage) == 2,
+			"Bau mit Stein: nach dem Holzanteil Stufe 2 (Stein)")
+	# Holzfäller: nur 2 Bretter, kein Stein → Stufe 1 endet bei der Hälfte (Wert 1).
+	if wc != null:
+		var bs2: Economy.BState = eco.bstates[map.idx(8, 12)]
+		bs2.built = 0.5
+		_check(int(eco.construct_stage_info(bs2).stage) == 1,
+			"Bau ohne Stein: erste Hälfte ist Stufe 1")
+		bs2.built = 1.5
+		_check(int(eco.construct_stage_info(bs2).stage) == 2,
+			"Bau ohne Stein: zweite Hälfte ist Stufe 2")
+
+
+## Ein Gebäude ohne Straße zum HQ bleibt Baustelle (kein „unsichtbarer" Arbeiter);
+## erst mit Verbindung kommt der Bauarbeiter und der Bau läuft.
+func _test_build_needs_connection() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(20, 20, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	var saw := state.place_building(20, 14, WorldState.BQ_HOUSE, false, "sawmill", 0, true)
+	eco.resync()
+	for t in 50:
+		eco.tick()
+	var bs: Economy.BState = eco.bstates[map.idx(20, 14)]
+	_check(not bs.staffed, "Ohne Straße kein Bauarbeiter (nicht sofort besetzt)")
+	_check(saw.under_construction, "Ohne Straße bleibt es Baustelle")
+	state.build_road(hq.flag_pos, saw.flag_pos)
+	eco.resync()
+	for t in 8000:
+		eco.tick()
+	_check(not saw.under_construction, "Mit Straße wird gebaut (Arbeiter kam vom HQ)")
+
+
+## Eine Flagge auf den Lieferweg setzen (Straße teilen) darf Material NICHT
+## verschwinden lassen — der Bau wird trotzdem fertig.
+func _test_material_after_split() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(20, 20, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	var saw := state.place_building(20, 14, WorldState.BQ_HOUSE, false, "sawmill", 0, true)
+	var road := state.build_road(hq.flag_pos, saw.flag_pos)
+	eco.resync()
+	for t in 80:
+		eco.tick()  # Material ist jetzt unterwegs
+	if road != null and road.nodes.size() >= 3:
+		var mid: Vector2i = road.nodes[road.nodes.size() / 2]
+		state.place_flag(mid.x, mid.y)  # Straße teilen (Träger trägt evtl. gerade)
+		eco.resync()
+	for t in 8000:
+		eco.tick()
+	_check(not saw.under_construction,
+		"Bau wird trotz Flagge auf dem Lieferweg fertig (Material nicht verloren)")
+
+
+## Straßen-Zwischenknoten dürfen nicht direkt an einem Gebäude liegen
+## (Fußabdruck wie in S2 — sonst kreuzt die Straße das Gebäude-Sprite).
+func _test_road_avoids_building() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var hq := state.place_building(20, 20, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	var hut := state.place_building(15, 15, WorldState.BQ_HUT, false, "woodcutter", 0, false)
+	_check(hut != null, "Kleines Gebäude für Straßenabstand-Test platzierbar")
+	if hut != null:
+		var hn := map.neighbor(hut.pos.x, hut.pos.y, Grid.E)
+		_check(not state.road_margin_blocked(hn.x, hn.y),
+			"Kleines Gebäude blockt umliegende Straßenknoten nicht")
+	state.place_flag(24, 26)
+	var path := state.plan_road(hq.flag_pos, Vector2i(24, 26))
+	_check(not path.is_empty(), "Straße trotz Gebäude-Umweg planbar")
+	for k in range(1, path.size() - 1):
+		_check(not state._adjacent_to_building(path[k].x, path[k].y),
+			"Kein Straßen-Zwischenknoten direkt am Gebäude")
 
 
 func _flat_map(w: int, h: int) -> MapData:

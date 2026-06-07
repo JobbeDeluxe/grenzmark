@@ -43,15 +43,72 @@ func _draw() -> void:
 		_draw_fog()
 
 
-## Bauplatz-Anzeige (Leertaste): farbiger Punkt je effektiver BauQualität.
+## Bauplatz-Anzeige (Leertaste): Symbole je effektiver Bauqualität.
 func _draw_build_spots() -> void:
 	var map := state.map
 	for y in map.height:
 		for x in map.width:
+			var p := map.node_world(x, y)
+			if state.can_place_road_flag(x, y):
+				_draw_build_spot_road_flag(p)
+				continue
+			if state._occ(x, y) == WorldState.OBJ_NONE and not state.has_object(x, y) \
+					and state.node_walkable(x, y) and state.road_margin_blocked(x, y):
+				_draw_build_spot_blocked(p)
 			var bq := state.effective_bq(x, y)
 			if bq < WorldState.BQ_FLAG:
 				continue
-			draw_circle(map.node_world(x, y), 3.0, _spot_color(bq))
+			_draw_build_spot_symbol(p, bq)
+
+
+func _draw_build_spot_symbol(p: Vector2, bq: int) -> void:
+	var col := _spot_color(bq)
+	match bq:
+		WorldState.BQ_CASTLE:
+			_draw_build_spot_box(p, Vector2(24, 18), col, 2.0)
+			_draw_build_spot_box(p, Vector2(14, 10), col.lightened(0.15), 1.2)
+		WorldState.BQ_HOUSE:
+			_draw_build_spot_box(p, Vector2(18, 14), col, 1.8)
+			draw_line(p + Vector2(-7, -7), p + Vector2(0, -13), col, 1.4, true)
+			draw_line(p + Vector2(7, -7), p + Vector2(0, -13), col, 1.4, true)
+		WorldState.BQ_HUT:
+			_draw_build_spot_box(p, Vector2(13, 10), col, 1.7)
+		WorldState.BQ_MINE:
+			var pts := PackedVector2Array([
+				p + Vector2(-10, 4), p + Vector2(10, 4), p + Vector2(0, -12), p + Vector2(-10, 4)
+			])
+			draw_polyline(pts, col, 2.0, true)
+			draw_line(p + Vector2(-4, -2), p + Vector2(4, -7), col.lightened(0.2), 1.3, true)
+		WorldState.BQ_FLAG:
+			_draw_spot_flag(p, col)
+
+
+func _draw_build_spot_box(p: Vector2, size: Vector2, col: Color, width: float) -> void:
+	var r := Rect2(p - size * 0.5, size)
+	var pts := PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end,
+		Vector2(r.position.x, r.end.y), r.position])
+	draw_polyline(pts, col, width, true)
+	draw_line(r.position, r.end, col.darkened(0.12), 1.0, true)
+	draw_line(Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y),
+		col.darkened(0.12), 1.0, true)
+
+
+func _draw_spot_flag(p: Vector2, col: Color) -> void:
+	draw_line(p + Vector2(0, -10), p + Vector2(0, 3), Color(0.18, 0.12, 0.08, 0.85), 1.4, true)
+	draw_rect(Rect2(p.x, p.y - 10, 8, 5), col)
+	draw_circle(p, 2.0, col.lightened(0.15))
+
+
+func _draw_build_spot_road_flag(p: Vector2) -> void:
+	var col := Color(0.95, 0.15, 0.18, 0.95)
+	draw_circle(p, 5.0, Color(1.0, 1.0, 1.0, 0.55))
+	_draw_spot_flag(p + Vector2(0, -2), col)
+
+
+func _draw_build_spot_blocked(p: Vector2) -> void:
+	var col := Color(1.0, 0.18, 0.12, 0.82)
+	draw_line(p + Vector2(-6, -6), p + Vector2(6, 6), col, 2.0, true)
+	draw_line(p + Vector2(6, -6), p + Vector2(-6, 6), col, 2.0, true)
 
 
 func _spot_color(bq: int) -> Color:
@@ -176,6 +233,12 @@ func _draw_objects() -> void:
 		var x := int(i) % map.width
 		var y := int(i) / map.width
 		var p := map.node_world(x, y)
+		if int(map.objects[i]) == MapData.MO_TREE:
+			_draw_tree_object(p, map.tree_stage_at(x, y), map.tree_type_at(x, y))
+			continue
+		if int(map.objects[i]) == MapData.MO_STONE:
+			_draw_stone_object(p, map.stone_stage_at(x, y))
+			continue
 		var oname: String = ["tree", "stone", "ore"][int(map.objects[i])]
 		var tex := GameTheme.object_texture(oname)
 		if tex != null:
@@ -183,27 +246,77 @@ func _draw_objects() -> void:
 			draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
 			continue
 		match map.objects[i]:
-			MapData.MO_TREE: _paint_tree(p)
+			MapData.MO_TREE: _paint_tree(p, MapData.TREE_BIG)
 			MapData.MO_STONE: _paint_stone(p)
 			MapData.MO_ORE: _paint_ore(p, map.ore_kind_at(x, y))
 
 
-func _paint_tree(p: Vector2) -> void:
-	draw_rect(Rect2(p.x - 1.5, p.y - 6, 3, 6), Color(0.40, 0.27, 0.15))
+func _draw_tree_object(p: Vector2, stage: int, typ := MapData.TREE_OAK) -> void:
+	var base := "tree_%s" % state.map.tree_type_name(typ)
+	var name := base
+	if stage == MapData.TREE_SEED:
+		name = "%s_seed" % base
+	elif stage == MapData.TREE_SMALL:
+		name = "%s_small" % base
+	var tex := GameTheme.object_texture(name)
+	if tex == null:
+		var legacy := "tree"
+		if stage == MapData.TREE_SEED:
+			legacy = "tree_seed"
+		elif stage == MapData.TREE_SMALL:
+			legacy = "tree_small"
+		tex = GameTheme.object_texture(legacy)
+	if tex != null:
+		var sz := GameTheme.object_draw_size(name)
+		if tex == GameTheme.object_texture("tree"):
+			match stage:
+				MapData.TREE_SEED: sz *= 0.35
+				MapData.TREE_SMALL: sz *= 0.62
+		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
+	else:
+		_paint_tree(p, stage)
+
+
+func _draw_stone_object(p: Vector2, stage: int) -> void:
+	var name := "stone"
+	if stage == MapData.STONE_MEDIUM:
+		name = "stone_stage2"
+	elif stage == MapData.STONE_BIG:
+		name = "stone_stage3"
+	var tex := GameTheme.object_texture(name)
+	if tex == null and name != "stone":
+		tex = GameTheme.object_texture("stone")
+	if tex != null:
+		var sz := GameTheme.object_draw_size(name)
+		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
+	else:
+		_paint_stone(p, stage)
+
+
+func _paint_tree(p: Vector2, stage := MapData.TREE_BIG) -> void:
+	var s := 1.0
+	match stage:
+		MapData.TREE_SEED: s = 0.35
+		MapData.TREE_SMALL: s = 0.62
+	draw_rect(Rect2(p.x - 1.5 * s, p.y - 6 * s, 3 * s, 6 * s), Color(0.40, 0.27, 0.15))
 	draw_colored_polygon(PackedVector2Array([
-		p + Vector2(-7, -5), p + Vector2(7, -5), p + Vector2(0, -16)]),
+		p + Vector2(-7, -5) * s, p + Vector2(7, -5) * s, p + Vector2(0, -16) * s]),
 		Color(0.16, 0.40, 0.16))
 	draw_colored_polygon(PackedVector2Array([
-		p + Vector2(-5, -11), p + Vector2(5, -11), p + Vector2(0, -20)]),
+		p + Vector2(-5, -11) * s, p + Vector2(5, -11) * s, p + Vector2(0, -20) * s]),
 		Color(0.20, 0.48, 0.20))
 
 
-func _paint_stone(p: Vector2) -> void:
+func _paint_stone(p: Vector2, stage := MapData.STONE_SMALL) -> void:
+	var s := 1.0
+	match stage:
+		MapData.STONE_MEDIUM: s = 1.35
+		MapData.STONE_BIG: s = 1.7
 	draw_colored_polygon(PackedVector2Array([
-		p + Vector2(-7, 0), p + Vector2(-3, -8), p + Vector2(4, -6),
-		p + Vector2(7, 0)]), C_STONE)
+		p + Vector2(-7, 0) * s, p + Vector2(-3, -8) * s, p + Vector2(4, -6) * s,
+		p + Vector2(7, 0) * s]), C_STONE)
 	draw_colored_polygon(PackedVector2Array([
-		p + Vector2(2, 0), p + Vector2(6, -5), p + Vector2(9, 0)]),
+		p + Vector2(2, 0) * s, p + Vector2(6, -5) * s, p + Vector2(9, 0) * s]),
 		C_STONE.darkened(0.15))
 
 
@@ -227,13 +340,40 @@ func _ore_color(kind: int) -> Color:
 
 # --- Straßen -------------------------------------------------------------
 
+const ROAD_W := 5.0        # Straßenbreite (Pixel)
+const ROAD_TILE := 16.0    # Kachellänge der Straßentextur entlang des Wegs
+
+
 func _draw_roads() -> void:
 	for r in state.roads:
-		var pts := PackedVector2Array()
-		for n in r.nodes:
-			pts.append(state.map.node_world(n.x, n.y))
-		if pts.size() >= 2:
-			draw_polyline(pts, Color(0.78, 0.64, 0.40), 4.0, true)
+		var nodes := r.nodes
+		if nodes.size() < 2:
+			continue
+		# Segmentweise: jedes Teilstück nach dem Untergrund seines Knotens texturieren.
+		for k in range(nodes.size() - 1):
+			var a := state.map.node_world(nodes[k].x, nodes[k].y)
+			var b := state.map.node_world(nodes[k + 1].x, nodes[k + 1].y)
+			var terr := state.map.get_tri(nodes[k], Grid.TRI_R)
+			var tex := GameTheme.road_texture(terr)
+			if tex != null:
+				_road_quad(a, b, tex)
+			else:
+				draw_line(a, b, Color(0.78, 0.64, 0.40), 4.0, true)
+
+
+## Ein Straßen-Segment als getiltes Textur-Quad (entlang der Wegrichtung).
+func _road_quad(a: Vector2, b: Vector2, tex: Texture2D) -> void:
+	var dir := b - a
+	var ln := dir.length()
+	if ln < 0.01:
+		return
+	var n := dir / ln
+	var perp := Vector2(-n.y, n.x) * (ROAD_W * 0.5)
+	var pts := PackedVector2Array([a - perp, b - perp, b + perp, a + perp])
+	var uw := ln / ROAD_TILE
+	var uvs := PackedVector2Array([Vector2(0, 0), Vector2(uw, 0), Vector2(uw, 1), Vector2(0, 1)])
+	var white := PackedColorArray([Color.WHITE, Color.WHITE, Color.WHITE, Color.WHITE])
+	draw_polygon(pts, white, uvs, tex)
 
 
 ## Kurzer Weg von der Eingangsflagge zur Tür des Gebäudes (wie in S2).
@@ -355,6 +495,12 @@ func _paint_mine(p: Vector2) -> void:
 
 
 func _paint_site(p: Vector2, b: WorldState.Building) -> void:
+	# Eigene Bauplatz-Grafik bevorzugen (assets/construction/site.png o. <def>_site.png).
+	var tex := GameTheme.construction_site_texture(b.def_id)
+	if tex != null:
+		var sz := _dims(b.size, b.def_id).x * GameTheme.texture_scale()
+		draw_texture_rect(tex, Rect2(p.x - sz * 0.5, p.y - sz, sz, sz), false)
+		return
 	var d := _dims(b.size, b.def_id)
 	var rect := Rect2(p.x - d.x * 0.5, p.y - d.y, d.x, d.y)
 	draw_rect(rect, Color(0.6, 0.55, 0.4, 0.35))

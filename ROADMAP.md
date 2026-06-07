@@ -58,7 +58,8 @@ Das Skelett, auf dem alles aufbaut.
 - [ ] Bessere Karten-Generierung (Inseln, Flüsse, Berg-Adern mit Erzen)
 - [x] Nebel des Krieges + Sicht umschaltbar (Taste F); Karte wird um eigene
       Gebäude/Flaggen/Straßen aufgedeckt (recompute_visibility)
-- [x] Bauplatz-Anzeige (Leertaste): blendet alle baubaren Plätze mit BQ-Farbe ein
+- [x] Bauplatz-Anzeige (Leertaste): Symboloverlay für große/mittlere/kleine
+      Bauplätze, Flaggenplätze, Straßen-Flaggen und Straßen-Sperrkränze
 
 ### Stufe 2 — Träger & Warenfluss (Herzstück von S2)
 - [x] Träger-Einheiten, einer pro Straße
@@ -84,6 +85,11 @@ Das Skelett, auf dem alles aufbaut.
       (Träger kommt, sobald sie ans Netz angeschlossen ist)
 - [ ] Tür-Träger auch für zusätzliche Lagerhäuser (sobald Mehr-Lager existiert)
 - [x] Bauanimation: Gebäude wächst sichtbar aus dem Boden (Gerüst → fertig)
+- [x] 2-stufiger Bau: Stufe 1 = Holzkonstruktion (Holzanteil), Stufe 2 = fertiger
+      Bau mit Stein. Ohne Stein gleichmäßig halbiert. Eigene PNGs einbindbar
+      (assets/construction/stage1.png), sonst Rückfall auf 1 Stufe.
+- [x] Bauplatz-Grafik (assets/construction/site.png) statt gelbem Platzhalter
+- [x] Bauarbeiter läuft nach Fertigstellung sichtbar zurück zum HQ (purpose_return)
 - [x] Bauplatz-Größenlogik wie S2: große Gebäude brauchen Abstand, Nachbar-
       bauplätze schrumpfen (effective_bq); Gebäude optisch nach Größe gestaffelt
 - [x] Kurzer Eingangsweg Flagge → Gebäudetür mitgezeichnet (fester Eingangspunkt)
@@ -95,6 +101,12 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Träger stehen mittig auf der Straße und laufen zur Ware (sichtbare Bewegung)
 - [x] Träger kommen beim Straßenbau vom HQ übers Netz angelaufen (erst dann aktiv)
 - [x] Arbeiter laufen aus dem Gebäude zur Ressource (Baum fällen, Stein, Erz, pflanzen)
+- [x] Ressource-Arbeiter mit einstellbarer Gehgeschwindigkeit, Aktionszeit und Pause (`assets/tuning.json`)
+- [x] Baumwachstum: Setzling → kleiner Baum → großer Baum; nur große Bäume sind fällbar
+- [x] Drei Baumtypen (Eiche/Kiefer/Birke) mit eigenen Setzling-/Klein-/Groß-PNGs;
+      Generator wählt seeded zufällig, Förster pflanzt deterministisch je Knoten
+- [x] Steinressourcen mit 3 Abbau-Stufen: groß → mittel → klein → weg, passend
+      zu `stone_stage3.png`, `stone_stage2.png`, `stone.png`
 - [x] Produktionsarbeiter kommt vom HQ (Gebäude produziert erst nach Ankunft)
 - [x] Bauarbeiter-Figur an der Baustelle
 - [ ] Mehrere Lagerhäuser, direkte Gebäude→Gebäude-Lieferung, Prioritäten-UI
@@ -124,6 +136,7 @@ Das Skelett, auf dem alles aufbaut.
 - [x] In-Game-UI: Bau-Menü als Kategorie-Leiste unten, Minikarte, Vorrats-Anzeige
 - [x] Bau-Menü zeigt Gebäude-Sprites als Button-Icons (wenn vorhanden)
 - [x] Hauptmenü + Spielgeschwindigkeit/Pause + Sieg/Niederlage (siehe Stufe 4)
+- [x] Austauschbares Hauptmenü-Hintergrundbild (`assets/ui/main_menu_background.png`)
 - [x] Design-Editor (Hauptmenü) für Gebäudegrößen/Position/Eingang
 - [ ] Große UI-Überarbeitung → eigene **Stufe 8** (siehe unten)
 - [ ] Spielziele/Missionen wählbar; Statistik-Bildschirme
@@ -134,10 +147,40 @@ Das Skelett, auf dem alles aufbaut.
 - [ ] Eingaben als Kommandos synchronisieren, nicht Zustände
 - [ ] Lobby, Sync-Prüfung (Checksum pro Tick)
 
+## Ist/Soll-Abgleich (Stand 2026-06-07)
+
+**Ist jetzt stabil spielbar / erledigt:**
+- Kernsimulation mit Karte, BQ/Flaggen/Straßen, HQ-Lager, Warenfluss, Bauarbeiter,
+  Trägern, Produktionsarbeitern, KI-Grundaufbau, Militär-Grundlogik und Save/Load.
+- Austauschartige Assets: Hauptmenübild, Straßen, Bauplatz, Holzbau-Stufe,
+  Baumtypen/-stufen und Stein-Stufen liegen als PNGs in `assets/`.
+- Bauhilfe per Leertaste zeigt Größen/Symbole, Flaggenplätze, Straßen-Flaggen
+  und gesperrte Straßenknoten.
+
+**Soll / auffällige Lücken vor „fühlt sich wie S2 an":**
+- **UI ist jetzt der wichtigste nächste Schritt.** Die Logik hat genug Substanz,
+  aber Bedienung/Infofenster/Ressourcenanzeige sind noch zu textlastig und nicht
+  genug wie ein Siedler-artiges Werkzeugbrett.
+- Gebäude-Infofenster fehlen noch: Produktivität, Eingänge/Ausgänge, Garnison,
+  Produktionsstopp, Abriss, Prioritäten und Lagerstatus sollten visuell steuerbar
+  werden.
+- Ressourcen-/Lagerleiste oben ist noch eine Textliste; Waren brauchen Icons,
+  Zahlen und klare Warnzustände.
+- Bauleiste hat schon Buttons/Tooltips, braucht aber ausgewählte Zustände,
+  Kategorie-Icons und ein austauschbares Skin.
+- Minikarte braucht Rahmen/Overlay-Schalter; aktuelle Anzeige ist funktional,
+  aber nicht in ein UI-System eingebettet.
+- Bevölkerung/Werkzeuge/Esel/mehrere Lagerhäuser sind weiter große Mechanik-Lücken,
+  aber nach aktuellem Stand weniger dringend als die UI-Grundüberarbeitung.
+
 ### Stufe 7 — Eigenes Gesicht
 - [x] Automatisches Laden austauschbarer Texturen aus `assets/` (sonst Platzhalter)
 - [x] Gerichtete Lauf-Animationen (6 Weg-Richtungen) per Sprite-Sheet aus assets/units/
 - [x] Terrain-Texturierung (assets/terrain/, getilte UVs) — sonst Flächenfarbe
+- [x] Straßen-Texturen (assets/roads/road.png + pro Untergrund <terrain>.png,
+      segmentweise längs gekachelt) — sonst Linie
+- [x] Alle 6 Untergründe (Wiese/Berg/Sand/Sumpf/Wasser/Schnee) im Generator
+      erzeugt & korrekt genutzt; Sumpf begehbar aber nicht bebaubar (wie S2)
 - [ ] Vollständiger eigener Grafiksatz (alle Gebäude/Waren/Einheiten)
 - [ ] Eigene Mechanik-Erweiterungen nach Geschmack
 
@@ -149,12 +192,14 @@ Icon-Buttons, Tooltips) — und das **komplett austauschbar über ein Theme/Skin
 ohne Code, **bei jeder Auflösung scharf** (9-Patch).
 
 **A) Konkrete UI-Bausteine, die schöner/neu werden müssen**
-- [ ] **Untere Bauleiste**: Icon-Buttons statt Text, Kategorie-Reiter mit Symbolen,
-      ausgewählte Kategorie/Gebäude hervorgehoben, **Tooltip** (Name, Kosten,
-      Ein-/Ausgänge) beim Überfahren.
-- [ ] **Cursor-Bauvorschau**: „Geist" des gewählten Gebäudes am Mauszeiger +
+- [ ] **Nächster UI-Schnitt (Priorität 1):** Gebäude-Infofenster + obere
+      Warenleiste zuerst, weil sie den Testfluss am stärksten verbessern.
+- [~] **Untere Bauleiste**: Icon-Buttons (vorhanden), Kategorie-Reiter,
+      **Tooltip** (Name, Kosten, Ein-/Ausgänge) beim Überfahren ✅.
+      Offen: Kategorie-Symbole, ausgewählte Kategorie/Gebäude hervorheben.
+- [x] **Cursor-Bauvorschau**: „Geist" des gewählten Gebäudes am Mauszeiger +
       BQ-Markierung am Knoten (grün=geht/rot=geht nicht), Eingangsflagge/-weg
-      schon in der Vorschau.
+      schon in der Vorschau (unit_renderer._draw_build_preview).
 - [ ] **Gebäude-Infofenster** (bei Auswahl): Gebäude-Bild, Produktivität in %,
       Eingangs-/Ausgangslager mit Waren-Icons, Garnison/Rang, Buttons
       (Produktion an/aus, Abreißen, Priorität).

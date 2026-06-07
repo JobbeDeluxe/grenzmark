@@ -48,11 +48,17 @@ static func generate(width: int, height: int, seed: int = 12345) -> MapData:
 					h = maxi(h, 18 + int(boost * 12.0))      # 18..30 → Berg/Schnee
 			map.set_height(x, y, h)
 
+	# Feuchtigkeits-Maske: niedrige, feuchte Flächen werden Sumpf (nicht bebaubar).
+	var wet := FastNoiseLite.new()
+	wet.noise_type = FastNoiseLite.TYPE_VALUE
+	wet.seed = seed + 11
+	wet.frequency = 0.05
+
 	# --- Terrain aus Höhe ableiten (pro Dreieck der Mittelwert der Ecken) ---
 	for y in height:
 		for x in width:
-			_assign_tri(map, x, y, Grid.TRI_R)
-			_assign_tri(map, x, y, Grid.TRI_D)
+			_assign_tri(map, x, y, Grid.TRI_R, wet)
+			_assign_tri(map, x, y, Grid.TRI_D, wet)
 
 	_scatter_objects(map, seed)
 	return map
@@ -91,8 +97,10 @@ static func _scatter_objects(map: MapData, seed: int) -> void:
 				var f := forest.get_noise_2d(x, y) * 0.5 + 0.5
 				if f > 0.62:
 					map.set_map_object(x, y, MapData.MO_TREE)
+					map.set_tree_type(x, y, rng.randi_range(0, MapData.TREE_TYPE_COUNT - 1))
 				elif rng.randf() < 0.03:
 					map.set_map_object(x, y, MapData.MO_STONE)
+					map.set_stone_stage(x, y, MapData.STONE_BIG)
 
 
 ## Erzsorte aus dem Adern-Rauschwert (0..1): Kohle häufig, Gold selten.
@@ -106,7 +114,7 @@ static func _ore_kind_for(v: float) -> int:
 	return MapData.ORE_GOLD
 
 
-static func _assign_tri(map: MapData, x: int, y: int, kind: int) -> void:
+static func _assign_tri(map: MapData, x: int, y: int, kind: int, wet: FastNoiseLite = null) -> void:
 	var corners := Grid.triangle_corners(x, y, kind)
 	var sum := 0.0
 	var valid := true
@@ -130,4 +138,9 @@ static func _assign_tri(map: MapData, x: int, y: int, kind: int) -> void:
 		t = Terrain.MOUNTAIN
 	else:
 		t = Terrain.SNOW
+	# Niedrige, feuchte Wiesen nahe dem Wasser werden zu Sumpf (begehbar, nicht bebaubar).
+	if t == Terrain.MEADOW and avg < 9.0 and wet != null:
+		var w: float = wet.get_noise_2d(x, y) * 0.5 + 0.5
+		if w > 0.70:
+			t = Terrain.SWAMP
 	map.set_tri(Vector2i(x, y), kind, t)

@@ -118,7 +118,8 @@ static func enemy_border_color() -> Color:
 # --- Optionale Texturen ---------------------------------------------------
 # Liegt eine passende PNG in assets/, wird sie automatisch verwendet, sonst
 # die Platzhalter-Form. So lässt sich eigene Grafik einbauen, ohne Code zu ändern.
-# (Nach dem Ablegen Godot einmal neu öffnen, damit die PNG importiert wird.)
+# PNGs werden zuerst als Godot-Resource geladen. Wenn Godot sie noch nicht
+# importiert hat, laden wir sie direkt als ImageTexture aus res://.
 
 static var _tex_cache := {}
 
@@ -129,6 +130,10 @@ static func _tex(path: String) -> Texture2D:
 	var t: Texture2D = null
 	if ResourceLoader.exists(path):
 		t = load(path)
+	elif FileAccess.file_exists(path):
+		var img := Image.new()
+		if img.load(path) == OK:
+			t = ImageTexture.create_from_image(img)
 	_tex_cache[path] = t
 	return t
 
@@ -143,10 +148,64 @@ static func object_texture(name: String) -> Texture2D:
 	return _tex("res://assets/objects/%s.png" % name)
 
 
+## Terrain-Kurzname für Datei-Pfade (water/meadow/mountain/sand/swamp/snow).
+static func terrain_name(t: int) -> String:
+	match t:
+		Terrain.WATER: return "water"
+		Terrain.MEADOW: return "meadow"
+		Terrain.MOUNTAIN: return "mountain"
+		Terrain.SAND: return "sand"
+		Terrain.SWAMP: return "swamp"
+		Terrain.SNOW: return "snow"
+	return "meadow"
+
+
+## Straßen-Textur. Pro Untergrund eigene PNG möglich:
+##   assets/roads/<terrain>.png  (z. B. roads/mountain.png), sonst roads/road.png.
+## Wird getilt entlang der Straße gezeichnet (sonst zeichnet der Renderer eine Linie).
+static func road_texture(terrain := -1) -> Texture2D:
+	if terrain >= 0:
+		var t := _tex("res://assets/roads/%s.png" % terrain_name(terrain))
+		if t != null:
+			return t
+	return _tex("res://assets/roads/road.png")
+
+
+## Bauplatz-Grafik (statt gelbem Platzhalter), gezeigt solange noch nichts steht.
+##   assets/construction/<def_id>_site.png  (pro Gebäude) sonst construction/site.png
+static func construction_site_texture(def_id := "") -> Texture2D:
+	if def_id != "":
+		var t := _tex("res://assets/construction/%s_site.png" % def_id)
+		if t != null:
+			return t
+	return _tex("res://assets/construction/site.png")
+
+
+## Baustufe-1-Grafik (Holzkonstruktion). Pro Gebäude oder generisch:
+##   assets/construction/<def_id>_stage1.png  sonst  construction/stage1.png
+## Fehlt sie, fällt der Renderer auf die fertige Gebäude-Textur zurück (1 Stufe).
+static func construction_stage1_texture(def_id := "") -> Texture2D:
+	if def_id != "":
+		var t := _tex("res://assets/construction/%s_stage1.png" % def_id)
+		if t != null:
+			return t
+	return _tex("res://assets/construction/stage1.png")
+
+
 static func object_draw_size(name: String) -> Vector2:
+	if name.begins_with("tree_") and name.ends_with("_seed"):
+		return Vector2(16, 20)
+	if name.begins_with("tree_") and name.ends_with("_small"):
+		return Vector2(30, 42)
+	if name in ["tree_oak", "tree_pine", "tree_birch"]:
+		return Vector2(42, 58)
 	match name:
+		"tree_seed": return Vector2(16, 20)
+		"tree_small": return Vector2(28, 38)
 		"tree": return Vector2(40, 54)
 		"stone": return Vector2(32, 27)
+		"stone_stage2": return Vector2(44, 34)
+		"stone_stage3": return Vector2(58, 44)
 		"ore": return Vector2(32, 27)
 	return Vector2(28, 28)
 

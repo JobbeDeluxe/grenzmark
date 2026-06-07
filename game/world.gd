@@ -299,10 +299,33 @@ func _show_category(cat: String) -> void:
 		if String(BuildingCatalog.get_def(id).get("category", "")) == cat:
 			var btn := _tbutton(_build_row, String(BuildingCatalog.get_def(id).get("name", id)),
 				_select_building.bind(id))
+			btn.tooltip_text = _building_tooltip(id)
 			var tex := GameTheme.building_texture(id)
 			if tex != null:
 				btn.icon = tex
 				btn.expand_icon = true
+
+
+## Tooltip-Text eines Gebäudes: Name, Baukosten, Ein-/Ausgänge.
+func _building_tooltip(id: String) -> String:
+	var d := BuildingCatalog.get_def(id)
+	var t := String(d.get("name", id))
+	var cost: Dictionary = d.get("cost", {})
+	if not cost.is_empty():
+		var parts := PackedStringArray()
+		for g in cost:
+			parts.append("%dx %s" % [int(cost[g]), Goods.name_of(int(g))])
+		t += "\nKosten: " + ", ".join(parts)
+	var inp: Dictionary = d.get("inputs", {})
+	if not inp.is_empty():
+		var ip := PackedStringArray()
+		for g in inp:
+			ip.append("%dx %s" % [int(inp[g]), Goods.name_of(int(g))])
+		t += "\nEingang: " + ", ".join(ip)
+	var outp: int = int(d.get("output", -1))
+	if outp >= 0:
+		t += "\nAusgang: " + Goods.name_of(outp)
+	return t
 
 
 func _make_label(layer: CanvasLayer, pos: Vector2) -> Label:
@@ -336,6 +359,8 @@ func _select_building(id: String) -> void:
 	build_def_id = id
 	road_start = Vector2i(-1, -1)
 	_clear_preview()
+	if unit_renderer != null:
+		unit_renderer.build_preview_id = id
 	_update_labels()
 
 
@@ -365,8 +390,13 @@ func _update_labels() -> void:
 				extra += " (Bau...)"
 		elif state.has_object(hover.x, hover.y):
 			match map.map_object(hover.x, hover.y):
-				MapData.MO_TREE: extra = "  [Baum]"
-				MapData.MO_STONE: extra = "  [Stein]"
+				MapData.MO_TREE:
+					var stage := map.tree_stage_at(hover.x, hover.y)
+					var sname := "Setzling" if stage == MapData.TREE_SEED else ("kleiner Baum" if stage == MapData.TREE_SMALL else "Baum")
+					var tname := map.tree_type_name(map.tree_type_at(hover.x, hover.y))
+					extra = "  [%s %s]" % [sname, tname]
+				MapData.MO_STONE:
+					extra = "  [Stein Stufe %d]" % map.stone_stage_at(hover.x, hover.y)
 				MapData.MO_ORE: extra = "  [Erz]"
 		info = "(%d,%d) %s  BQ:%s%s" % [hover.x, hover.y, Terrain.name_of(t),
 			_bq_name(state.effective_bq(hover.x, hover.y)), extra]
@@ -428,6 +458,8 @@ func _set_mode(m: int) -> void:
 	mode = m
 	road_start = Vector2i(-1, -1)
 	_clear_preview()
+	if unit_renderer != null:
+		unit_renderer.build_preview_id = ""   # Geist-Vorschau nur im Bau-Modus
 	_update_labels()
 
 
@@ -445,6 +477,9 @@ func _update_hover() -> void:
 func _handle_click() -> void:
 	if not map.in_bounds(hover.x, hover.y):
 		return
+	# Nur echte Struktur-Änderungen lösen ein (teures) resync + Neuzeichnen aus.
+	# Reine Auswahl/Angriff NICHT — das war die Ursache für den Klick-Lag.
+	var changed := false
 	match mode:
 		MODE_SELECT:
 			var clicked := state.building_at(hover)
@@ -454,17 +489,18 @@ func _handle_click() -> void:
 			else:
 				selected = clicked
 		MODE_FLAG:
-			state.place_flag(hover.x, hover.y)
+			changed = state.place_flag(hover.x, hover.y) != null
 		MODE_BUILD:
-			_place_building_here()
+			changed = _place_building_here()
 		MODE_ROAD:
-			_handle_road_click()
+			changed = _handle_road_click()
 		MODE_DELETE:
 			if selected == state.building_at(hover):
 				selected = null
-			state.remove_at(hover)
-	economy.resync()
-	renderer.queue_redraw()
+			changed = state.remove_at(hover)
+	if changed:
+		economy.resync()
+		renderer.queue_redraw()
 
 
 func _try_attack(src: WorldState.Building, tgt: WorldState.Building) -> void:
@@ -476,26 +512,27 @@ func _try_attack(src: WorldState.Building, tgt: WorldState.Building) -> void:
 	_flash("Angriff mit %d Soldaten!" % n)
 
 
-func _place_building_here() -> void:
+func _place_building_here() -> bool:
 	var d := BuildingCatalog.get_def(build_def_id)
 	if d.is_empty():
-		return
+		return false
 	var size: int = d.get("size", WorldState.BQ_HUT)
-	state.place_building(hover.x, hover.y, size, false, build_def_id,
-		int(d.get("influence", 0)), true)
+	return state.place_building(hover.x, hover.y, size, false, build_def_id,
+		int(d.get("influence", 0)), true) != null
 
 
-func _handle_road_click() -> void:
+func _handle_road_click() -> bool:
 	if not map.in_bounds(road_start.x, road_start.y):
 		if state.flag_at(hover) != null:
 			road_start = hover
 			unit_renderer.road_start = road_start
-		return
+		return false  # nur Startflagge gewählt — keine Struktur-Änderung
 	var r := state.build_road(road_start, hover)
 	if r != null:
 		road_start = r.b
 		unit_renderer.road_start = road_start
 	_clear_preview()
+	return r != null
 
 
 func _update_preview() -> void:
@@ -548,6 +585,10 @@ func _save_game() -> void:
 		heights = map.heights, terr_r = map.terr_r, terr_d = map.terr_d,
 		objects = map.objects.duplicate(),
 		ore_kind = map.ore_kind.duplicate(),
+		tree_stage = map.tree_stage.duplicate(),
+		tree_type = map.tree_type.duplicate(),
+		stone_stage = map.stone_stage.duplicate(),
+		tree_growth = economy.tree_growth_state(),
 		buildings = [], flags = [], roads = [],
 		hq_stock = economy.hq_stock.duplicate(),
 		soldiers = economy.soldiers,
@@ -587,6 +628,15 @@ func _load_game() -> void:
 	map.terr_d = data.terr_d
 	map.objects = data.objects
 	map.ore_kind = data.get("ore_kind", {})
+	var saved_tree_stage = data.get("tree_stage", {})
+	if saved_tree_stage is Dictionary:
+		map.tree_stage = saved_tree_stage
+	var saved_tree_type = data.get("tree_type", {})
+	if saved_tree_type is Dictionary:
+		map.tree_type = saved_tree_type
+	var saved_stone_stage = data.get("stone_stage", {})
+	if saved_stone_stage is Dictionary:
+		map.stone_stage = saved_stone_stage
 	state = WorldState.new(map)
 
 	for fp in data.flags:
@@ -613,6 +663,9 @@ func _load_game() -> void:
 	economy._hq_inited = true
 	economy.hq_stock = data.hq_stock
 	economy.soldiers = int(data.get("soldiers", 0))
+	var tree_growth = data.get("tree_growth", {})
+	if tree_growth is Dictionary:
+		economy.restore_tree_growth(tree_growth)
 	_wire_world()
 	_apply_ai()
 	economy.resync()

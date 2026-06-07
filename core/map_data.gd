@@ -22,6 +22,22 @@ var objects: Dictionary = {}   # idx -> MO_*
 enum { ORE_COAL, ORE_IRON, ORE_GOLD, ORE_GRANITE }
 var ore_kind: Dictionary = {}  # idx -> ORE_*
 
+# Wachstumsstufe je Baum-Knoten: 0 = Setzling, 1 = kleiner Baum, 2 = großer Baum.
+# Nur Stufe 2 darf gefällt werden. Ohne Eintrag gilt ein Baum als ausgewachsen (2),
+# damit Karten/Spielstände ohne Stufen-Info wie bisher funktionieren.
+enum { TREE_SEED, TREE_SMALL, TREE_BIG }
+var tree_stage: Dictionary = {} # idx -> 0/1/2
+
+# Baumtyp je Baum-Knoten. Wird beim Generieren/Pflanzen deterministisch gewählt.
+enum { TREE_OAK, TREE_PINE, TREE_BIRCH }
+const TREE_TYPE_COUNT := 3
+var tree_type: Dictionary = {}  # idx -> TREE_*
+
+# Stein-Stufe je Stein-Knoten: 3/2/1 Abbauten übrig. Ohne Eintrag = alter
+# Spielstand mit kleinem Stein (1 Abbau).
+enum { STONE_SMALL = 1, STONE_MEDIUM = 2, STONE_BIG = 3 }
+var stone_stage: Dictionary = {} # idx -> 1/2/3
+
 
 func _init(w: int, h: int) -> void:
 	width = w
@@ -73,12 +89,60 @@ func map_object(x: int, y: int) -> int:
 
 
 func set_map_object(x: int, y: int, obj: int) -> void:
-	objects[idx(x, y)] = obj
+	var i := idx(x, y)
+	objects[i] = obj
+	if obj != MO_ORE:
+		ore_kind.erase(i)
+	if obj != MO_TREE:
+		tree_stage.erase(i)
+		tree_type.erase(i)
+	if obj != MO_STONE:
+		stone_stage.erase(i)
 
 
 func clear_map_object(x: int, y: int) -> void:
 	objects.erase(idx(x, y))
 	ore_kind.erase(idx(x, y))
+	tree_stage.erase(idx(x, y))
+	tree_type.erase(idx(x, y))
+	stone_stage.erase(idx(x, y))
+
+
+## Baum-Wachstumsstufe (0/1/2). Ohne Eintrag = ausgewachsen (2, fällbar).
+func tree_stage_at(x: int, y: int) -> int:
+	return tree_stage.get(idx(x, y), TREE_BIG)
+
+
+func set_tree_stage(x: int, y: int, stage: int) -> void:
+	tree_stage[idx(x, y)] = clampi(stage, TREE_SEED, TREE_BIG)
+
+
+func tree_type_at(x: int, y: int) -> int:
+	return tree_type.get(idx(x, y), TREE_OAK)
+
+
+func set_tree_type(x: int, y: int, typ: int) -> void:
+	tree_type[idx(x, y)] = clampi(typ, 0, TREE_TYPE_COUNT - 1)
+
+
+func tree_type_name(typ: int) -> String:
+	match typ:
+		TREE_PINE: return "pine"
+		TREE_BIRCH: return "birch"
+	return "oak"
+
+
+func deterministic_tree_type(x: int, y: int) -> int:
+	var h := (x * 73856093) ^ (y * 19349663) ^ (width * 83492791) ^ (height * 2654435761)
+	return absi(h) % TREE_TYPE_COUNT
+
+
+func stone_stage_at(x: int, y: int) -> int:
+	return stone_stage.get(idx(x, y), STONE_SMALL)
+
+
+func set_stone_stage(x: int, y: int, stage: int) -> void:
+	stone_stage[idx(x, y)] = clampi(stage, STONE_SMALL, STONE_BIG)
 
 
 func ore_kind_at(x: int, y: int) -> int:

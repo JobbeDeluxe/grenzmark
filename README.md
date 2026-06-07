@@ -33,7 +33,8 @@ Teil des Experiments. Die Entwicklung wird teils live gestreamt auf
 
 - Godot 4.6.3 / GDScript project.
 - S2-like triangular node grid with 6-neighbor roads and build spots.
-- Procedural island maps with height, terrain, trees, stones, and ore.
+- Procedural island maps with height, terrain, tree variants, multi-stage stones,
+  and ore.
 - Road network, flags, goods transport, carriers, workers, construction sites.
 - HQ-centered economy with production chains.
 - Territory, military buildings, soldiers, attacks, capture, catapult, simple AI.
@@ -80,7 +81,7 @@ From a shell, if the Godot executable is next to the project:
 Expected result at the time of publishing:
 
 ```text
-== Ergebnis: 268 ok, 0 fehlgeschlagen ==
+== Ergebnis: 315 ok, 0 fehlgeschlagen ==
 ```
 
 ## Controls
@@ -92,7 +93,8 @@ Expected result at the time of publishing:
 | Left build UI | Select mode/building |
 | `1` / `2` / `9` / `0` | Flag / road / demolish / select |
 | Left click | Execute current action |
-| Space | Pause |
+| Space | Show build-site/flag/road helper overlay |
+| Pause | Pause |
 | `+` / `-` | Faster / slower simulation |
 | `K` | Toggle opponent AI |
 | `J` | Switch opponent AI |
@@ -112,7 +114,7 @@ Important folders:
   `swamp.png`, `snow.png`
 - `assets/buildings/<def_id>.png`: building sprites such as `hq.png`,
   `woodcutter.png`, `sawmill.png`
-- `assets/objects/`: `tree.png`, `stone.png`, `ore.png`
+- `assets/objects/`: tree variants/stages, stone stages, `ore.png`
 - `assets/goods/<number>.png`: goods icons matching `core/goods.gd`
 - `assets/units/`: optional walk sprite sheets
 
