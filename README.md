@@ -81,7 +81,7 @@ From a shell, if the Godot executable is next to the project:
 Expected result at the time of publishing:
 
 ```text
-== Ergebnis: 315 ok, 0 fehlgeschlagen ==
+== Ergebnis: 320 ok, 0 fehlgeschlagen ==
 ```
 
 ## Controls
@@ -112,6 +112,8 @@ Important folders:
 
 - `assets/terrain/`: `water.png`, `meadow.png`, `mountain.png`, `sand.png`,
   `swamp.png`, `snow.png`
+- `assets/roads/`: `road.png`, optionale Terrain-Varianten und `road_cobble.png`
+- `assets/ui/build_spots/`: austauschbare Bauhilfe-Symbole für Leertaste
 - `assets/buildings/<def_id>.png`: building sprites such as `hq.png`,
   `woodcutter.png`, `sawmill.png`
 - `assets/objects/`: tree variants/stages, stone stages, `ore.png`

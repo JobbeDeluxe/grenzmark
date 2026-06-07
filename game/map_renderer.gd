@@ -9,7 +9,9 @@ const C_WALL := Color(0.86, 0.79, 0.62)
 const C_DOOR := Color(0.28, 0.18, 0.10)
 const C_STONE := Color(0.62, 0.62, 0.66)
 const C_OUTLINE := Color(0.12, 0.10, 0.08)
-const TERRAIN_UV_WORLD_SIZE := 192.0
+const ROAD_W := 8.0        # Straßenbreite (Pixel)
+const ENTRANCE_ROAD_W := 7.0
+const ROAD_TILE := 48.0    # Kachellänge der Straßentextur entlang des Wegs
 
 var state: WorldState
 var _font: Font = ThemeDB.fallback_font
@@ -53,16 +55,24 @@ func _draw_build_spots() -> void:
 				_draw_build_spot_road_flag(p)
 				continue
 			if state._occ(x, y) == WorldState.OBJ_NONE and not state.has_object(x, y) \
-					and state.node_walkable(x, y) and state.road_margin_blocked(x, y):
+					and _node_in_player_area(x, y) and state.node_walkable(x, y) \
+					and state.road_margin_blocked(x, y):
 				_draw_build_spot_blocked(p)
-			var bq := state.effective_bq(x, y)
+			var bq := state.actual_build_spot_bq(x, y)
 			if bq < WorldState.BQ_FLAG:
 				continue
 			_draw_build_spot_symbol(p, bq)
 
 
+func _node_in_player_area(x: int, y: int) -> bool:
+	return state.territory.is_empty() or state.in_territory(x, y)
+
+
 func _draw_build_spot_symbol(p: Vector2, bq: int) -> void:
 	var col := _spot_color(bq)
+	var key := _build_spot_key(bq)
+	if _draw_build_spot_texture(p, key):
+		return
 	match bq:
 		WorldState.BQ_CASTLE:
 			_draw_build_spot_box(p, Vector2(24, 18), col, 2.0)
@@ -83,6 +93,25 @@ func _draw_build_spot_symbol(p: Vector2, bq: int) -> void:
 			_draw_spot_flag(p, col)
 
 
+func _build_spot_key(bq: int) -> String:
+	match bq:
+		WorldState.BQ_CASTLE: return "castle"
+		WorldState.BQ_HOUSE: return "house"
+		WorldState.BQ_HUT: return "hut"
+		WorldState.BQ_MINE: return "mine"
+		WorldState.BQ_FLAG: return "flag"
+	return "blocked"
+
+
+func _draw_build_spot_texture(p: Vector2, key: String) -> bool:
+	var tex := GameTheme.build_spot_texture(key)
+	if tex == null:
+		return false
+	var sz := GameTheme.build_spot_size(key)
+	draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y * 0.5, sz.x, sz.y), false)
+	return true
+
+
 func _draw_build_spot_box(p: Vector2, size: Vector2, col: Color, width: float) -> void:
 	var r := Rect2(p - size * 0.5, size)
 	var pts := PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end,
@@ -100,12 +129,16 @@ func _draw_spot_flag(p: Vector2, col: Color) -> void:
 
 
 func _draw_build_spot_road_flag(p: Vector2) -> void:
+	if _draw_build_spot_texture(p, "road_flag"):
+		return
 	var col := Color(0.95, 0.15, 0.18, 0.95)
 	draw_circle(p, 5.0, Color(1.0, 1.0, 1.0, 0.55))
 	_draw_spot_flag(p + Vector2(0, -2), col)
 
 
 func _draw_build_spot_blocked(p: Vector2) -> void:
+	if _draw_build_spot_texture(p, "blocked"):
+		return
 	var col := Color(1.0, 0.18, 0.12, 0.82)
 	draw_line(p + Vector2(-6, -6), p + Vector2(6, 6), col, 2.0, true)
 	draw_line(p + Vector2(6, -6), p + Vector2(-6, 6), col, 2.0, true)
@@ -173,7 +206,7 @@ func _draw_tri(x: int, y: int, kind: int) -> void:
 		var uvs := PackedVector2Array()
 		for c in corners:
 			var flat := Grid.node_to_world(c.x, c.y, 0)
-			uvs.append(flat / TERRAIN_UV_WORLD_SIZE)
+			uvs.append(flat / GameTheme.terrain_uv_world_size())
 		draw_polygon(pts, PackedColorArray([tint, tint, tint]), uvs, tex)
 		return
 	draw_colored_polygon(pts, col)
@@ -340,10 +373,6 @@ func _ore_color(kind: int) -> Color:
 
 # --- Straßen -------------------------------------------------------------
 
-const ROAD_W := 5.0        # Straßenbreite (Pixel)
-const ROAD_TILE := 16.0    # Kachellänge der Straßentextur entlang des Wegs
-
-
 func _draw_roads() -> void:
 	for r in state.roads:
 		var nodes := r.nodes
@@ -354,21 +383,21 @@ func _draw_roads() -> void:
 			var a := state.map.node_world(nodes[k].x, nodes[k].y)
 			var b := state.map.node_world(nodes[k + 1].x, nodes[k + 1].y)
 			var terr := state.map.get_tri(nodes[k], Grid.TRI_R)
-			var tex := GameTheme.road_texture(terr)
+			var tex := GameTheme.road_texture(terr, r.level)
 			if tex != null:
-				_road_quad(a, b, tex)
+				_road_quad(a, b, tex, ROAD_W)
 			else:
-				draw_line(a, b, Color(0.78, 0.64, 0.40), 4.0, true)
+				draw_line(a, b, Color(0.78, 0.64, 0.40), ROAD_W, true)
 
 
 ## Ein Straßen-Segment als getiltes Textur-Quad (entlang der Wegrichtung).
-func _road_quad(a: Vector2, b: Vector2, tex: Texture2D) -> void:
+func _road_quad(a: Vector2, b: Vector2, tex: Texture2D, width := ROAD_W) -> void:
 	var dir := b - a
 	var ln := dir.length()
 	if ln < 0.01:
 		return
 	var n := dir / ln
-	var perp := Vector2(-n.y, n.x) * (ROAD_W * 0.5)
+	var perp := Vector2(-n.y, n.x) * (width * 0.5)
 	var pts := PackedVector2Array([a - perp, b - perp, b + perp, a + perp])
 	var uw := ln / ROAD_TILE
 	var uvs := PackedVector2Array([Vector2(0, 0), Vector2(uw, 0), Vector2(uw, 1), Vector2(0, 1)])
@@ -382,7 +411,12 @@ func _draw_entrance_paths() -> void:
 		var b: WorldState.Building = state.buildings[i]
 		var flag := state.map.node_world(b.flag_pos.x, b.flag_pos.y)
 		var door := state.map.node_world(b.pos.x, b.pos.y) + GameTheme.entrance_offset(b.def_id)
-		draw_line(flag, door, Color(0.74, 0.60, 0.36), 4.0, true)
+		var terr := state.map.get_tri(b.flag_pos, Grid.TRI_R)
+		var tex := GameTheme.road_texture(terr, WorldState.ROAD_DIRT)
+		if tex != null:
+			_road_quad(flag, door, tex, ENTRANCE_ROAD_W)
+		else:
+			draw_line(flag, door, Color(0.74, 0.60, 0.36), ENTRANCE_ROAD_W, true)
 
 
 # --- Gebäude (scharfe Platzhalter-Grafik oder Textur) --------------------

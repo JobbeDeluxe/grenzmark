@@ -603,7 +603,10 @@ func _save_game() -> void:
 	for i in state.flags:
 		data.flags.append(state.flags[i].pos)
 	for r in state.roads:
-		data.roads.append({ nodes = r.nodes.duplicate(), a = r.a, b = r.b })
+		data.roads.append({
+			nodes = r.nodes.duplicate(), a = r.a, b = r.b,
+			traffic = r.traffic, level = r.level,
+		})
 
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f != null:
@@ -655,6 +658,8 @@ func _load_game() -> void:
 	for rd in data.roads:
 		var rr := WorldState.Road.new()
 		rr.nodes = rd.nodes; rr.a = rd.a; rr.b = rd.b
+		rr.traffic = int(rd.get("traffic", 0))
+		rr.level = int(rd.get("level", WorldState.ROAD_DIRT))
 		for k in range(1, rr.nodes.size() - 1):
 			state.occupied[map.idx(rr.nodes[k].x, rr.nodes[k].y)] = WorldState.OBJ_ROAD
 		state.roads.append(rr)

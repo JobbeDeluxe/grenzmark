@@ -3,6 +3,8 @@ extends SceneTree
 ## Headless-Selbsttests der Kern-Logik. Aufruf:
 ##   Godot_v4.6.3-stable_win64_console.exe --headless --path . --script res://tests/test_core.gd
 
+const Tuning := preload("res://core/tuning.gd")
+
 var _ok := 0
 var _fail := 0
 
@@ -27,6 +29,8 @@ func _initialize() -> void:
 	_test_catapult()
 	_test_promotion()
 	_test_roadsplit()
+	_test_build_help_respects_territory()
+	_test_road_traffic_upgrade()
 	_test_swamp()
 	_test_tree_types_and_stone_stages()
 	_test_construction_stages()
@@ -433,6 +437,35 @@ func _test_roadsplit() -> void:
 	_check(f != null, "Flagge auf Straße setzbar (teilt)")
 	_check(state.roads.size() == before + 1, "Straße in zwei geteilt")
 	_check(state.flag_at(midn) != null, "Neue Flagge liegt auf dem Knoten")
+
+
+func _test_build_help_respects_territory() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	_check(hq != null, "HQ für Bauhilfe-Test platzierbar")
+	_check(state.actual_build_spot_bq(10, 16) >= WorldState.BQ_FLAG,
+		"Bauhilfe zeigt Plätze im eigenen Gebiet")
+	_check(state.actual_build_spot_bq(35, 35) == WorldState.BQ_NOTHING,
+		"Bauhilfe zeigt keine fremden Kartenplätze außerhalb des Gebiets")
+
+
+func _test_road_traffic_upgrade() -> void:
+	var map := _flat_map(30, 30)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(12, 12, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	var hqflag: Vector2i = state.buildings[map.idx(12, 12)].flag_pos
+	var road := state.build_road(hqflag, Vector2i(12, 18))
+	_check(road != null, "Straße für Last-Ausbau baubar")
+	if road == null:
+		return
+	for i in Tuning.road_upgrade_deliveries():
+		eco._mark_road_delivery(road)
+	_check(road.level == WorldState.ROAD_COBBLE, "Straße wird nach Warenlast gepflastert")
 
 
 func _test_saveload() -> void:

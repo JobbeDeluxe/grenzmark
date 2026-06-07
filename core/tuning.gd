@@ -80,3 +80,8 @@ static func tree_growth_ticks(stage: int) -> int:
 		if v is float or v is int:
 			return int(v)
 	return legacy
+
+
+## Warenlieferungen über eine Straße bis zur sichtbaren Pflaster-Stufe.
+static func road_upgrade_deliveries() -> int:
+	return maxi(1, int(_num("road_upgrade_deliveries", 24)))

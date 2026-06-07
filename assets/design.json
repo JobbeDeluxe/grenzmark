@@ -33,6 +33,16 @@
     ]
   },
   "hq_scale": 1.35,
+  "terrain_uv_world_size": 96.0,
+  "build_spot_sizes": {
+    "castle": [34, 34],
+    "house": [30, 30],
+    "hut": [26, 26],
+    "mine": [30, 30],
+    "flag": [24, 24],
+    "road_flag": [24, 24],
+    "blocked": [24, 24]
+  },
   "sizes": {
     "castle": [
       50.0,

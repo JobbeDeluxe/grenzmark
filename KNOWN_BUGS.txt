@@ -66,6 +66,16 @@ Mögliche Lösungen (für später):
   verkleinert gewünscht.
 
 
+[2026-06-07] (BEHOBEN) Bauhilfe zeigte baubare Punkte außerhalb des Gebiets
+------------------------------------------------------------------------
+  Ursache: MapRenderer nutzte `effective_bq()` direkt. Das ist nur die technische
+  Gelände-/Abstandsqualität und kennt weder Territorium noch echte Flaggenregeln.
+  Fix: neue Core-Abfrage `actual_build_spot_bq()` nutzt dieselben Regeln wie
+  `can_place_building()` / `can_place_flag()`. Leertaste zeigt dadurch nur noch
+  wirklich baubare Plätze im eigenen Gebiet; Straßen-Flaggen prüfen ebenfalls
+  das Gebiet.
+
+
 [2026-06-07] (OFFEN) Lager hält keine Bevölkerung (S2: Personen im HQ)
 ------------------------------------------------------------------------
   In S2 sind Träger/Arbeiter eine endliche Bevölkerung, die aus dem Lager kommt und

@@ -7,6 +7,7 @@ extends RefCounted
 
 # BauQualität eines Knotens (aufsteigend). MINE ist ein Sonderfall daneben.
 enum { BQ_NOTHING, BQ_FLAG, BQ_HUT, BQ_HOUSE, BQ_CASTLE, BQ_MINE }
+enum { ROAD_DIRT, ROAD_COBBLE }
 
 # Was auf einem Knoten liegt.
 enum { OBJ_NONE, OBJ_FLAG, OBJ_BUILDING, OBJ_ROAD }
@@ -38,6 +39,8 @@ class Road:
 	var nodes: Array[Vector2i] = []   # Knotenfolge inkl. beider Flaggen
 	var a: Vector2i
 	var b: Vector2i
+	var traffic := 0
+	var level := ROAD_DIRT
 	func length() -> int:
 		return nodes.size() - 1
 
@@ -297,10 +300,14 @@ func _split_road_with_flag(x: int, y: int) -> Flag:
 	r1.nodes = road.nodes.slice(0, k + 1)
 	r1.a = road.a
 	r1.b = pos
+	r1.traffic = road.traffic / 2
+	r1.level = road.level
 	var r2 := Road.new()
 	r2.nodes = road.nodes.slice(k)
 	r2.a = pos
 	r2.b = road.b
+	r2.traffic = road.traffic / 2
+	r2.level = road.level
 
 	roads.erase(road)
 	roads.append(r1)
@@ -341,6 +348,21 @@ func can_place_building(x: int, y: int, size: int) -> bool:
 	if ebq == BQ_MINE or ebq < size:
 		return false
 	return true
+
+
+## Bauhilfe: was ist an diesem Knoten wirklich baubar, inkl. Gebiet/Flaggenregel?
+func actual_build_spot_bq(x: int, y: int) -> int:
+	if can_place_building(x, y, BQ_CASTLE):
+		return BQ_CASTLE
+	if can_place_building(x, y, BQ_HOUSE):
+		return BQ_HOUSE
+	if can_place_building(x, y, BQ_HUT):
+		return BQ_HUT
+	if can_place_building(x, y, BQ_MINE):
+		return BQ_MINE
+	if can_place_flag(x, y):
+		return BQ_FLAG
+	return BQ_NOTHING
 
 
 func place_building(x: int, y: int, size: int, is_hq := false,
@@ -446,6 +468,8 @@ func _adjacent_to_building(x: int, y: int) -> bool:
 
 func can_place_road_flag(x: int, y: int) -> bool:
 	if not map.in_bounds(x, y) or _occ(x, y) != OBJ_ROAD:
+		return false
+	if not territory.is_empty() and not in_territory(x, y):
 		return false
 	for dir in Grid.DIRS:
 		var n := map.neighbor(x, y, dir)

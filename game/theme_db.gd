@@ -128,12 +128,12 @@ static func _tex(path: String) -> Texture2D:
 	if _tex_cache.has(path):
 		return _tex_cache[path]
 	var t: Texture2D = null
-	if ResourceLoader.exists(path):
-		t = load(path)
-	elif FileAccess.file_exists(path):
+	if FileAccess.file_exists(path) and path.to_lower().ends_with(".png"):
 		var img := Image.new()
-		if img.load(path) == OK:
+		if img.load(ProjectSettings.globalize_path(path)) == OK:
 			t = ImageTexture.create_from_image(img)
+	elif ResourceLoader.exists(path):
+		t = load(path)
 	_tex_cache[path] = t
 	return t
 
@@ -163,12 +163,25 @@ static func terrain_name(t: int) -> String:
 ## Straßen-Textur. Pro Untergrund eigene PNG möglich:
 ##   assets/roads/<terrain>.png  (z. B. roads/mountain.png), sonst roads/road.png.
 ## Wird getilt entlang der Straße gezeichnet (sonst zeichnet der Renderer eine Linie).
-static func road_texture(terrain := -1) -> Texture2D:
+static func road_texture(terrain := -1, level := WorldState.ROAD_DIRT) -> Texture2D:
+	if level >= WorldState.ROAD_COBBLE:
+		if terrain >= 0:
+			var ct := _tex("res://assets/roads/%s_cobble.png" % terrain_name(terrain))
+			if ct != null:
+				return ct
+		var cobble := _tex("res://assets/roads/road_cobble.png")
+		if cobble != null:
+			return cobble
 	if terrain >= 0:
 		var t := _tex("res://assets/roads/%s.png" % terrain_name(terrain))
 		if t != null:
 			return t
 	return _tex("res://assets/roads/road.png")
+
+
+## assets/ui/build_spots/<kind>.png (castle/house/hut/mine/flag/road_flag/blocked).
+static func build_spot_texture(kind: String) -> Texture2D:
+	return _tex("res://assets/ui/build_spots/%s.png" % kind)
 
 
 ## Bauplatz-Grafik (statt gelbem Platzhalter), gezeigt solange noch nichts steht.
@@ -208,6 +221,19 @@ static func object_draw_size(name: String) -> Vector2:
 		"stone_stage3": return Vector2(58, 44)
 		"ore": return Vector2(32, 27)
 	return Vector2(28, 28)
+
+
+static func build_spot_size(kind: String) -> Vector2:
+	var per: Dictionary = _design().get("build_spot_sizes", {})
+	if per.has(kind):
+		return _to_vec(per[kind])
+	match kind:
+		"castle": return Vector2(34, 34)
+		"house": return Vector2(30, 30)
+		"hut": return Vector2(26, 26)
+		"mine": return Vector2(30, 30)
+		"flag", "road_flag", "blocked": return Vector2(24, 24)
+	return Vector2(26, 26)
 
 
 ## assets/goods/<good_id>.png      (good_id = Goods-Enumwert, z. B. 0.png = Holz)
@@ -296,6 +322,11 @@ static func hq_scale() -> float:
 ## Ziel-Höhe einer Einheiten-Figur in Pixeln (skaliert große Sprite-Sheets herunter).
 static func unit_size() -> float:
 	return float(_design().get("unit_size", 18.0))
+
+
+## Weltpixel pro Terrain-Texturkachel. Kleinerer Wert = feinere Bodentextur.
+static func terrain_uv_world_size() -> float:
+	return float(_design().get("terrain_uv_world_size", 96.0))
 
 
 ## Bild-Versatz eines Gebäudes gegenüber seinem Knoten (Position zur Flagge).

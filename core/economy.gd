@@ -1107,6 +1107,7 @@ func _tick_carrier(c: Carrier) -> void:
 		C_CARRYING:
 			var deliver_end := 1 if c.pickup_end == 0 else 0
 			_deliver(c.carrying, _end_flag(c.road, deliver_end))
+			_mark_road_delivery(c.road)
 			c.carrying = null
 			# Rückweg nutzen: gibt es hier eine Ware zur Gegenseite, gleich mitnehmen.
 			var here := _end_flag(c.road, deliver_end)
@@ -1122,6 +1123,13 @@ func _tick_carrier(c: Carrier) -> void:
 		C_RETURN:
 			c.state = C_IDLE
 			c.target = mid
+
+
+func _mark_road_delivery(road: WorldState.Road) -> void:
+	road.traffic += 1
+	if road.level < WorldState.ROAD_COBBLE and road.traffic >= Tuning.road_upgrade_deliveries():
+		road.level = WorldState.ROAD_COBBLE
+		dirty = true
 
 
 # --------------------------------------------------------------------------

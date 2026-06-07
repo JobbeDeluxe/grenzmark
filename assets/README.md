@@ -21,13 +21,13 @@ Typ Ordner, Dateiname und empfohlene Größe.
 | Ordner | Dateiname | Inhalt | empf. Größe |
 |---|---|---|---|
 | `assets/terrain/`   | `water.png`, `meadow.png`, `mountain.png`, `sand.png`, `swamp.png`, `snow.png` | Terrain-Textur (kachelbar) | ~256×256 |
-| `assets/roads/`     | `road.png` (Standard) + optional `<terrain>.png` (`meadow.png`, `mountain.png`, `sand.png`, `swamp.png`) | Straßen-Textur, längs gekachelt | ~32×16 |
+| `assets/roads/`     | `road.png`, optional `<terrain>.png`, `road_cobble.png` | Straßen-Textur, längs gekachelt | ~192×48 |
 | `assets/construction/` | `site.png` (Bauplatz), `stage1.png` (Holzbau-Stufe) + optional `<def_id>_site.png` / `<def_id>_stage1.png` | Bauplatz & Baustufe 1 | ~64×64 |
 | `assets/buildings/` | `<def_id>.png` | Gebäude-Sprite = **fertiger Bau / Baustufe 2** (Boden = untere Kante) | ~64×64 |
 | `assets/objects/`   | `tree_<typ>.png`, `tree_<typ>_seed.png`, `tree_<typ>_small.png`, `stone.png`, `stone_stage2.png`, `stone_stage3.png`, `ore.png` | Karten-Objekte, Baumtypen & Stein-Stufen | ~16×20 bis 58×44 |
 | `assets/goods/`     | `<nummer>.png` | Waren-Symbol | ~16×16 |
 | `assets/units/`     | `carrier.png`, `worker.png`, `soldier.png`, `builder.png` | Lauf-Sprite-Sheet (4×6) | Zelle ~32×32 |
-| `assets/ui/`        | `main_menu_background.png` | Hauptmenü-Hintergrund | 16:9, z. B. 1920×1080 |
+| `assets/ui/`        | `main_menu_background.png`, `build_spots/*.png` | Hauptmenü-Hintergrund & Bauhilfe-Symbole | 16:9 / ~64×64 |
 
 ### Straßen-Texturen (`assets/roads/`)
 Straßen werden **segmentweise entlang der Wegrichtung gekachelt**. Lege `road.png`
@@ -36,6 +36,22 @@ als Standard ab; pro Untergrund kannst du zusätzlich eine eigene PNG geben
 Segments bestimmt die Textur. Fehlt alles, zeichnet das Spiel eine schlichte Linie.
 Die Textur sollte **horizontal kachelbar** sein (linke und rechte Kante passen
 aneinander); die Laufrichtung der Straße ist die **Breite** (X) der Textur.
+
+Straßen sammeln Transportlast. Nach `road_upgrade_deliveries` Lieferungen aus
+`assets/tuning.json` wechselt die Straße sichtbar auf `road_cobble.png`
+(Kopfsteinpflaster). Das ist die sichtbare Vorstufe für spätere Esel-/Lastwege.
+Auch der kurze Eingangspfad von Gebäudeflagge zur Tür nutzt jetzt die Straßentextur.
+
+### Bauhilfe-Symbole (`assets/ui/build_spots/`)
+Die Leertaste zeigt nur noch Plätze, die **tatsächlich im eigenen Gebiet gebaut**
+werden können. Die Symbole sind austauschbare PNGs:
+- `castle.png`, `house.png`, `hut.png`, `mine.png`
+- `flag.png` für reine Flaggenplätze
+- `road_flag.png` für Flagge-auf-Straße / Straßen teilen
+- `blocked.png` für gesperrte Straßenknoten im eigenen Gebiet
+
+Die Größe lässt sich in `assets/design.json` unter `build_spot_sizes` je Symbol
+einstellen.
 
 ### Karten-Objekte (`assets/objects/`)
 Bäume haben jetzt **3 Typen** und **3 Wachstumsstufen**:
@@ -87,10 +103,17 @@ Wichtige Felder:
 - `work_wait_ticks_by_building`: Pause am Gebäude zwischen zwei Arbeitsgängen.
 - `tree_growth_stage_ticks`: `[Setzling→kleiner Baum, kleiner Baum→großer Baum]`.
   Erst der große Baum darf vom Holzfäller gefällt werden.
+- `road_upgrade_deliveries`: Anzahl Warenlieferungen über eine Straße bis zum
+  sichtbaren Kopfsteinpflaster.
 
 Die aktuellen Defaults orientieren sich an öffentlich dokumentierten Siedler-II-
 Werten: Baumwachstum 26 s + 74 s und Produktionszyklen grob im Bereich 45–60 s,
 bleiben aber bewusst einstellbar.
+
+### Terrain-Skalierung (`assets/design.json`)
+`terrain_uv_world_size` bestimmt, wie groß eine Bodentextur in Weltpixeln gekachelt
+wird. Kleinerer Wert = feinere Wiederholung. Standard aktuell: `96.0`, damit Gras
+und Details im Verhältnis zu Gebäuden kleiner wirken.
 
 ### Untergrund-Arten (Terrain) & Bebaubarkeit
 Es gibt **6 Untergründe** (`core/terrain.gd`), angelehnt an Die Siedler 2:

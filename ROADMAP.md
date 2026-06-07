@@ -58,8 +58,9 @@ Das Skelett, auf dem alles aufbaut.
 - [ ] Bessere Karten-Generierung (Inseln, Flüsse, Berg-Adern mit Erzen)
 - [x] Nebel des Krieges + Sicht umschaltbar (Taste F); Karte wird um eigene
       Gebäude/Flaggen/Straßen aufgedeckt (recompute_visibility)
-- [x] Bauplatz-Anzeige (Leertaste): Symboloverlay für große/mittlere/kleine
-      Bauplätze, Flaggenplätze, Straßen-Flaggen und Straßen-Sperrkränze
+- [x] Bauplatz-Anzeige (Leertaste): zeigt nur tatsächlich im eigenen Gebiet
+      baubare Plätze; austauschbare PNG-Symbole für Baugrößen, Flaggen,
+      Straßen-Flaggen und Straßen-Sperrkränze
 
 ### Stufe 2 — Träger & Warenfluss (Herzstück von S2)
 - [x] Träger-Einheiten, einer pro Straße
@@ -100,6 +101,8 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Bedarf/Angebot über das HQ (Gebäude fordern Eingänge an, liefern Ausgänge)
 - [x] Träger stehen mittig auf der Straße und laufen zur Ware (sichtbare Bewegung)
 - [x] Träger kommen beim Straßenbau vom HQ übers Netz angelaufen (erst dann aktiv)
+- [x] Straßen sammeln Transportlast und wechseln sichtbar auf Kopfsteinpflaster
+      (`road_cobble.png`); Esel-/Mehrträger-Mechanik bleibt als nächster Ausbau offen
 - [x] Arbeiter laufen aus dem Gebäude zur Ressource (Baum fällen, Stein, Erz, pflanzen)
 - [x] Ressource-Arbeiter mit einstellbarer Gehgeschwindigkeit, Aktionszeit und Pause (`assets/tuning.json`)
 - [x] Baumwachstum: Setzling → kleiner Baum → großer Baum; nur große Bäume sind fällbar
@@ -137,6 +140,7 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Bau-Menü zeigt Gebäude-Sprites als Button-Icons (wenn vorhanden)
 - [x] Hauptmenü + Spielgeschwindigkeit/Pause + Sieg/Niederlage (siehe Stufe 4)
 - [x] Austauschbares Hauptmenü-Hintergrundbild (`assets/ui/main_menu_background.png`)
+- [x] Austauschbare Bauhilfe-Symbole (`assets/ui/build_spots/*.png`)
 - [x] Design-Editor (Hauptmenü) für Gebäudegrößen/Position/Eingang
 - [ ] Große UI-Überarbeitung → eigene **Stufe 8** (siehe unten)
 - [ ] Spielziele/Missionen wählbar; Statistik-Bildschirme
@@ -153,9 +157,11 @@ Das Skelett, auf dem alles aufbaut.
 - Kernsimulation mit Karte, BQ/Flaggen/Straßen, HQ-Lager, Warenfluss, Bauarbeiter,
   Trägern, Produktionsarbeitern, KI-Grundaufbau, Militär-Grundlogik und Save/Load.
 - Austauschartige Assets: Hauptmenübild, Straßen, Bauplatz, Holzbau-Stufe,
-  Baumtypen/-stufen und Stein-Stufen liegen als PNGs in `assets/`.
+  Baumtypen/-stufen, Stein-Stufen und Bauhilfe-Symbole liegen als PNGs in `assets/`.
 - Bauhilfe per Leertaste zeigt Größen/Symbole, Flaggenplätze, Straßen-Flaggen
-  und gesperrte Straßenknoten.
+  und gesperrte Straßenknoten nur dort, wo sie im eigenen Gebiet relevant sind.
+- Straßen haben Trampelpfad-Texturen, texturierte Gebäudeeingänge und eine
+  sichtbare Kopfsteinpflaster-Stufe nach Transportlast.
 
 **Soll / auffällige Lücken vor „fühlt sich wie S2 an":**
 - **UI ist jetzt der wichtigste nächste Schritt.** Die Logik hat genug Substanz,
@@ -172,6 +178,8 @@ Das Skelett, auf dem alles aufbaut.
   aber nicht in ein UI-System eingebettet.
 - Bevölkerung/Werkzeuge/Esel/mehrere Lagerhäuser sind weiter große Mechanik-Lücken,
   aber nach aktuellem Stand weniger dringend als die UI-Grundüberarbeitung.
+- Esel/Lastwege: Kopfsteinpflaster ist jetzt sichtbar vorbereitet, aber ein
+  eigener Eselträger, Stall/Zucht und mehrere Träger pro Straße fehlen noch.
 
 ### Stufe 7 — Eigenes Gesicht
 - [x] Automatisches Laden austauschbarer Texturen aus `assets/` (sonst Platzhalter)
@@ -179,6 +187,8 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Terrain-Texturierung (assets/terrain/, getilte UVs) — sonst Flächenfarbe
 - [x] Straßen-Texturen (assets/roads/road.png + pro Untergrund <terrain>.png,
       segmentweise längs gekachelt) — sonst Linie
+- [x] Gebäudeeingangsweg nutzt Straßentextur statt nackter Linie; Terrain-Kachelung
+      per `terrain_uv_world_size` feiner skaliert
 - [x] Alle 6 Untergründe (Wiese/Berg/Sand/Sumpf/Wasser/Schnee) im Generator
       erzeugt & korrekt genutzt; Sumpf begehbar aber nicht bebaubar (wie S2)
 - [ ] Vollständiger eigener Grafiksatz (alle Gebäude/Waren/Einheiten)
