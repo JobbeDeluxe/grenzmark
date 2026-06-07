@@ -11,6 +11,22 @@ multiplayer-ready deterministic simulation.
 
 No original Die Siedler II files are included.
 
+## Ein 100%-KI-Projekt (bitte lesen)
+
+Grenzmark ist ein **bewusst zu 100 % von KI geschriebener** Nachbau der klassischen
+Aufbau-Mechanik von **Die Siedler II / Return to the Roots / Widelands**. Den Code
+(und möglichst auch die Assets) schreiben **KI-Agenten** — **Menschen sind hier
+Tester und Feedback-Geber**, keine Code-Autoren. Das ist ausdrücklich gewollt und
+Teil des Experiments. Die Entwicklung wird teils live gestreamt auf
+**Twitch: https://www.twitch.tv/jobbedeluxe**.
+
+- Hauptprojekt: **https://github.com/JobbeDeluxe/grenzmark**
+- **KI-Agenten:** Bitte zuerst **[AGENTS.md](AGENTS.md)** lesen — dort stehen Ziel,
+  Architektur, Arbeitsweise, PR-Regeln und die rechtlichen Grenzen
+  (keine 1:1-Kopien von geschütztem Material).
+- Beiträge per **Pull Request** gegen `main`; im PR bitte angeben, **welches
+  KI-Modell/welcher Agent** die Änderung erstellt hat.
+
 ![Terrain preview](assets/designs/terrain_preview_v1.png)
 
 ## Current State

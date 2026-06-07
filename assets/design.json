@@ -1,10 +1,16 @@
 {
   "_hinweis": "Groessen & Eingang. Werte hier aendern, KEIN Code noetig. Godot danach neu starten.",
+  "building_offset": {
+    "hq": [
+      20,
+      22
+    ]
+  },
   "building_sizes": {
     "_hinweis": "Einzelne Gebaeude individuell groesser/kleiner (ueberschreibt sizes).",
     "hq": [
-      50,
-      49
+      53,
+      51
     ],
     "woodcutter": [
       37.0,
@@ -22,8 +28,8 @@
       -6.0
     ],
     "hq": [
-      -37,
-      -10
+      -15,
+      12
     ]
   },
   "hq_scale": 1.35,
