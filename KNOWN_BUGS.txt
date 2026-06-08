@@ -4,6 +4,20 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-08] (OFFEN) Ressourcen-Icons oben viel zu groß
+------------------------------------------------------------------------
+  Nach dem UI-Umbau sind die Waren-/Ressourcen-Icons in der oberen Leiste noch
+  deutlich zu groß. Gewünscht ist ungefähr ein Zehntel der aktuellen Wirkung:
+  sehr kleine, dezente Status-Icons statt dominanter UI-Kacheln.
+
+
+[2026-06-08] (OFFEN) Karte verschieben geht nicht mehr
+------------------------------------------------------------------------
+  Seit dem UI-Umbau lässt sich die Karte nicht mehr wie gewohnt verschieben.
+  Verdacht: ein neues Control/Panel fängt Maus-Input ab oder liegt zu großflächig
+  über der Spielwelt. Kamera-Drag mit rechter/mittlerer Maustaste prüfen.
+
+
 [2026-06-08] (BEHOBEN) Neue Baum-PNGs oben abgeschnitten
 ------------------------------------------------------------------------
   Ursache: Die Einzel-PNGs der neuen Baumtypen waren aus dem vollständigen
