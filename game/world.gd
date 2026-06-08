@@ -184,6 +184,8 @@ func _process(delta: float) -> void:
 	if economy.dirty:
 		economy.dirty = false
 		renderer.queue_redraw()
+		if unit_renderer != null:
+			unit_renderer.invalidate_occluders()  # Bau/Abriss/Baum → Occluder neu
 	if _stock_label != null:
 		_update_stock()
 	if _sel_label != null:
@@ -536,7 +538,7 @@ func _handle_road_click() -> bool:
 
 
 func _update_preview() -> void:
-	var path := state.plan_road(road_start, hover)
+	var path := state.plan_road(road_start, hover, true)  # fast mode für Vorschau
 	unit_renderer.preview_path = path
 	unit_renderer.preview_ok = not path.is_empty()
 
@@ -588,6 +590,7 @@ func _save_game() -> void:
 		tree_stage = map.tree_stage.duplicate(),
 		tree_type = map.tree_type.duplicate(),
 		stone_stage = map.stone_stage.duplicate(),
+		stone_hits_left = map.stone_hits_left.duplicate(),
 		tree_growth = economy.tree_growth_state(),
 		buildings = [], flags = [], roads = [],
 		hq_stock = economy.hq_stock.duplicate(),
@@ -640,6 +643,9 @@ func _load_game() -> void:
 	var saved_stone_stage = data.get("stone_stage", {})
 	if saved_stone_stage is Dictionary:
 		map.stone_stage = saved_stone_stage
+	var saved_stone_hits_left = data.get("stone_hits_left", {})
+	if saved_stone_hits_left is Dictionary:
+		map.stone_hits_left = saved_stone_hits_left
 	state = WorldState.new(map)
 
 	for fp in data.flags:

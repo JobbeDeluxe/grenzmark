@@ -60,7 +60,7 @@ Das Skelett, auf dem alles aufbaut.
       Gebäude/Flaggen/Straßen aufgedeckt (recompute_visibility)
 - [x] Bauplatz-Anzeige (Leertaste): zeigt nur tatsächlich im eigenen Gebiet
       baubare Plätze; austauschbare PNG-Symbole für Baugrößen, Flaggen,
-      Straßen-Flaggen und Straßen-Sperrkränze
+      und Straßen-Flaggen
 
 ### Stufe 2 — Träger & Warenfluss (Herzstück von S2)
 - [x] Träger-Einheiten, einer pro Straße
@@ -108,6 +108,8 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Baumwachstum: Setzling → kleiner Baum → großer Baum; nur große Bäume sind fällbar
 - [x] Drei Baumtypen (Eiche/Kiefer/Birke) mit eigenen Setzling-/Klein-/Groß-PNGs;
       Generator wählt seeded zufällig, Förster pflanzt deterministisch je Knoten
+- [x] Baum-PNGs aus vollständigem Sheet neu extrahiert; Kronen haben oben
+      transparente Reserve und werden mit korrektem Seitenverhältnis skaliert
 - [x] Steinressourcen mit 3 Abbau-Stufen: groß → mittel → klein → weg, passend
       zu `stone_stage3.png`, `stone_stage2.png`, `stone.png`
 - [x] Produktionsarbeiter kommt vom HQ (Gebäude produziert erst nach Ankunft)
@@ -141,6 +143,9 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Hauptmenü + Spielgeschwindigkeit/Pause + Sieg/Niederlage (siehe Stufe 4)
 - [x] Austauschbares Hauptmenü-Hintergrundbild (`assets/ui/main_menu_background.png`)
 - [x] Austauschbare Bauhilfe-Symbole (`assets/ui/build_spots/*.png`)
+- [x] Bauhilfe-Symbole optisch überarbeitet: KI-generierte, schwebende
+      3D-artige Gebäude-/Flaggenmarker mit Schatten; normale Flagge und
+      Straßen-Flagge nutzen denselben Look, nicht baubare Knoten bleiben leer
 - [x] Design-Editor (Hauptmenü) für Gebäudegrößen/Position/Eingang
 - [ ] Große UI-Überarbeitung → eigene **Stufe 8** (siehe unten)
 - [ ] Spielziele/Missionen wählbar; Statistik-Bildschirme
@@ -158,8 +163,8 @@ Das Skelett, auf dem alles aufbaut.
   Trägern, Produktionsarbeitern, KI-Grundaufbau, Militär-Grundlogik und Save/Load.
 - Austauschartige Assets: Hauptmenübild, Straßen, Bauplatz, Holzbau-Stufe,
   Baumtypen/-stufen, Stein-Stufen und Bauhilfe-Symbole liegen als PNGs in `assets/`.
-- Bauhilfe per Leertaste zeigt Größen/Symbole, Flaggenplätze, Straßen-Flaggen
-  und gesperrte Straßenknoten nur dort, wo sie im eigenen Gebiet relevant sind.
+- Bauhilfe per Leertaste zeigt Größen/Symbole, Flaggenplätze und Straßen-Flaggen
+  nur dort, wo wirklich gebaut werden kann; nicht baubare Knoten bleiben leer.
 - Straßen haben Trampelpfad-Texturen, texturierte Gebäudeeingänge und eine
   sichtbare Kopfsteinpflaster-Stufe nach Transportlast.
 
@@ -191,6 +196,8 @@ Das Skelett, auf dem alles aufbaut.
       per `terrain_uv_world_size` feiner skaliert
 - [x] Alle 6 Untergründe (Wiese/Berg/Sand/Sumpf/Wasser/Schnee) im Generator
       erzeugt & korrekt genutzt; Sumpf begehbar aber nicht bebaubar (wie S2)
+- [x] Spielerfarben als eigene PNGs vorbereitet: Flaggen für Spieler 0-5,
+      rote Gegner-Gebäudevarianten (`*_1.png`) für alle blau markierten Gebäude
 - [ ] Vollständiger eigener Grafiksatz (alle Gebäude/Waren/Einheiten)
 - [ ] Eigene Mechanik-Erweiterungen nach Geschmack
 
@@ -241,10 +248,42 @@ ohne Code, **bei jeder Auflösung scharf** (9-Patch).
   (skaliert die UI mit dem Fenster); 9-Patch hält Rahmen scharf.
 - Tooltips/Infofenster lesen aus `core/` (read-only), kein Logik-Code im UI.
 
+### Stufe 9 — Zusatz & Feinschliff
+- [ ] Träger-Warteverhalten optisch verbessern: wartende Träger stehen aktuell
+      direkt auf der Straße; später Warte-/Idle-Animationen oder kleine
+      Ausweichpositionen neben der Straße einbauen, damit Wege lebendiger und
+      weniger blockiert wirken.
+
 ## Lücken zu den Originalen (Die Siedler 2 / RTTR) — Prüfliste
 
 Was die Vorbilder haben und uns noch fehlt, grob nach Wichtigkeit. Das ist die
 Arbeitsliste, bis das Spiel „vollständig" ist (Ton/Musik kommt ganz zuletzt).
+
+### Aktueller Abgleich mit Die Siedler 2 (Stand 2026-06-08)
+
+**Schon nah dran / bewusst als Fundament erreicht:**
+- [x] S2-artiges 6-Nachbar-Knotengitter mit zwei Terrain-Dreiecken pro Knoten.
+- [x] Flaggen-/Straßennetz, Träger, Waren an Flaggen, HQ-Lager und Gebäudeproduktion.
+- [x] Bauplatzgrößen, Territorium durch Militärgebäude, Grenzsteine, Nebel,
+      Baumwachstum, Förster/Holzfäller und mehrstufige Ressourcen.
+
+**Noch deutlich anders als S2 / RTTR:**
+- [ ] Straßenbau ist komfortabler Auto-Pfad per A* statt klassischem Segmentbau.
+      Das ist gewollt, aber ein optionaler Klassikmodus wäre ein S2-näherer Ausbau.
+- [ ] Warenfluss ist noch zu HQ-zentriert; S2 verteilt zwischen Lagern und
+      Gebäuden mit Prioritäten, Einzugsgebieten und lokalen Lagerbeständen.
+- [ ] Bevölkerung, Berufe und Werkzeuge begrenzen die Wirtschaft noch nicht echt.
+      Träger/Arbeiter entstehen aktuell funktional, statt als Personen aus Lagern.
+- [ ] Gebäude-UI fehlt als S2-Hauptgefühl: Produktivität, Warenpuffer,
+      Produktion stoppen, Abriss, Militärbesatzung, Prioritäten und Warnungen.
+- [ ] Geologe, Späher/Pionier, Planierer und Aussichtsturm/Spähturm fehlen als
+      Spezialisten für Erkundung, Bergbau-Info, Gebietsausbau und Höhenarbeit.
+- [ ] Militär ist spielbar, aber noch vereinfacht: Rangstufen/Grafiken,
+      wählbare Angreiferzahl, Schilde/mehr Waffen und Belagerungsdetails fehlen.
+- [ ] Wasser/See-Spiel fehlt komplett: Hafen, Werft, Boote/Schiffe, Expedition
+      und Inselbesiedlung.
+- [ ] Spielfluss ist noch Sandbox-lastig: Missionen, Kampagne, Kartenwahl,
+      Statistikseiten, Nachrichtenlog und Optionsmenüs fehlen.
 
 **Bevölkerung & Träger (Kern, hoch):**
 - [ ] Echte Einwohnerzahl: Träger/Arbeiter sind begrenzte Bevölkerung aus dem HQ

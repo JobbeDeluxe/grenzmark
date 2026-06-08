@@ -36,6 +36,8 @@ func _initialize() -> void:
 	_test_construction_stages()
 	_test_build_needs_connection()
 	_test_material_after_split()
+	_test_material_after_road_removed()
+	_test_carrier_kept_on_split()
 	_test_road_avoids_building()
 	_test_saveload()
 	print("== Ergebnis: %d ok, %d fehlgeschlagen ==" % [_ok, _fail])
@@ -544,16 +546,21 @@ func _test_tree_types_and_stone_stages() -> void:
 	var bs := Economy.BState.new()
 	bs.def = { resource = "stone" }
 	bs.worker_target = Vector2i(10, 10)
+	# BIG braucht 3 Schläge → MEDIUM
 	eco._do_resource_action(bs)
-	_check(map.map_object(10, 10) == MapData.MO_STONE
-			and map.stone_stage_at(10, 10) == MapData.STONE_MEDIUM,
-		"Großer Stein wird zu mittlerem Stein")
+	_check(map.stone_stage_at(10, 10) == MapData.STONE_BIG, "BIG nach 1. Schlag noch BIG")
 	eco._do_resource_action(bs)
-	_check(map.map_object(10, 10) == MapData.MO_STONE
-			and map.stone_stage_at(10, 10) == MapData.STONE_SMALL,
-		"Mittlerer Stein wird zu kleinem Stein")
+	_check(map.stone_stage_at(10, 10) == MapData.STONE_BIG, "BIG nach 2. Schlag noch BIG")
 	eco._do_resource_action(bs)
-	_check(map.map_object(10, 10) == -1, "Kleiner Stein ist nach drittem Abbau weg")
+	_check(map.stone_stage_at(10, 10) == MapData.STONE_MEDIUM, "BIG → MEDIUM nach 3 Schlägen")
+	# MEDIUM braucht 2 Schläge → SMALL
+	eco._do_resource_action(bs)
+	_check(map.stone_stage_at(10, 10) == MapData.STONE_MEDIUM, "MEDIUM nach 1. Schlag noch MEDIUM")
+	eco._do_resource_action(bs)
+	_check(map.stone_stage_at(10, 10) == MapData.STONE_SMALL, "MEDIUM → SMALL nach 2 Schlägen")
+	# SMALL verschwindet nach 1 Schlag
+	eco._do_resource_action(bs)
+	_check(map.map_object(10, 10) == -1, "SMALL nach 1 Schlag weg")
 
 
 ## 2-stufiger Baufortschritt: mit Stein erst Holzstufe, dann Steinstufe;
@@ -630,6 +637,66 @@ func _test_material_after_split() -> void:
 		eco.tick()
 	_check(not saw.under_construction,
 		"Bau wird trotz Flagge auf dem Lieferweg fertig (Material nicht verloren)")
+
+
+## Wird die Lieferstraße abgerissen, während Material unterwegs ist, darf das
+## `incoming`-Konto nicht hängen bleiben: nach erneutem Anschluss muss das Gebäude
+## fehlendes Material NACHFORDERN und fertig werden (kein dauerhafter Stillstand).
+func _test_material_after_road_removed() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(20, 20, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	var saw := state.place_building(20, 14, WorldState.BQ_HOUSE, false, "sawmill", 0, true)
+	var road := state.build_road(hq.flag_pos, saw.flag_pos)
+	eco.resync()
+	for t in 80:
+		eco.tick()  # Material ist jetzt unterwegs (incoming > 0)
+	if road != null:
+		state.remove_at(road.nodes[road.nodes.size() / 2])  # Straße mittendrin abreißen
+		eco.resync()
+	for t in 200:
+		eco.tick()  # verirrte Träger / Flaggen-Waren räumen sich auf
+	# Neu verbinden — jetzt muss erneut angefordert und fertiggebaut werden.
+	state.build_road(hq.flag_pos, saw.flag_pos)
+	eco.resync()
+	for t in 8000:
+		eco.tick()
+	_check(not saw.under_construction,
+		"Bau wird nach Straßenabriss + Neuanschluss fertig (Material nachgefordert)")
+
+
+## Beim Teilen einer Straße soll der bestehende Träger auf seinem Teilstück aktiv
+## WEITERarbeiten (nicht beide Teilstücke komplett neu vom HQ besetzt werden).
+func _test_carrier_kept_on_split() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(20, 20, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	state.place_flag(20, 14)
+	var road := state.build_road(hq.flag_pos, Vector2i(20, 14))
+	eco.resync()
+	for t in 1500:
+		eco.tick()  # Träger marschiert vom HQ an und wird aktiv
+	var active_before := 0
+	for r in eco.carriers:
+		if eco.carriers[r].active:
+			active_before += 1
+	_check(active_before >= 1, "Träger ist vor der Teilung aktiv")
+	if road != null and road.nodes.size() >= 3:
+		var mid: Vector2i = road.nodes[road.nodes.size() / 2]
+		state.place_flag(mid.x, mid.y)
+		eco.resync()
+	# Direkt nach dem resync (vor gestaffeltem Nachbesetzen) muss schon ein Träger
+	# aktiv sein — der erhaltene auf seinem Teilstück.
+	var active_after := 0
+	for r in eco.carriers:
+		if eco.carriers[r].active:
+			active_after += 1
+	_check(eco.carriers.size() == 2, "Nach Teilung zwei Straßen-Träger")
+	_check(active_after >= 1, "Bestehender Träger bleibt nach Teilung sofort aktiv")
 
 
 ## Straßen-Zwischenknoten dürfen nicht direkt an einem Gebäude liegen

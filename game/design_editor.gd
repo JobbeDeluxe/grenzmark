@@ -23,6 +23,11 @@ var _usize: SpinBox
 var _compare: OptionButton
 var _status: Label
 
+var _bspot_key := "flag"
+var _bspot_ox: SpinBox
+var _bspot_oy: SpinBox
+var _bspot_select: OptionButton
+
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -65,12 +70,17 @@ func _ready() -> void:
 	_preview.size = Vector2(vp.x - 210 - 280, vp.y - 110)
 	add_child(_preview)
 
-	# Regler rechts
+	# Regler rechts — in einem ScrollContainer, damit alle Regler (inkl. Bauplatz-
+	# Offset + Speichern-Button) auch bei vielen Einträgen erreichbar bleiben.
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(vp.x - 268, 48)
+	scroll.size = Vector2(260, vp.y - 96)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(scroll)
 	var panel := VBoxContainer.new()
-	panel.position = Vector2(vp.x - 260, 48)
 	panel.custom_minimum_size = Vector2(244, 0)
 	panel.add_theme_constant_override("separation", 6)
-	add_child(panel)
+	scroll.add_child(panel)
 
 	_w = _spin(panel, "Breite", 6, 160, 1)
 	_h = _spin(panel, "Höhe", 6, 160, 1)
@@ -97,6 +107,31 @@ func _ready() -> void:
 	hint.text = "Bild-Versatz verschiebt das Sprite zur Flagge.\nEingang = wo der Weg endet (Tür)."
 	hint.add_theme_font_size_override("font_size", 11)
 	panel.add_child(hint)
+
+	# --- Bauplatz-Icon-Offset (Leertaste-Menü) ---
+	var sep := HSeparator.new()
+	panel.add_child(sep)
+	var bspot_title := Label.new()
+	bspot_title.text = "Bauplatz-Icon Offset (Leertaste)"
+	bspot_title.add_theme_font_size_override("font_size", 13)
+	panel.add_child(bspot_title)
+
+	_bspot_select = OptionButton.new()
+	_bspot_select.custom_minimum_size = Vector2(244, 0)
+	for bt in ["flag", "road_flag", "castle", "house", "hut", "mine", "blocked"]:
+		_bspot_select.add_item(bt)
+	_bspot_select.item_selected.connect(_on_bspot_pick)
+	panel.add_child(_bspot_select)
+
+	_bspot_ox = _spin_bspot(panel, "Offset X", -60, 60, 1)
+	_bspot_oy = _spin_bspot(panel, "Offset Y", -60, 60, 1)
+
+	var bspot_hint := Label.new()
+	bspot_hint.text = "Verschiebt das Icon vom Knotenmittelpunkt."
+	bspot_hint.add_theme_font_size_override("font_size", 10)
+	panel.add_child(bspot_hint)
+
+	_select_bspot("flag")
 
 	var save := Button.new()
 	save.text = "💾 Speichern"
@@ -141,6 +176,7 @@ func _on_pick(idx: int) -> void:
 
 
 func _select(id: String) -> void:
+	_preview.bspot_key = ""  # zurück zur Gebäude-Vorschau
 	current_id = id
 	_preview.current_id = id
 	_loading = true
@@ -169,6 +205,44 @@ func _on_value_changed(_v: float) -> void:
 	cfg["texture_scale"] = _tscale.value / 10.0
 	cfg["unit_size"] = _usize.value
 	GameTheme._cfg = cfg          # Vorschau liest live aus GameTheme
+	GameTheme._cfg_loaded = true
+	_preview.queue_redraw()
+	_status.text = "ungespeichert *"
+
+
+func _spin_bspot(box: VBoxContainer, label: String, lo: float, hi: float, step: float) -> SpinBox:
+	var l := Label.new()
+	l.text = label
+	box.add_child(l)
+	var s := SpinBox.new()
+	s.min_value = lo; s.max_value = hi; s.step = step
+	s.custom_minimum_size = Vector2(244, 0)
+	s.value_changed.connect(_on_bspot_changed)
+	box.add_child(s)
+	return s
+
+
+func _on_bspot_pick(idx: int) -> void:
+	var types := ["flag", "road_flag", "castle", "house", "hut", "mine", "blocked"]
+	_select_bspot(types[idx])
+
+
+func _select_bspot(key: String) -> void:
+	_bspot_key = key
+	_preview.bspot_key = key
+	_loading = true
+	var off := GameTheme.build_spot_offset(key)
+	_bspot_ox.value = off.x
+	_bspot_oy.value = off.y
+	_loading = false
+	_preview.queue_redraw()
+
+
+func _on_bspot_changed(_v: float) -> void:
+	if _loading:
+		return
+	cfg.get_or_add("build_spot_offsets", {})[_bspot_key] = [int(_bspot_ox.value), int(_bspot_oy.value)]
+	GameTheme._cfg = cfg
 	GameTheme._cfg_loaded = true
 	_preview.queue_redraw()
 	_status.text = "ungespeichert *"

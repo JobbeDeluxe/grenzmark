@@ -53,6 +53,10 @@ var occupied: Dictionary = {}   # idx -> OBJ_*
 var territory: Dictionary = {}        # idx -> true (Spieler-Gebiet, Besitzer 0)
 var enemy_territory: Dictionary = {}  # idx -> true (Gegner-Gebiet, Besitzer 1)
 var explored: Dictionary = {}         # idx -> true (vom Spieler aufgedeckt)
+# Straßenteilungen seit dem letzten resync: { old, r1, r2, k } — damit die Economy
+# den vorhandenen Träger auf seinem Teilstück WEITERführen kann (statt ihn zu
+# verwerfen und beide Teilstücke neu vom HQ zu besetzen). k = Teilungs-Knotenindex.
+var splits: Array = []
 
 var _next_flag_id := 1
 
@@ -312,6 +316,8 @@ func _split_road_with_flag(x: int, y: int) -> Flag:
 	roads.erase(road)
 	roads.append(r1)
 	roads.append(r2)
+	# Teilung vormerken, damit die Economy den bestehenden Träger erhalten kann.
+	splits.append({ old = road, r1 = r1, r2 = r2, k = k })
 	return f
 
 
@@ -485,7 +491,8 @@ func can_place_road_flag(x: int, y: int) -> bool:
 
 ## Plant eine Straße von [param from] (muss eine Flagge sein) nach [param to].
 ## Liefert die Knotenfolge inkl. Endpunkten, oder leeres Array wenn unmöglich.
-func plan_road(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+## [param fast] = true für schnelle Vorschau: gewichtetes A* (suboptimal, aber viel schneller).
+func plan_road(from: Vector2i, to: Vector2i, fast := false) -> Array[Vector2i]:
 	var empty: Array[Vector2i] = []
 	if flag_at(from) == null:
 		return empty
@@ -497,17 +504,19 @@ func plan_road(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 	# A* über begehbare, freie Knoten. Endpunkt darf eine Flagge sein.
 	var start_i := map.idx(from.x, from.y)
 	var goal_i := map.idx(to.x, to.y)
+	var h_weight := 3.5 if fast else 1.0   # gewichtetes A* für schnelle Vorschau
+	var cap := 1200 if fast else ROAD_SEARCH_CAP
 
 	var came_from := {}
 	var g := { start_i: 0.0 }
-	var open := { start_i: _heuristic(from, to) }  # idx -> f-Wert
+	var open := { start_i: _heuristic(from, to) * h_weight }  # idx -> f-Wert
 	var iter := 0
 
 	while not open.is_empty():
 		# Sicherung gegen Endlos-/Komplettsuche (z. B. unerreichbares Ziel über
 		# Wasser): sonst durchsucht A* die GANZE Karte → ~1 s Freeze beim Ziehen.
 		iter += 1
-		if iter > ROAD_SEARCH_CAP:
+		if iter > cap:
 			return empty
 		var cur_i := _pop_lowest(open)
 		var cur := Vector2i(cur_i % map.width, cur_i / map.width)
@@ -540,7 +549,7 @@ func plan_road(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 			if tentative < float(g.get(ni, INF)):
 				came_from[ni] = cur_i
 				g[ni] = tentative
-				open[ni] = tentative + _heuristic(n, to)
+				open[ni] = tentative + _heuristic(n, to) * h_weight
 
 	return empty
 

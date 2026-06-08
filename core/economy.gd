@@ -77,6 +77,21 @@ class Marcher:
 	var purpose_return := false
 
 
+## Verirrter Träger: seine Straße wurde abgerissen/geteilt, während er eine Ware
+## trug. Statt zu verschwinden, läuft er frei herum (erst unkontrolliert, dann
+## gezielt zur nächsten erreichbaren Flagge) und legt die Ware dort wieder ins Netz.
+class Stray:
+	extends RefCounted
+	var good: Good = null
+	var pos := Vector2.ZERO       # aktuelle Weltposition
+	var facing := Vector2.ZERO
+	var heading := Vector2.RIGHT  # Laufrichtung beim Wandern
+	var wander_ticks := 0         # Restticks unkontrolliertes Wandern
+	var change_dir_in := 0        # Ticks bis zur nächsten Richtungsänderung
+	var target_flag := -1         # -1 = noch wandernd; sonst gezielt diese Flagge anlaufen
+	var give_up := 0              # Notfall-Countdown bis zur Zwangs-Ablage (kein Warenverlust)
+
+
 # Tür↔Flagge-Träger (nur HQ/Lager): bewegt Waren zwischen Gebäudetür und Flagge.
 enum { H_IDLE, H_OUT, H_FETCH, H_IN, H_RETURN }
 
@@ -130,6 +145,7 @@ var soldiers := 0                    # ausgebildete Soldaten im HQ (Reserve)
 var ai_enabled := true               # Gegner-KI aktiv? (zum Testen abschaltbar)
 var ai: AIBase = null                # austauschbare Gegner-KI (Plugin)
 var marchers: Array[Marcher] = []    # gerade marschierende Soldaten
+var strays: Array[Stray] = []        # verirrte Träger (Straße weg, tragen noch Ware)
 var _inc_soldiers: Dictionary = {}   # building idx -> unterwegs befindliche Soldaten
 var dirty := false                   # Karte muss neu gezeichnet werden
 
@@ -138,11 +154,13 @@ var _soldier_timer := SOLDIER_TICKS
 var _promo_timer := PROMO_TICKS
 var _cata_timer := CATAPULT_TICKS
 var _growing_trees: Dictionary = {} # map idx -> Restticks bis zur nächsten Baumstufe
+var _rng := RandomNumberGenerator.new()  # seeded → deterministisch (Lockstep-tauglich)
 
 
 func _init(world_state: WorldState) -> void:
 	state = world_state
 	ai = DefaultAI.new()  # Standard-Gegner-KI (austauschbar über world)
+	_rng.seed = 0xA17E57   # fester Seed: gleiche Abläufe auf allen Clients
 	_init_tree_growth_from_map()
 
 
@@ -151,6 +169,12 @@ func _init(world_state: WorldState) -> void:
 # --------------------------------------------------------------------------
 
 func resync() -> void:
+	# Straßenteilungen: bestehenden Träger auf SEIN Teilstück übernehmen, bevor die
+	# generische Diff-Logik ihn (mangels Straße) als verirrt behandeln würde.
+	for sp in state.splits:
+		_apply_split(sp)
+	state.splits.clear()
+
 	# Träger ↔ Straßen
 	for r in state.roads:
 		if not carriers.has(r):
@@ -159,19 +183,17 @@ func resync() -> void:
 			carriers[r] = c
 	for r in carriers.keys():
 		if not state.roads.has(r):
-			# Straße entfernt/geteilt: trägt der Träger gerade eine Ware, darf sie
-			# NICHT verschwinden — sonst bleibt bs.incoming hängen und es wird nie
-			# nachgefordert. Ware zurück ins Netz geben (läuft sofort weiter).
+			# Straße entfernt: trägt der Träger gerade eine Ware, darf sie NICHT
+			# verschwinden. Der Träger wird zum „verirrten Träger" (Stray): läuft mit
+			# der Ware herum und legt sie an der nächsten erreichbaren Flagge wieder
+			# ins Netz — so geht nie eine Ware verloren.
 			var old: Carrier = carriers[r]
 			if old.carrying != null:
-				_return_carried_good(old)
+				_spawn_stray(old)
 			carriers.erase(r)
-	# Noch unbesetzte Straßen versuchen, vom HQ aus zu besetzen (kein Fallback —
-	# ohne HQ-Verbindung bleibt die Straße unbesetzt, bis sie verbunden ist).
-	for r in carriers:
-		var c: Carrier = carriers[r]
-		if not c.active and not c.dispatched:
-			_dispatch_carrier(c)
+	# Unbesetzte Straßen werden NICHT mehr sofort alle gleichzeitig besetzt, sondern
+	# nach und nach in `_tick_dispatch()` (gestaffelt) — sonst marschieren bei vielen
+	# neuen Straßen 20 Träger auf einmal los.
 
 	# Gebäudezustände ↔ Gebäude
 	flag_to_building.clear()
@@ -212,6 +234,11 @@ func resync() -> void:
 
 	for fi in flag_goods.keys():
 		if not state.flags.has(fi):
+			# Flagge weg (Abriss): die dort wartenden Waren NICHT verwerfen — sonst
+			# bleibt `incoming` beim Zielgebäude hängen und es wird nie nachgefordert.
+			# Jede Ware Richtung Ziel umleiten, sonst sicher zurück ins HQ-Lager.
+			for g in flag_goods[fi]:
+				_rehome_good(g, _flag_world(fi))
 			flag_goods.erase(fi)
 
 	state.recompute_territory()
@@ -244,9 +271,11 @@ func tick() -> void:
 	for i in state.buildings:
 		if bstates.has(i):
 			_tick_building(bstates[i])
+	_tick_dispatch()
 	for r in state.roads:
 		if carriers.has(r):
 			_tick_carrier(carriers[r])
+	_tick_strays()
 
 
 func _capacity_for(size: int) -> int:
@@ -553,6 +582,66 @@ func _hq_flag_pos() -> Vector2i:
 		if b.is_hq and b.owner == 0:
 			return b.flag_pos
 	return Vector2i(-1, -1)
+
+
+## Eine Straßenteilung verarbeiten: den bestehenden Träger der alten Straße auf das
+## Teilstück übernehmen, auf dem er gerade steht (Ware behält er!). Das andere
+## Teilstück bleibt vorerst unbesetzt und wird gestaffelt vom HQ neu besetzt.
+func _apply_split(sp: Dictionary) -> void:
+	var old: WorldState.Road = sp.old
+	if not carriers.has(old):
+		return
+	var c: Carrier = carriers[old]
+	carriers.erase(old)
+	if not c.active:
+		# Träger war noch gar nicht da (marschiert noch vom HQ) → beide Teilstücke
+		# werden normal (gestaffelt) neu besetzt; nichts zu übernehmen.
+		return
+	var k := int(sp.k)
+	var on_r1: bool = c.seg_pos <= float(k)
+	var r_keep: WorldState.Road = sp.r1 if on_r1 else sp.r2
+	# seg_pos ist in Knotensegmenten: auf r1 unverändert, auf r2 um k verschoben.
+	var new_seg := c.seg_pos if on_r1 else c.seg_pos - float(k)
+	c.road = r_keep
+	c.seg_pos = clampf(new_seg, 0.0, float(r_keep.length()))
+	c.active = true
+	c.dispatched = true
+	if c.carrying != null:
+		# Ware zur Flagge weitertragen, die Richtung Ziel führt (vorwärts).
+		var e0 := _end_flag(r_keep, 0)
+		var e1 := _end_flag(r_keep, 1)
+		var rl0 := _route_len(e0, c.carrying.dest)
+		var rl1 := _route_len(e1, c.carrying.dest)
+		var deliver_end := 1
+		if rl0 >= 0 and (rl1 < 0 or rl0 <= rl1):
+			deliver_end = 0
+		c.pickup_end = 1 - deliver_end
+		c.state = C_CARRYING
+		c.target = float(r_keep.length()) if deliver_end == 1 else 0.0
+	else:
+		c.state = C_IDLE
+		c.target = float(r_keep.length()) * 0.5
+	carriers[r_keep] = c
+
+
+## Gestaffeltes Besetzen: pro Intervall höchstens EINEN noch unbesetzten Träger vom
+## HQ losschicken, damit bei vielen neuen Straßen die Träger nacheinander anlaufen
+## (sichtbarer „Strom") statt alle gleichzeitig.
+const DISPATCH_INTERVAL := 6   # Ticks zwischen zwei Träger-Anforderungen (~0,2 s)
+var _dispatch_cd := 0
+
+
+func _tick_dispatch() -> void:
+	if _dispatch_cd > 0:
+		_dispatch_cd -= 1
+		return
+	for r in carriers:
+		var c: Carrier = carriers[r]
+		if not c.active and not c.dispatched:
+			_dispatch_carrier(c)
+			if c.dispatched:        # nur bei Erfolg (mit HQ verbunden) Pause einlegen
+				_dispatch_cd = DISPATCH_INTERVAL
+				return
 
 
 ## Schickt einen Träger vom HQ zur neuen Straße. OHNE HQ-Verbindung passiert
@@ -915,11 +1004,17 @@ func _do_resource_action(bs: BState) -> void:
 				dirty = true
 		"stone":
 			if state.map.map_object(n.x, n.y) == MapData.MO_STONE:
-				var stage := state.map.stone_stage_at(n.x, n.y)
-				if stage > MapData.STONE_SMALL:
-					state.map.set_stone_stage(n.x, n.y, stage - 1)
+				var hits := state.map.stone_hits_left_at(n.x, n.y) - 1
+				if hits > 0:
+					state.map.set_stone_hits_left(n.x, n.y, hits)
 				else:
-					state.map.clear_map_object(n.x, n.y)
+					var stage := state.map.stone_stage_at(n.x, n.y)
+					if stage > MapData.STONE_SMALL:
+						var new_stage := stage - 1
+						state.map.set_stone_stage(n.x, n.y, new_stage)
+						state.map.set_stone_hits_left(n.x, n.y, new_stage)
+					else:
+						state.map.clear_map_object(n.x, n.y)
 				dirty = true
 		"ore":
 			if state.map.map_object(n.x, n.y) == MapData.MO_ORE:
@@ -1136,27 +1231,195 @@ func _mark_road_delivery(road: WorldState.Road) -> void:
 #  Waren / Wegewahl
 # --------------------------------------------------------------------------
 
-## Eine Ware, deren Träger gerade verschwindet (Straße geteilt/abgerissen), wieder
-## ins Netz geben: bevorzugt auf ein noch existierendes Straßenende, das Richtung
-## Ziel zeigt — so wird sie sofort weiterbefördert statt verloren zu gehen.
-func _return_carried_good(c: Carrier) -> void:
+# --------------------------------------------------------------------------
+#  Verirrte Träger (Stray): Straße weg, Ware bleibt erhalten
+# --------------------------------------------------------------------------
+
+const STRAY_WANDER_SPEED := 1.1   # Weltpixel/Tick beim Umherirren
+const STRAY_SEEK_SPEED := 1.9     # schneller, sobald gezielt zur Flagge gelaufen wird
+const STRAY_WANDER_MIN := 300     # 10 s @30Hz unkontrolliert wandern
+const STRAY_WANDER_RANGE := 150   # + bis zu 5 s (zufällig)
+const STRAY_GIVEUP := 1800        # 60 s Notfallgrenze (dann Ware zurück ins HQ)
+const STRAY_FLAG_SNAP := 24.0     # px: so nah an einer Flagge gilt sie als erreicht
+
+
+## Aus einem Träger mit Ware einen verirrten Träger machen (Straße verschwand).
+## Liegt eine erreichbare Flagge gleich nebenan (Flagge-auf-Straße/Teilung), läuft
+## er direkt dorthin (kein Umherirren). Ist das Netz zerschnitten (Abriss), irrt er
+## erst ein paar Sekunden unkontrolliert, bevor er gezielt eine Flagge ansteuert.
+func _spawn_stray(c: Carrier) -> void:
 	var g: Good = c.carrying
 	c.carrying = null
 	if g == null:
 		return
-	for endp in [c.road.b, c.road.a]:
-		var fi := state.map.idx(endp.x, endp.y)
-		if state.flags.has(fi) and _next_hop(fi, g.dest) >= 0:
-			_push_good(fi, g)
-			return
-	# Nicht mehr zustellbar (Ziel abgeschnitten) → zurück ins Lager und beim
-	# Zielgebäude als „nicht mehr unterwegs" verbuchen, damit neu angefordert wird.
+	var s := Stray.new()
+	s.good = g
+	s.pos = carrier_world(c)
+	s.heading = Vector2.RIGHT.rotated(_rng.randf() * TAU)
+	s.facing = s.heading
+	s.change_dir_in = 12 + _rng.randi() % 24
+	s.give_up = STRAY_GIVEUP
+	# Gibt es einen Weg zum Ziel über eine nahe Flagge VORWÄRTS? → direkt hinlaufen.
+	# Nur wenn das Netz Richtung Ziel zerschnitten ist → erst umherirren.
+	var tf := _best_handoff_flag(s.pos, g.dest)
+	if tf >= 0:
+		s.target_flag = tf
+	else:
+		s.wander_ticks = STRAY_WANDER_MIN + _rng.randi() % STRAY_WANDER_RANGE
+	strays.append(s)
+
+
+func _tick_strays() -> void:
+	if strays.is_empty():
+		return
+	var done: Array[Stray] = []
+	for s in strays:
+		if _tick_stray(s):
+			done.append(s)
+	for s in done:
+		strays.erase(s)
+
+
+## Liefert true, wenn der Stray fertig ist (Ware abgelegt) und entfernt werden soll.
+func _tick_stray(s: Stray) -> bool:
+	if s.good == null:
+		return true
+	s.give_up -= 1
+	if s.give_up <= 0:
+		_dump_good_to_hq(s.good)   # Notfall: Ware sicher zurück ins Lager (kein Verlust)
+		s.good = null
+		return true
+
+	# Phase 2: gezielt eine gewählte Flagge anlaufen.
+	if s.target_flag >= 0:
+		var fp := _flag_world(s.target_flag)
+		var to := fp - s.pos
+		s.facing = to
+		if to.length() <= STRAY_SEEK_SPEED:
+			s.pos = fp
+			if _deposit_stray(s, s.target_flag):
+				return true
+			s.target_flag = -1    # Flagge weg/voll/nicht routbar → erneut orientieren
+			s.wander_ticks = 60
+			return false
+		s.pos += to.normalized() * STRAY_SEEK_SPEED
+		return false
+
+	# Phase 1: unkontrolliert umherirren.
+	s.wander_ticks -= 1
+	s.change_dir_in -= 1
+	if s.change_dir_in <= 0:
+		s.heading = s.heading.rotated(_rng.randf_range(-PI * 0.6, PI * 0.6))
+		s.change_dir_in = 12 + _rng.randi() % 24
+	var np := s.pos + s.heading * STRAY_WANDER_SPEED
+	var node := Grid.world_to_node_approx(np)
+	if state.map.in_bounds(node.x, node.y) and state.node_walkable(node.x, node.y):
+		s.pos = np
+		s.facing = s.heading
+	else:
+		s.heading = -s.heading    # am Rand/Wasser abprallen
+
+	# Stolpert er während des Irrens nah an eine erreichbare Flagge → dort ablegen.
+	# Nur physisch nahe Flaggen prüfen (billige Distanz zuerst, Pfadsuche nur dann).
+	for fi in state.flags:
+		if s.pos.distance_to(_flag_world(fi)) > STRAY_FLAG_SNAP:
+			continue
+		if _deposit_stray(s, fi):
+			return true
+
+	# Wanderzeit abgelaufen → gezielt die beste Flagge Richtung Ziel ansteuern.
+	if s.wander_ticks <= 0:
+		var tf := _best_handoff_flag(s.pos, s.good.dest)
+		if tf >= 0:
+			s.target_flag = tf
+		else:
+			s.wander_ticks = 60   # noch keine erreichbare Flagge → weiter irren
+	return false
+
+
+func _flag_world(fi: int) -> Vector2:
+	return state.map.node_world(fi % state.map.width, fi / state.map.width)
+
+
+## Netz-Distanz (Anzahl Flaggen-Hops) von Flagge [param from_idx] zum Ziel, oder -1
+## wenn nicht verbunden. from == dest → 0.
+func _route_len(from_idx: int, dest_idx: int) -> int:
+	if from_idx == dest_idx:
+		return 0
+	var fp := Vector2i(from_idx % state.map.width, from_idx / state.map.width)
+	var dp := Vector2i(dest_idx % state.map.width, dest_idx / state.map.width)
+	var r := state.find_route(fp, dp)
+	if r.size() < 2:
+		return -1
+	return r.size() - 1
+
+
+## Beste Übergabe-Flagge für eine herumgetragene Ware: die Ware soll VORWÄRTS Richtung
+## Ziel weitergegeben werden, nicht zur bloß nächstgelegenen (oft rückwärts gelegenen)
+## Flagge. Sucht in wachsenden Radien um [param pos]; innerhalb des kleinsten Radius
+## mit erreichbarer Flagge die mit der kürzesten Rest-Route zum Ziel (Gleichstand:
+## kürzerer Hinweg). -1 wenn das Ziel von keiner Flagge aus erreichbar ist.
+func _best_handoff_flag(pos: Vector2, dest: int) -> int:
+	for radius_tiles in [3.0, 6.0, 12.0, 1e9]:
+		var max_d: float = float(radius_tiles) * Grid.TILE_W
+		var best := -1
+		var best_route := 1 << 30
+		var best_walk := INF
+		for fi in state.flags:
+			var walk := pos.distance_to(_flag_world(fi))
+			if walk > max_d:
+				continue
+			var rlen := _route_len(fi, dest)
+			if rlen < 0:
+				continue
+			if rlen < best_route or (rlen == best_route and walk < best_walk):
+				best_route = rlen
+				best_walk = walk
+				best = fi
+		if best >= 0:
+			return best
+	return -1
+
+
+## Ware des Strays an einer Flagge abgeben. Ist es die Ziel-Flagge, wird die Ware
+## direkt ins Gebäude eingebucht (konsumiert); sonst auf die Flagge gelegt, damit ein
+## Träger sie weiterträgt. false, wenn die Flagge weg/voll/das Ziel unerreichbar ist.
+func _deposit_stray(s: Stray, fi: int) -> bool:
+	if not state.flags.has(fi):
+		return false
+	if fi != s.good.dest:
+		if _next_hop(fi, s.good.dest) < 0:
+			return false
+		if goods_on_flag(fi) >= FLAG_CAP:
+			return false
+	_deliver(s.good, fi)   # Ziel-Flagge → konsumieren, sonst weiterreichen
+	s.good = null
+	return true
+
+
+## Notfall-Ablage: Ware zurück ins HQ-Lager, Ziel-Anforderung zurücksetzen.
+func _dump_good_to_hq(g: Good) -> void:
+	if g == null:
+		return
 	if flag_to_building.has(g.dest):
 		var bs: BState = bstates.get(flag_to_building[g.dest])
 		if bs != null:
 			bs.incoming[g.type] = maxi(0, bs.incoming.get(g.type, 0) - 1)
 	if hq_flag >= 0:
 		hq_stock[g.type] = hq_stock.get(g.type, 0) + 1
+
+
+## Eine Ware von einer verschwundenen Flagge neu einsortieren: bevorzugt auf eine
+## Flagge Richtung Ziel weitergeben (bleibt „unterwegs", incoming unverändert), sonst
+## zurück ins HQ-Lager (incoming dort sauber heruntergezählt → wird neu angefordert).
+func _rehome_good(g: Good, pos: Vector2) -> void:
+	if g == null:
+		return
+	var fi := _best_handoff_flag(pos, g.dest)
+	if fi >= 0 and (fi == g.dest or goods_on_flag(fi) < FLAG_CAP):
+		_deliver(g, fi)   # Ziel-Flagge → konsumieren, sonst auf die Flagge legen
+	else:
+		_dump_good_to_hq(g)
 
 
 func _deliver(g: Good, flag_idx: int) -> void:

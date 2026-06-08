@@ -33,10 +33,12 @@ enum { TREE_OAK, TREE_PINE, TREE_BIRCH }
 const TREE_TYPE_COUNT := 3
 var tree_type: Dictionary = {}  # idx -> TREE_*
 
-# Stein-Stufe je Stein-Knoten: 3/2/1 Abbauten übrig. Ohne Eintrag = alter
-# Spielstand mit kleinem Stein (1 Abbau).
+# Stein-Stufe (visuelle Größe): STONE_BIG → STONE_MEDIUM → STONE_SMALL → weg.
 enum { STONE_SMALL = 1, STONE_MEDIUM = 2, STONE_BIG = 3 }
-var stone_stage: Dictionary = {} # idx -> 1/2/3
+var stone_stage: Dictionary = {}      # idx -> 1/2/3
+# Abbau-Schläge die noch auf der aktuellen Stufe übrig sind.
+# Ohne Eintrag → Default = Stufenwert (BIG=3, MEDIUM=2, SMALL=1).
+var stone_hits_left: Dictionary = {}  # idx -> 1..3
 
 
 func _init(w: int, h: int) -> void:
@@ -98,6 +100,7 @@ func set_map_object(x: int, y: int, obj: int) -> void:
 		tree_type.erase(i)
 	if obj != MO_STONE:
 		stone_stage.erase(i)
+		stone_hits_left.erase(i)
 
 
 func clear_map_object(x: int, y: int) -> void:
@@ -106,6 +109,7 @@ func clear_map_object(x: int, y: int) -> void:
 	tree_stage.erase(idx(x, y))
 	tree_type.erase(idx(x, y))
 	stone_stage.erase(idx(x, y))
+	stone_hits_left.erase(idx(x, y))
 
 
 ## Baum-Wachstumsstufe (0/1/2). Ohne Eintrag = ausgewachsen (2, fällbar).
@@ -143,6 +147,14 @@ func stone_stage_at(x: int, y: int) -> int:
 
 func set_stone_stage(x: int, y: int, stage: int) -> void:
 	stone_stage[idx(x, y)] = clampi(stage, STONE_SMALL, STONE_BIG)
+
+
+func stone_hits_left_at(x: int, y: int) -> int:
+	return stone_hits_left.get(idx(x, y), stone_stage_at(x, y))
+
+
+func set_stone_hits_left(x: int, y: int, hits: int) -> void:
+	stone_hits_left[idx(x, y)] = maxi(hits, 1)
 
 
 func ore_kind_at(x: int, y: int) -> int:

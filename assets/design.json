@@ -1,16 +1,72 @@
 {
   "_hinweis": "Groessen & Eingang. Werte hier aendern, KEIN Code noetig. Godot danach neu starten.",
+  "build_spot_offsets": {
+    "castle": [
+      2,
+      -8
+    ],
+    "flag": [
+      3,
+      -8
+    ],
+    "house": [
+      2,
+      -4
+    ],
+    "hut": [
+      1,
+      -4
+    ],
+    "mine": [
+      1,
+      -5
+    ],
+    "road_flag": [
+      3,
+      -8
+    ]
+  },
+  "build_spot_sizes": {
+    "castle": [
+      42.0,
+      42.0
+    ],
+    "flag": [
+      30.0,
+      30.0
+    ],
+    "house": [
+      38.0,
+      38.0
+    ],
+    "hut": [
+      34.0,
+      34.0
+    ],
+    "mine": [
+      38.0,
+      38.0
+    ],
+    "road_flag": [
+      30.0,
+      30.0
+    ]
+  },
+  "flag_size": [
+    20.0,
+    30.0
+  ],
   "building_offset": {
     "hq": [
-      20,
-      22
+      20.0,
+      22.0
     ]
   },
   "building_sizes": {
     "_hinweis": "Einzelne Gebaeude individuell groesser/kleiner (ueberschreibt sizes).",
     "hq": [
-      53,
-      51
+      53.0,
+      51.0
     ],
     "woodcutter": [
       37.0,
@@ -28,20 +84,16 @@
       -6.0
     ],
     "hq": [
-      -15,
-      12
+      -15.0,
+      12.0
     ]
   },
   "hq_scale": 1.35,
-  "terrain_uv_world_size": 96.0,
-  "build_spot_sizes": {
-    "castle": [34, 34],
-    "house": [30, 30],
-    "hut": [26, 26],
-    "mine": [30, 30],
-    "flag": [24, 24],
-    "road_flag": [24, 24],
-    "blocked": [24, 24]
+  "object_heights": {
+    "_hinweis": "Zielhoehen fuer Kartenobjekte in Weltpixeln; Baum-Breite folgt automatisch dem PNG-Seitenverhaeltnis.",
+    "tree_big": 78.0,
+    "tree_seed": 22.0,
+    "tree_small": 44.0
   },
   "sizes": {
     "castle": [
@@ -61,6 +113,7 @@
       26.0
     ]
   },
+  "terrain_uv_world_size": 96.0,
   "texture_scale": 1.9,
   "unit_size": 18.0
 }

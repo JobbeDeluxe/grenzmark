@@ -28,11 +28,12 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-## Einheit zeichnen: gerichtetes Sprite-Sheet wenn vorhanden, sonst Figur.
-func _unit(kind: String, p: Vector2, facing: Vector2, body: Color, carrying := -1) -> void:
-	var tex := GameTheme.unit_texture(kind)
+## Einheit zeichnen: gerichtetes Sprite-Sheet (pro Spieler eigenes PNG) wenn
+## vorhanden, sonst Platzhalter-Figur in der Spielerfarbe.
+func _unit(kind: String, p: Vector2, facing: Vector2, owner := 0, carrying := -1) -> void:
+	var tex := GameTheme.unit_texture(kind, owner)
 	if tex == null:
-		_figure(p, body, carrying)
+		_figure(p, GameTheme.player_color(owner), carrying)
 		return
 	var cols := GameTheme.ANIM_FRAMES
 	var rows := GameTheme.ANIM_DIRS
@@ -79,18 +80,78 @@ func _dir6(v: Vector2) -> int:
 	return best
 
 
+var _occluders: Array = []   # Gebäude/Bäume mit Sprite (für Y-Occlusion); gecacht
+var _occ_dirty := true        # neu aufbauen? (von World bei Karten-Änderung gesetzt)
+
+
+## Von World aufgerufen, wenn sich die statische Karte ändert (Bau/Abriss/Baum).
+func invalidate_occluders() -> void:
+	_occ_dirty = true
+
+
 func _draw() -> void:
 	if economy == null:
 		return
+	if _occ_dirty:
+		_occ_dirty = false
+		_collect_occluders()
 	_draw_preview()
 	_draw_goods()
 	_draw_construction()
 	_draw_carriers()
 	_draw_workers()
 	_draw_marchers()
+	_draw_strays()
+	# Tür-Träger zuletzt → IMMER im Vordergrund (läuft technisch vor dem Gebäude).
 	_draw_house_carrier()
 	_draw_build_preview()
 	_draw_hover()
+
+
+## Alle Sprites sammeln, die Einheiten verdecken können (fertige Gebäude + Bäume).
+## Eine Einheit wird verdeckt, wenn ihr Fußpunkt HINTER dem Sprite-Fuß liegt
+## (kleineres y) und sie im Sprite-Rechteck steht. Läuft sie davor (größeres y),
+## bleibt sie sichtbar — wie bei Straßen, die hinter Gebäuden verschwinden.
+func _collect_occluders() -> void:
+	_occluders.clear()
+	var map := state.map
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		if b.under_construction:
+			continue
+		var tex := GameTheme.building_texture(b.def_id, b.owner)
+		if tex == null:
+			continue
+		var basep := map.node_world(b.pos.x, b.pos.y) + GameTheme.building_offset(b.def_id)
+		var sc := GameTheme.texture_scale()
+		if b.is_hq:
+			sc *= GameTheme.hq_scale()
+		var sz := GameTheme.building_dims(b.size, b.def_id).x * sc
+		_occluders.append({ base = basep, tex = tex, w = sz, h = sz })
+	for i in map.objects:
+		if int(map.objects[i]) != MapData.MO_TREE:
+			continue
+		var x := int(i) % map.width
+		var y := int(i) / map.width
+		var spr := GameTheme.tree_sprite(map.tree_type_name(map.tree_type_at(x, y)),
+			map.tree_stage_at(x, y))
+		if spr.tex == null:
+			continue
+		var sz2: Vector2 = spr.size
+		_occluders.append({ base = map.node_world(x, y), tex = spr.tex, w = sz2.x, h = sz2.y })
+
+
+## Verdeckt die Einheit an [param p], indem davorliegende Okkluder erneut über sie
+## gezeichnet werden (opake Pixel verdecken, transparente lassen sie durchscheinen).
+func _occlude(p: Vector2) -> void:
+	for o in _occluders:
+		if o.base.y <= p.y:
+			continue  # Okkluder steht hinter/neben der Einheit → Einheit bleibt davor
+		if p.y <= o.base.y - o.h:
+			continue  # Einheit komplett oberhalb des Sprites → keine Überlappung
+		if absf(p.x - o.base.x) > o.w * 0.5 + 2.0:
+			continue  # horizontal daneben
+		draw_texture_rect(o.tex, Rect2(o.base.x - o.w * 0.5, o.base.y - o.h, o.w, o.h), false)
 
 
 ## Geist-Vorschau des gewählten Gebäudes am Mauszeiger (Stufe 8):
@@ -138,7 +199,7 @@ func _draw_house_carrier() -> void:
 	var p := door.lerp(flag, clampf(h.t, 0.0, 1.0))
 	var facing := (flag - door) if (h.state == Economy.H_OUT or h.state == Economy.H_FETCH) else (door - flag)
 	var carry := h.carrying.type if h.carrying != null else -1
-	_unit("carrier", p, facing, Color(0.80, 0.66, 0.42), carry)
+	_unit("carrier", p, facing, 0, carry)  # immer Vordergrund, keine Occlusion
 
 
 ## Kleine Menschen-Figur (Körper + Kopf + Schatten).
@@ -163,7 +224,7 @@ func _draw_construction() -> void:
 		var p := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y) + GameTheme.building_offset(def_id)
 		var base := _bld_dims(bs.bld.size, def_id)
 		var sz := base.x * GameTheme.texture_scale()
-		var fin := GameTheme.building_texture(def_id)          # fertiges Gebäude (Stufe 2)
+		var fin := GameTheme.building_texture(def_id, bs.bld.owner)  # fertiges Gebäude (Stufe 2)
 		var stage1 := GameTheme.construction_stage1_texture(def_id)  # Holzbau (Stufe 1)
 		var info := economy.construct_stage_info(bs)
 		var overall: float = info.overall
@@ -237,9 +298,10 @@ func _draw_carriers() -> void:
 		var c: Economy.Carrier = economy.carriers[r]
 		if not c.active:
 			continue  # unbesetzte Straße (kein Träger zugeteilt) → nichts zeichnen
+		var p := economy.carrier_world(c)
 		var carry := c.carrying.type if c.carrying != null else -1
-		_unit("carrier", economy.carrier_world(c), economy.carrier_facing(c),
-			Color(0.78, 0.62, 0.40), carry)
+		_unit("carrier", p, economy.carrier_facing(c), 0, carry)
+		_occlude(p)
 
 
 func _draw_workers() -> void:
@@ -247,21 +309,31 @@ func _draw_workers() -> void:
 		var bs: Economy.BState = economy.bstates[i]
 		if not economy.has_worker(bs):
 			continue
-		_unit("worker", economy.worker_world(bs), economy.worker_facing(bs),
-			Color(0.40, 0.55, 0.85))
+		var p := economy.worker_world(bs)
+		_unit("worker", p, economy.worker_facing(bs), 0)
+		_occlude(p)
 
 
 func _draw_marchers() -> void:
 	for m in economy.marchers:
+		var p := economy.marcher_world(m)
 		var facing := economy.marcher_facing(m)
 		if m.purpose_carrier:
-			_unit("carrier", economy.marcher_world(m), facing, Color(0.78, 0.62, 0.40))
+			_unit("carrier", p, facing, m.attacker_owner)
 		elif m.purpose_worker or m.purpose_return:
-			_unit("worker", economy.marcher_world(m), facing, Color(0.40, 0.55, 0.85))
+			_unit("worker", p, facing, m.attacker_owner)
 		else:
-			# Soldaten: eigene blau, gegnerische rot (nur Platzhalter ohne Sprite).
-			var col := Color(0.30, 0.45, 0.85) if m.attacker_owner == 0 else Color(0.80, 0.25, 0.25)
-			_unit("soldier", economy.marcher_world(m), facing, col)
+			_unit("soldier", p, facing, m.attacker_owner)
+		_occlude(p)
+
+
+## Verirrte Träger (Straße abgerissen): laufen frei mit ihrer Ware herum.
+func _draw_strays() -> void:
+	for s in economy.strays:
+		var p: Vector2 = s.pos
+		var carry: int = s.good.type if s.good != null else -1
+		_unit("carrier", p, s.facing, 0, carry)
+		_occlude(p)
 
 
 func _draw_preview() -> void:

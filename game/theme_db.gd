@@ -139,7 +139,13 @@ static func _tex(path: String) -> Texture2D:
 
 
 ## assets/buildings/<def_id>.png   (z. B. assets/buildings/sawmill.png)
-static func building_texture(def_id: String) -> Texture2D:
+## Pro Spieler eigenes PNG möglich: <def_id>_<owner>.png (z. B. sawmill_1.png für
+## den Gegner). Fehlt es, gilt das gemeinsame <def_id>.png für alle Spieler.
+static func building_texture(def_id: String, owner := 0) -> Texture2D:
+	if owner != 0:
+		var t := _tex("res://assets/buildings/%s_%d.png" % [def_id, owner])
+		if t != null:
+			return t
 	return _tex("res://assets/buildings/%s.png" % def_id)
 
 
@@ -205,13 +211,41 @@ static func construction_stage1_texture(def_id := "") -> Texture2D:
 	return _tex("res://assets/construction/stage1.png")
 
 
+## Baum-Sprite (Textur + Zeichengröße) für Typ-Name (oak/pine/birch) und Stufe
+## (0=Setzling, 1=klein, 2=groß). Liefert {tex, size}; tex == null → Platzhalter.
+## Wird von Map- UND Unit-Renderer genutzt (Occlusion), damit die Maße identisch sind.
+static func tree_sprite(type_name: String, stage: int) -> Dictionary:
+	var base := "tree_%s" % type_name
+	var name := base
+	if stage == 0:
+		name = "%s_seed" % base
+	elif stage == 1:
+		name = "%s_small" % base
+	var tex := object_texture(name)
+	var draw_name := name
+	if tex == null:
+		var legacy := "tree"
+		if stage == 0:
+			legacy = "tree_seed"
+		elif stage == 1:
+			legacy = "tree_small"
+		tex = object_texture(legacy)
+		draw_name = legacy
+	if tex == null:
+		return { tex = null, size = Vector2.ZERO }
+	var sz := object_draw_size(draw_name)
+	if tex == object_texture("tree"):
+		if stage == 0:
+			sz *= 0.35
+		elif stage == 1:
+			sz *= 0.62
+	return { tex = tex, size = sz }
+
+
 static func object_draw_size(name: String) -> Vector2:
-	if name.begins_with("tree_") and name.ends_with("_seed"):
-		return Vector2(16, 20)
-	if name.begins_with("tree_") and name.ends_with("_small"):
-		return Vector2(30, 42)
-	if name in ["tree_oak", "tree_pine", "tree_birch"]:
-		return Vector2(42, 58)
+	var tree_h := _tree_draw_height(name)
+	if tree_h > 0.0:
+		return _texture_draw_size(name, tree_h, _tree_fallback_size(name))
 	match name:
 		"tree_seed": return Vector2(16, 20)
 		"tree_small": return Vector2(28, 38)
@@ -221,6 +255,43 @@ static func object_draw_size(name: String) -> Vector2:
 		"stone_stage3": return Vector2(58, 44)
 		"ore": return Vector2(32, 27)
 	return Vector2(28, 28)
+
+
+static func _tree_draw_height(name: String) -> float:
+	if not (name == "tree" or name.begins_with("tree_")):
+		return 0.0
+	var stage_key := "tree_big"
+	if name.ends_with("_seed"):
+		stage_key = "tree_seed"
+	elif name.ends_with("_small"):
+		stage_key = "tree_small"
+	var heights: Dictionary = _design().get("object_heights", {})
+	if heights.has(name):
+		return float(heights[name])
+	if heights.has(stage_key):
+		return float(heights[stage_key])
+	match stage_key:
+		"tree_seed": return 22.0
+		"tree_small": return 44.0
+	return 78.0
+
+
+static func _tree_fallback_size(name: String) -> Vector2:
+	if name.ends_with("_seed"):
+		return Vector2(16, 20)
+	if name.ends_with("_small"):
+		return Vector2(30, 42)
+	if name == "tree":
+		return Vector2(40, 54)
+	return Vector2(42, 58)
+
+
+static func _texture_draw_size(name: String, target_height: float, fallback: Vector2) -> Vector2:
+	var tex := object_texture(name)
+	if tex != null and tex.get_height() > 0:
+		var w := target_height * float(tex.get_width()) / float(tex.get_height())
+		return Vector2(maxf(1.0, w), target_height)
+	return fallback
 
 
 static func build_spot_size(kind: String) -> Vector2:
@@ -234,6 +305,52 @@ static func build_spot_size(kind: String) -> Vector2:
 		"mine": return Vector2(30, 30)
 		"flag", "road_flag", "blocked": return Vector2(24, 24)
 	return Vector2(26, 26)
+
+
+## design.json "build_spot_offsets": { "flag": [dx,dy], "road_flag": [dx,dy], ... }
+## Versatz zum Zentrierungspunkt (Standard: mittig auf dem Knoten).
+static func build_spot_offset(kind: String) -> Vector2:
+	var per: Dictionary = _design().get("build_spot_offsets", {})
+	if per.has(kind):
+		return _to_vec(per[kind])
+	return Vector2.ZERO
+
+
+## Spielerfarbe — NUR für Platzhalter (wenn KEIN eigenes PNG vorhanden ist).
+## Die echte Optik kommt aus den pro Spieler eigenen PNGs (siehe *_texture(owner)).
+static func player_color(owner: int) -> Color:
+	match owner:
+		0: return Color(0.35, 0.55, 0.95)  # blau
+		1: return Color(0.90, 0.25, 0.20)  # rot
+		2: return Color(0.25, 0.80, 0.30)  # grün
+		3: return Color(0.90, 0.80, 0.15)  # gelb
+		4: return Color(0.75, 0.20, 0.75)  # lila
+		5: return Color(0.90, 0.50, 0.15)  # orange
+	return Color(0.70, 0.70, 0.70)
+
+
+## Flaggen-Textur je Spieler — EIGENES PNG pro Spieler (keine Färbung):
+##   assets/ui/flag_<owner>.png  (flag_0.png = Spieler, flag_1.png = Gegner, …)
+## Fällt zurück auf assets/ui/flag.png (für alle gleich), sonst Platzhalter.
+static func flag_texture(owner := 0) -> Texture2D:
+	var t := _tex("res://assets/ui/flag_%d.png" % owner)
+	if t != null:
+		return t
+	return _tex("res://assets/ui/flag.png")
+
+
+## Platzhalter-Farbe einer Flagge (nur wenn kein PNG da ist).
+static func flag_color(owner := 0) -> Color:
+	return player_color(owner)
+
+
+## Zeichengröße einer Flagge (PNG-Modus). design.json "flag_size": [w,h].
+## Basis des Pfahls liegt auf dem Knoten; Textur wird nach oben gezeichnet.
+static func flag_draw_size() -> Vector2:
+	var s = _design().get("flag_size", null)
+	if s != null:
+		return _to_vec(s)
+	return Vector2(16.0, 24.0)
 
 
 ## assets/goods/<good_id>.png      (good_id = Goods-Enumwert, z. B. 0.png = Holz)
@@ -251,7 +368,13 @@ const ANIM_FRAMES := 4
 const ANIM_DIRS := 6
 
 
-static func unit_texture(kind: String) -> Texture2D:
+## Pro Spieler eigenes Lauf-Sheet möglich: <kind>_<owner>.png (z. B. soldier_1.png).
+## Fehlt es, gilt das gemeinsame <kind>.png für alle Spieler.
+static func unit_texture(kind: String, owner := 0) -> Texture2D:
+	if owner != 0:
+		var t := _tex("res://assets/units/%s_%d.png" % [kind, owner])
+		if t != null:
+			return t
 	return _tex("res://assets/units/%s.png" % kind)
 
 

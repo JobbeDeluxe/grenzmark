@@ -4,16 +4,21 @@ extends Control
 ## Live-Vorschau eines Gebäudes für den Design-Editor: zeichnet Gebäude, Flagge
 ## (auf dem SE-Nachbarknoten) und den Eingangsweg zur Tür — genau wie im Spiel,
 ## nur vergrößert. Liest direkt aus GameTheme (das der Editor live aktualisiert).
+## Im bspot_key-Modus zeigt es stattdessen ein Bauplatz-Icon auf einem Knoten.
 
 const PZ := 2.4  # Vorschau-Zoom
 
 var current_id := "hq"
 var compare_id := ""  # optionales Vergleichsobjekt
+var bspot_key := ""   # wenn gesetzt: Bauplatz-Vorschau statt Gebäude-Vorschau
 
 
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.16, 0.20, 0.16))
 	var origin := Vector2(size.x * 0.42, size.y * 0.62)
+	if bspot_key != "":
+		_draw_bspot_preview(origin)
+		return
 	var def := BuildingCatalog.get_def(current_id)
 	if def.is_empty():
 		return
@@ -59,3 +64,37 @@ func _paint_building(id: String, at: Vector2) -> void:
 		var h := dims.y * PZ
 		draw_rect(Rect2(o.x - w * 0.5, o.y - h, w, h), GameTheme.building_color(id))
 		draw_rect(Rect2(o.x - w * 0.5, o.y - h, w, h), Color.BLACK, false, 1.5)
+
+
+## Bauplatz-Vorschau: Knoten-Raute + Icon an der aktuellen Offset-Position.
+func _draw_bspot_preview(origin: Vector2) -> void:
+	# Knoten-Raute (wie im Spiel der Hover-Marker)
+	var dr := 14.0 * PZ
+	var d := PackedVector2Array([
+		origin + Vector2(0, -dr), origin + Vector2(dr, 0),
+		origin + Vector2(0, dr), origin + Vector2(-dr, 0),
+	])
+	draw_polyline(d + PackedVector2Array([d[0]]), Color(1, 1, 1, 0.55), 1.5)
+	draw_circle(origin, 3.5, Color(1, 1, 0.4, 0.7))
+
+	# Kreuz-Fadenkreuz am Knoten
+	draw_line(origin + Vector2(-10, 0) * PZ, origin + Vector2(10, 0) * PZ, Color(1, 1, 0, 0.4), 1.0)
+	draw_line(origin + Vector2(0, -10) * PZ, origin + Vector2(0, 10) * PZ, Color(1, 1, 0, 0.4), 1.0)
+
+	# Icon an der Offset-Position
+	var off := GameTheme.build_spot_offset(bspot_key) * PZ
+	var sz := GameTheme.build_spot_size(bspot_key) * PZ
+	var tex := GameTheme.build_spot_texture(bspot_key)
+	var icon_c := origin + off
+	if tex != null:
+		draw_texture_rect(tex, Rect2(icon_c.x - sz.x * 0.5, icon_c.y - sz.y * 0.5, sz.x, sz.y), false)
+	else:
+		draw_circle(icon_c, sz.x * 0.35, Color(0.8, 0.8, 0.25, 0.9))
+
+	# Verbindungslinie Knoten → Icon-Mitte (zeigt den Versatz)
+	if off.length() > 2.0:
+		draw_line(origin, icon_c, Color(1, 0.7, 0.3, 0.6), 1.2)
+
+	draw_string(ThemeDB.fallback_font, origin + Vector2(-60, 46) * PZ,
+		"Knoten · Offset (%.0f, %.0f)" % [off.x / PZ, off.y / PZ],
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.8, 0.8, 0.8))
