@@ -24,10 +24,10 @@ Typ Ordner, Dateiname und empfohlene Größe.
 | `assets/roads/`     | `road.png`, optional `<terrain>.png`, `road_cobble.png` | Straßen-Textur, längs gekachelt | ~192×48 |
 | `assets/construction/` | `site.png` (Bauplatz), `stage1.png` (Holzbau-Stufe) + optional `<def_id>_site.png` / `<def_id>_stage1.png` | Bauplatz & Baustufe 1 | ~64×64 |
 | `assets/buildings/` | `<def_id>.png` | Gebäude-Sprite = **fertiger Bau / Baustufe 2** (Boden = untere Kante) | ~64×64 |
-| `assets/objects/`   | `tree_<typ>.png`, `tree_<typ>_seed.png`, `tree_<typ>_small.png`, `stone.png`, `stone_stage2.png`, `stone_stage3.png`, `ore.png` | Karten-Objekte, Baumtypen & Stein-Stufen | ~16×20 bis 58×44 |
+| `assets/objects/`   | `tree_<typ>.png`, `tree_<typ>_seed.png`, `tree_<typ>_small.png`, `stone.png`, `stone_stage2.png`, `stone_stage3.png`, `ore.png` | Karten-Objekte, Baumtypen & Stein-Stufen | frei; Bäume werden per Zielhöhe skaliert |
 | `assets/goods/`     | `<nummer>.png` | Waren-Symbol | ~16×16 |
-| `assets/units/`     | `carrier.png`, `worker.png`, `soldier.png`, `builder.png` | Lauf-Sprite-Sheet (4×6) | Zelle ~32×32 |
-| `assets/ui/`        | `main_menu_background.png`, `build_spots/*.png` | Hauptmenü-Hintergrund & Bauhilfe-Symbole | 16:9 / ~64×64 |
+| `assets/units/`     | `carrier.png`, `worker.png`, `soldier.png`, `builder.png` (+ `_<spieler>` Varianten) | Lauf-Sprite-Sheet (4×6) | Zelle ~32×32 |
+| `assets/ui/`        | `main_menu_background.png`, `flag_<spieler>.png`, `build_spots/*.png` | Hauptmenü, Spielflaggen & Bauhilfe-Symbole | 16:9 / ~64×64 |
 
 ### Straßen-Texturen (`assets/roads/`)
 Straßen werden **segmentweise entlang der Wegrichtung gekachelt**. Lege `road.png`
@@ -42,13 +42,57 @@ Straßen sammeln Transportlast. Nach `road_upgrade_deliveries` Lieferungen aus
 (Kopfsteinpflaster). Das ist die sichtbare Vorstufe für spätere Esel-/Lastwege.
 Auch der kurze Eingangspfad von Gebäudeflagge zur Tür nutzt jetzt die Straßentextur.
 
+### Spieler & Farben — EIGENES PNG pro Spieler (keine Einfärbung)
+Jeder Spieler (eigene Seite, Gegner, später bis zu 6) bekommt **seine eigene
+Grafik**. Es wird **nichts automatisch eingefärbt** — du zeichnest die Flaggen,
+Gebäude und Einheiten in der gewünschten Farbe selbst. Das sieht am besten aus und
+ist eindeutig. Schema: an den Basisnamen `_<spielernummer>` anhängen
+(`0` = Spieler/eigene Seite, `1` = Gegner, `2`–`5` = weitere Spieler).
+
+| Was | Gemeinsam (alle gleich) | Pro Spieler (überschreibt) |
+|---|---|---|
+| **Flagge** | `assets/ui/flag.png` | `assets/ui/flag_0.png`, `flag_1.png`, … |
+| **Gebäude** | `assets/buildings/<def_id>.png` | `assets/buildings/<def_id>_1.png`, … |
+| **Einheiten** | `assets/units/<kind>.png` | `assets/units/<kind>_1.png`, … |
+
+- Liegt **keine** `_<nummer>`-Variante vor, gilt die gemeinsame Datei für alle.
+  So musst du z. B. Wirtschaftsgebäude nur einmal zeichnen, aber Militärgebäude
+  und Flaggen pro Spieler einfärben.
+- Spieler **0** nutzt immer direkt die Basisdatei (kein `_0` nötig, aber erlaubt).
+- Aktueller Stand: `flag.png`/`flag_0.png` bis `flag_5.png` sind vorhanden.
+  Für Gebäude sind aktuell die roten Gegnervarianten `assets/buildings/*_1.png`
+  dort erzeugt, wo die Basisgrafik blaue Spielerflächen enthält. Weitere
+  Gebäudefarben (`_2`–`_5`) werden erst festgelegt, wenn das Multiplayer-Farbschema
+  entschieden ist.
+- Flaggengröße in `assets/design.json` über `"flag_size": [breite, höhe]`
+  (Pfahl-Fuß sitzt auf dem Knoten, Bild geht nach oben). Fehlt ein PNG, zeichnet
+  das Spiel eine einfache Platzhalter-Flagge in der Spieler-Standardfarbe
+  (0 blau, 1 rot, 2 grün, 3 gelb, 4 lila, 5 orange).
+
+KI-Prompt-Tipp für Gegnervarianten: denselben Prompt nehmen und „**with red
+banners / red flag / red trim**" (bzw. green/yellow/…) anhängen, damit die Spieler
+auf einen Blick unterscheidbar sind.
+
+### Verdeckung (Occlusion) — wichtig fürs Zeichnen
+Menschen verschwinden **hinter** Gebäuden und Bäumen, solange ihr Fußpunkt
+**oberhalb** (hinter) dem Fußpunkt des Sprites liegt; laufen sie **davor**
+(weiter unten), bleiben sie sichtbar. Damit das sauber wirkt:
+- **Unterkante = Bodenkontakt**: Der unterste Bildpunkt eines Gebäude-/Baum-PNGs
+  ist der Punkt, der auf dem Knoten steht. Keine leere Reserve unten lassen.
+- Transparente Pixel zeigen die Person durch — nutze sauberes Alpha (z. B.
+  zwischen Ästen), dort scheint ein dahinter laufender Träger korrekt durch.
+
 ### Bauhilfe-Symbole (`assets/ui/build_spots/`)
-Die Leertaste zeigt nur noch Plätze, die **tatsächlich im eigenen Gebiet gebaut**
-werden können. Die Symbole sind austauschbare PNGs:
+Die Leertaste zeigt nur Plätze, die **tatsächlich im eigenen Gebiet gebaut**
+werden können. Nicht baubare Knoten bleiben leer. Die Symbole sind austauschbare
+PNG-Sprites mit Transparenz und weichem Schlagschatten:
 - `castle.png`, `house.png`, `hut.png`, `mine.png`
 - `flag.png` für reine Flaggenplätze
 - `road_flag.png` für Flagge-auf-Straße / Straßen teilen
-- `blocked.png` für gesperrte Straßenknoten im eigenen Gebiet
+
+`flag.png` und `road_flag.png` dürfen bewusst identisch sein, damit Flaggen im
+Spiel überall gleich aussehen; die getrennten Dateien bleiben nur als optionaler
+Skin-Hook erhalten.
 
 Die Größe lässt sich in `assets/design.json` unter `build_spot_sizes` je Symbol
 einstellen.
@@ -60,6 +104,11 @@ Bäume haben jetzt **3 Typen** und **3 Wachstumsstufen**:
 - Dateinamen: `tree_oak_seed.png`, `tree_oak_small.png`, `tree_oak.png`
   (analog `tree_pine_*` und `tree_birch_*`)
 - Legacy-Fallbacks `tree.png`, `tree_seed.png`, `tree_small.png` bleiben gültig.
+- Die Baum-PNGs dürfen hochauflösend sein. Das Spiel skaliert sie über
+  `assets/design.json` → `object_heights` (`tree_seed`, `tree_small`,
+  `tree_big`) und behält dabei das Seitenverhältnis der jeweiligen PNG bei.
+  Wichtig: oben und seitlich transparente Reserve lassen; unten sitzt der
+  Stammfuß am Bildrand, weil dieser Punkt auf dem Kartenknoten steht.
 
 Die Karte wählt beim Generieren einen zufälligen Baumtyp aus dem Seed. Der Förster
 setzt beim Pflanzen deterministisch einen Typ aus der Knotenposition, damit die
@@ -139,15 +188,22 @@ Die Größen sind **nicht fest im Code**, sondern in `assets/design.json` einste
   "texture_scale": 2.0,
   "hq_scale": 1.35,
   "unit_size": 18,
+  "flag_size": [16, 24],
   "sizes": { "hut":[34,30], "house":[40,36], "castle":[50,46], "mine":[30,26] },
   "building_sizes": { "woodcutter": [37,33] },
   "building_offset": { "woodcutter": [0,0] },
-  "entrance": { "default": [0,-6], "hq": [0,-10] }
+  "entrance": { "default": [0,-6], "hq": [0,-10] },
+  "build_spot_offsets": { "flag": [0,-10], "road_flag": [0,-10] }
 }
 ```
 - `sizes`: Größe je Größenklasse (hut/house/castle/mine).
 - `building_sizes`: einzelne Gebäude individuell überschreiben (per `def_id`).
 - `building_offset`: Bild-Versatz eines Gebäudes zur Flagge (Position), per `def_id`.
+- `flag_size`: Zeichengröße der Spielflaggen-PNG (Fuß auf dem Knoten).
+- `build_spot_offsets`: Versatz der Bauhilfe-Icons (Leertaste) vom Knotenmittel-
+  punkt, je Symbol (`flag`, `road_flag`, `castle`, `house`, `hut`, `mine`,
+  `blocked`). Damit sitzen z. B. Flaggen-Icons nicht mehr mittig auf dem Knoten,
+  sondern an der richtigen Stelle. Bequem per Design-Editor einstellbar (s. u.).
 - `unit_size`: Ziel-Höhe der Figuren in px — **stellt zu große Einheiten-Sprites
   passend klein** (das Sheet wird auf diese Höhe skaliert).
 - `texture_scale`/`hq_scale`: Skalierung der Gebäude-Sprites.
@@ -161,8 +217,12 @@ Statt die JSON von Hand zu editieren, gibt es ein **DEV-Menü mit Live-Vorschau*
   von der Flagge zur Tür endet), **Textur-Skalierung**, **Einheiten-Höhe**.
 - Rechts auch: **Bild-Versatz X/Y** (verschiebt das Sprite gegenüber der Flagge)
   und ein **Vergleichsobjekt** (zweites Gebäude daneben, um Größen zu vergleichen).
-- Änderungen sind **sofort sichtbar**; gespeichert wird per **Speichern-Button**
-  in `assets/design.json` (`building_sizes`/`building_offset`/`entrance` je `def_id`).
+- Ganz unten: **Bauplatz-Icon Offset** — wähle ein Bauhilfe-Symbol (flag,
+  road_flag, …) und verschiebe es per X/Y; die Vorschau zeigt **Knoten + Icon +
+  Versatzlinie**, damit Flaggen-Icons richtig sitzen statt mittig auf dem Knoten.
+- Änderungen sind **sofort in der Vorschau sichtbar**; auf die Platte geschrieben
+  wird **nur per Speichern-Button** in `assets/design.json`
+  (`building_sizes`/`building_offset`/`entrance`/`build_spot_offsets`).
 
 So tunst du jedes Gebäude einzeln, ohne Code und ohne die Datei manuell zu öffnen.
 Jedes Gebäude ist damit individuell in Größe **und** Eingangspunkt einstellbar.

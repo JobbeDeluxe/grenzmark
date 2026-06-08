@@ -4,6 +4,19 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-08] (BEHOBEN) Neue Baum-PNGs oben abgeschnitten
+------------------------------------------------------------------------
+  Ursache: Die Einzel-PNGs der neuen Baumtypen waren aus dem vollständigen
+  `tree_types_alpha_v3.png`-Sheet mit zu knapper/fester Höhe ausgeschnitten;
+  mehrere Kronen berührten Zeile 0. Zusätzlich wurden große Baumgrafiken in
+  alte Zielboxen gezwängt, statt ihr Seitenverhältnis zu behalten.
+
+  Fix: Alle Baumtypen/-stufen wurden neu aus dem vollständigen Sheet extrahiert
+  und oben/seitlich mit transparenter Reserve versehen. `GameTheme.object_draw_size`
+  skaliert Baum-PNGs jetzt über Zielhöhen (`assets/design.json` -> object_heights)
+  mit beibehaltenem Seitenverhältnis.
+
+
 [2026-06-05] (BEHOBEN 2026-06-07) Klick-Lag: Spiel hängt ~1 Sekunde beim Linksklick
 ------------------------------------------------------------------------
 Behoben:

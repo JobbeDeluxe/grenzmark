@@ -15,6 +15,7 @@ const ROAD_TILE := 48.0    # Kachellänge der Straßentextur entlang des Wegs
 
 var state: WorldState
 var _font: Font = ThemeDB.fallback_font
+var _terrain_layer: Node2D   # zeichnet Terrain einmalig; nie neu zeichnen da Terrain statisch
 
 var fog_enabled := false        # Nebel des Krieges an/aus (zum Testen)
 var show_build_spots := false   # Bauplätze einblenden (Leertaste)
@@ -24,17 +25,24 @@ func setup(world_state: WorldState) -> void:
 	state = world_state
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST  # eigene Texturen scharf
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	_terrain_layer = Node2D.new()
+	_terrain_layer.show_behind_parent = true
+	_terrain_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_terrain_layer.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	_terrain_layer.draw.connect(_on_terrain_layer_draw)
+	add_child(_terrain_layer)
+	_terrain_layer.queue_redraw()
 	queue_redraw()
 
 
 func _draw() -> void:
 	if state == null:
 		return
-	_draw_terrain()
-	# Keine Flächen-Einfärbung des Gebiets — nur Grenzsteine (siehe _draw_border).
-	_draw_objects()
+	# Terrain liegt im _terrain_layer (show_behind_parent=true) — nur einmal gezeichnet.
+	# Reihenfolge: Straßen zuerst (flach auf Boden), dann Objekte (Bäume davor), dann Gebäude.
 	_draw_roads()
 	_draw_entrance_paths()
+	_draw_objects()
 	_draw_buildings()
 	_draw_enemy_markers()
 	_draw_flags()
@@ -54,10 +62,6 @@ func _draw_build_spots() -> void:
 			if state.can_place_road_flag(x, y):
 				_draw_build_spot_road_flag(p)
 				continue
-			if state._occ(x, y) == WorldState.OBJ_NONE and not state.has_object(x, y) \
-					and _node_in_player_area(x, y) and state.node_walkable(x, y) \
-					and state.road_margin_blocked(x, y):
-				_draw_build_spot_blocked(p)
 			var bq := state.actual_build_spot_bq(x, y)
 			if bq < WorldState.BQ_FLAG:
 				continue
@@ -100,7 +104,7 @@ func _build_spot_key(bq: int) -> String:
 		WorldState.BQ_HUT: return "hut"
 		WorldState.BQ_MINE: return "mine"
 		WorldState.BQ_FLAG: return "flag"
-	return "blocked"
+	return ""
 
 
 func _draw_build_spot_texture(p: Vector2, key: String) -> bool:
@@ -108,7 +112,8 @@ func _draw_build_spot_texture(p: Vector2, key: String) -> bool:
 	if tex == null:
 		return false
 	var sz := GameTheme.build_spot_size(key)
-	draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y * 0.5, sz.x, sz.y), false)
+	var off := GameTheme.build_spot_offset(key)
+	draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5 + off.x, p.y - sz.y * 0.5 + off.y, sz.x, sz.y), false)
 	return true
 
 
@@ -134,14 +139,6 @@ func _draw_build_spot_road_flag(p: Vector2) -> void:
 	var col := Color(0.95, 0.15, 0.18, 0.95)
 	draw_circle(p, 5.0, Color(1.0, 1.0, 1.0, 0.55))
 	_draw_spot_flag(p + Vector2(0, -2), col)
-
-
-func _draw_build_spot_blocked(p: Vector2) -> void:
-	if _draw_build_spot_texture(p, "blocked"):
-		return
-	var col := Color(1.0, 0.18, 0.12, 0.82)
-	draw_line(p + Vector2(-6, -6), p + Vector2(6, 6), col, 2.0, true)
-	draw_line(p + Vector2(6, -6), p + Vector2(-6, 6), col, 2.0, true)
 
 
 func _spot_color(bq: int) -> Color:
@@ -177,16 +174,19 @@ func _fog_tri(x: int, y: int, kind: int, col: Color) -> void:
 
 
 # --- Terrain (scharf, flach pro Dreieck) ---------------------------------
+# Terrain wird einmalig auf _terrain_layer gezeichnet; nie neu zeichnen!
 
-func _draw_terrain() -> void:
+func _on_terrain_layer_draw() -> void:
+	if state == null:
+		return
 	var map := state.map
 	for y in map.height:
 		for x in map.width:
-			_draw_tri(x, y, Grid.TRI_R)
-			_draw_tri(x, y, Grid.TRI_D)
+			_draw_tri_on(_terrain_layer, x, y, Grid.TRI_R)
+			_draw_tri_on(_terrain_layer, x, y, Grid.TRI_D)
 
 
-func _draw_tri(x: int, y: int, kind: int) -> void:
+func _draw_tri_on(target: CanvasItem, x: int, y: int, kind: int) -> void:
 	var map := state.map
 	var corners := Grid.triangle_corners(x, y, kind)
 	var pts := PackedVector2Array()
@@ -207,9 +207,9 @@ func _draw_tri(x: int, y: int, kind: int) -> void:
 		for c in corners:
 			var flat := Grid.node_to_world(c.x, c.y, 0)
 			uvs.append(flat / GameTheme.terrain_uv_world_size())
-		draw_polygon(pts, PackedColorArray([tint, tint, tint]), uvs, tex)
+		target.draw_polygon(pts, PackedColorArray([tint, tint, tint]), uvs, tex)
 		return
-	draw_colored_polygon(pts, col)
+	target.draw_colored_polygon(pts, col)
 
 
 ## Territorium: ein Dreieck wird eingefärbt, wenn ALLE DREI Eck-Nodes zum
@@ -285,27 +285,10 @@ func _draw_objects() -> void:
 
 
 func _draw_tree_object(p: Vector2, stage: int, typ := MapData.TREE_OAK) -> void:
-	var base := "tree_%s" % state.map.tree_type_name(typ)
-	var name := base
-	if stage == MapData.TREE_SEED:
-		name = "%s_seed" % base
-	elif stage == MapData.TREE_SMALL:
-		name = "%s_small" % base
-	var tex := GameTheme.object_texture(name)
-	if tex == null:
-		var legacy := "tree"
-		if stage == MapData.TREE_SEED:
-			legacy = "tree_seed"
-		elif stage == MapData.TREE_SMALL:
-			legacy = "tree_small"
-		tex = GameTheme.object_texture(legacy)
-	if tex != null:
-		var sz := GameTheme.object_draw_size(name)
-		if tex == GameTheme.object_texture("tree"):
-			match stage:
-				MapData.TREE_SEED: sz *= 0.35
-				MapData.TREE_SMALL: sz *= 0.62
-		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
+	var spr := GameTheme.tree_sprite(state.map.tree_type_name(typ), stage)
+	if spr.tex != null:
+		var sz: Vector2 = spr.size
+		draw_texture_rect(spr.tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
 	else:
 		_paint_tree(p, stage)
 
@@ -429,7 +412,7 @@ func _draw_buildings() -> void:
 		if b.under_construction:
 			_paint_site(p, b)
 			continue
-		var tex := GameTheme.building_texture(b.def_id)
+		var tex := GameTheme.building_texture(b.def_id, b.owner)
 		if tex != null:
 			var sz := _dims(b.size, b.def_id).x * GameTheme.texture_scale()
 			if b.is_hq:
@@ -446,16 +429,19 @@ func _draw_buildings() -> void:
 			_paint_house(p, b)
 
 
-## Roter Umriss + Fähnchen über allen Gegner-Gebäuden.
+## Flagge jedes Gegner-Gebäudes an der korrekten Flaggenposition (SE-Nachbar).
 func _draw_enemy_markers() -> void:
 	for i in state.buildings:
 		var b: WorldState.Building = state.buildings[i]
 		if b.owner != 1:
 			continue
-		var p := state.map.node_world(b.pos.x, b.pos.y) + GameTheme.building_offset(b.def_id)
-		var d := _dims(b.size, b.def_id)
-		# Kein roter Rahmen mehr — nur ein kleines Besitzer-Fähnchen.
-		_paint_flag(p + Vector2(0, -d.y - 6), Color(0.95, 0.15, 0.15))
+		var fp := state.map.node_world(b.flag_pos.x, b.flag_pos.y)
+		var tex := GameTheme.flag_texture(1)
+		if tex != null:
+			var sz := GameTheme.flag_draw_size()
+			draw_texture_rect(tex, Rect2(fp.x - sz.x * 0.5, fp.y - sz.y, sz.x, sz.y), false)
+		else:
+			_paint_flag(fp + Vector2(0, -16), GameTheme.flag_color(1))
 
 
 func _dims(size: int, def_id := "") -> Vector2:
@@ -555,4 +541,11 @@ func _draw_flags() -> void:
 	for i in state.flags:
 		var f: WorldState.Flag = state.flags[i]
 		var p := state.map.node_world(f.pos.x, f.pos.y)
-		_paint_flag(p + Vector2(0, -16), Color(0.90, 0.20, 0.20))
+		var owner := 1 if state.enemy_territory.has(state.map.idx(f.pos.x, f.pos.y)) else 0
+		var tex := GameTheme.flag_texture(owner)
+		if tex != null:
+			var sz := GameTheme.flag_draw_size()
+			# Pfahl-Basis liegt auf dem Knoten; Textur geht nach oben.
+			draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
+		else:
+			_paint_flag(p + Vector2(0, -16), GameTheme.flag_color(owner))
