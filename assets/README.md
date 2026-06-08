@@ -28,6 +28,18 @@ Typ Ordner, Dateiname und empfohlene Größe.
 | `assets/goods/`     | `<nummer>.png` | Waren-Symbol | ~16×16 |
 | `assets/units/`     | `carrier.png`, `worker.png`, `soldier.png`, `builder.png` (+ `_<spieler>` Varianten) | Lauf-Sprite-Sheet (4×6) | Zelle ~32×32 |
 | `assets/ui/`        | `main_menu_background.png`, `flag_<spieler>.png`, `build_spots/*.png` | Hauptmenü, Spielflaggen & Bauhilfe-Symbole | 16:9 / ~64×64 |
+| `assets/`           | `ui.json` | UI-Skin/Layouts: Farben, Randabstände, Panel-/Buttongrößen | Text/JSON |
+
+### UI-Skin & Bedienoberfläche (`assets/ui.json`)
+Die In-Game-UI hat eine eigene kleine Skin-Schicht (`game/ui_skin.gd`). Erste
+Werte liegen in `assets/ui.json`:
+- `layout`: Randabstände, obere Warenleiste, kontextuelles Auswahlfenster,
+  untere Hauptleiste, Baufenster, Minikarte, Waren-Iconzellen und Button-Größen.
+- `colors`: Panel-, Button-, Schrift- und Akzentfarben.
+
+Das ist die Vorstufe für richtige 9-Patch-Skins: Später kommen Panel-/Button-PNGs,
+Zustände (normal/hover/pressed/disabled) und ein kompletter UI-Editor dazu. Schon
+jetzt gilt: UI-Farben/Grundmaße ändern → Godot neu starten, kein Code nötig.
 
 ### Straßen-Texturen (`assets/roads/`)
 Straßen werden **segmentweise entlang der Wegrichtung gekachelt**. Lege `road.png`
@@ -263,11 +275,15 @@ Waren ins Gebäude bringen.
 7 Fisch · 8 Fleisch · 9 Kohle · 10 Eisenerz · 11 Eisen · 12 Golderz ·
 13 Münzen · 14 Bier · 15 Werkzeug · 16 Schwert · 17 Schild.
 
-## UI-Design (austauschbar & skalierbar) — GEPLANT (Stufe 8)
+## UI-Design (austauschbar & skalierbar) — TEILWEISE UMGESETZT (Stufe 8)
 
 Die Oberfläche soll künftig wie in Die Siedler 2 / RTTR aussehen (Holz-/Pergament-
 Paneele, Icon-Buttons, Tooltips) und **als Skin austauschbar** sein. Damit ein
 eigener Skin sauber passt, gelten diese Vorgaben (Ablage unter `assets/ui/`):
+
+Aktueller Stand: `assets/ui.json` wird bereits von `game/ui_skin.gd` gelesen und
+steuert Farben sowie wichtige Layoutmaße. PNG-basierte 9-Patch-Paneele und
+Button-Zustände sind noch der nächste Schritt.
 
 **Paneele/Rahmen (9-Patch):** `assets/ui/panel.png`, `button.png`,
 `button_hover.png`, `button_pressed.png`, `button_disabled.png`.
@@ -304,8 +320,8 @@ play, pause, faster, slower`. Waren-Icons werden aus `assets/goods/` wiederverwe
 - Farben/Schrift in `ui.json`; nichts hartcodiert.
 - Fehlt der Skin, nutzt das Spiel sein Standard-Theme (kein Absturz).
 
-*(Hinweis: Das Skin-Lade-System wird in Stufe 8 umgesetzt; diese Vorgabe steht
-schon hier, damit du Designs passend vorbereiten kannst.)*
+*(Hinweis: Die JSON-Skin-Basis ist umgesetzt; die 9-Patch-PNGs sind noch Planung,
+damit du Designs schon passend vorbereiten kannst.)*
 
 ## Format
 - **PNG** mit Transparenz (Alpha).

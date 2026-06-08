@@ -1,0 +1,30 @@
+{
+  "_hint": "UI skin/layout values. Change here, restart Godot. Future skins can replace PNGs plus these colors/sizes without touching code.",
+  "layout": {
+    "edge_margin": 8,
+    "top_bar_height": 46,
+    "right_panel_width": 260,
+    "bottom_bar_height": 46,
+    "build_panel_width": 850,
+    "build_panel_height": 170,
+    "minimap_size": 188,
+    "button_width": 86,
+    "button_height": 26,
+    "good_icon_size": 12,
+    "good_cell_width": 38,
+    "good_cell_height": 18
+  },
+  "colors": {
+    "panel": "#261b12e6",
+    "panel_dark": "#15100bcc",
+    "panel_header": "#3b2a18ee",
+    "button": "#4a331dff",
+    "button_hover": "#6b4a29ff",
+    "button_pressed": "#8a6736ff",
+    "button_disabled": "#2a241cff",
+    "font": "#f4dfb8ff",
+    "font_muted": "#c6a982ff",
+    "accent": "#e6bd55ff",
+    "bad": "#d45b45ff"
+  }
+}

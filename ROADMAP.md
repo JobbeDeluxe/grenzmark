@@ -56,6 +56,8 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Fenster-Skalierung (Stretch canvas_items) — UI skaliert mit
 - [ ] Höhen-Picking exakt (aktuell ignoriert Höhe leicht)
 - [ ] Bessere Karten-Generierung (Inseln, Flüsse, Berg-Adern mit Erzen)
+- [x] Test-Teich im Startgebiet (kleiner See nahe HQ), damit Fischerhütte ohne
+      Kartenglück getestet werden kann.
 - [x] Nebel des Krieges + Sicht umschaltbar (Taste F); Karte wird um eigene
       Gebäude/Flaggen/Straßen aufgedeckt (recompute_visibility)
 - [x] Bauplatz-Anzeige (Leertaste): zeigt nur tatsächlich im eigenen Gebiet
@@ -138,7 +140,7 @@ Das Skelett, auf dem alles aufbaut.
 
 ### Stufe 5 — Spielfluss & Inhalt
 - [x] Speichern/Laden (Struktur + HQ-Lager) — F2/F3
-- [x] In-Game-UI: Bau-Menü als Kategorie-Leiste unten, Minikarte, Vorrats-Anzeige
+- [x] In-Game-UI: kompakte Hauptleiste unten, Minikarte, Vorrats-Anzeige
 - [x] Bau-Menü zeigt Gebäude-Sprites als Button-Icons (wenn vorhanden)
 - [x] Hauptmenü + Spielgeschwindigkeit/Pause + Sieg/Niederlage (siehe Stufe 4)
 - [x] Austauschbares Hauptmenü-Hintergrundbild (`assets/ui/main_menu_background.png`)
@@ -177,8 +179,8 @@ Das Skelett, auf dem alles aufbaut.
   werden.
 - Ressourcen-/Lagerleiste oben ist noch eine Textliste; Waren brauchen Icons,
   Zahlen und klare Warnzustände.
-- Bauleiste hat schon Buttons/Tooltips, braucht aber ausgewählte Zustände,
-  Kategorie-Icons und ein austauschbares Skin.
+- Bau-/Verwaltungsfenster sind jetzt nur noch bei Bedarf offen; brauchen aber
+  noch echte Icon-Grafiken, verschiebbare Fenster und austauschbare 9-Patch-Skins.
 - Minikarte braucht Rahmen/Overlay-Schalter; aktuelle Anzeige ist funktional,
   aber nicht in ein UI-System eingebettet.
 - Bevölkerung/Werkzeuge/Esel/mehrere Lagerhäuser sind weiter große Mechanik-Lücken,
@@ -209,11 +211,26 @@ Icon-Buttons, Tooltips) — und das **komplett austauschbar über ein Theme/Skin
 ohne Code, **bei jeder Auflösung scharf** (9-Patch).
 
 **A) Konkrete UI-Bausteine, die schöner/neu werden müssen**
+- [x] **Erster UI-Schnitt (2026-06-08):** feste Randleisten statt loser Text-HUDs:
+      obere Icon-Warenleiste, kontextuelles Auswahlfenster, untere Hauptleiste
+      und gerahmte Minikarte.
+- [x] **S2-näherer zweiter UI-Schnitt:** Unten bleiben nur drei Hauptbuttons
+      (`Bauen`, `Wirtschaft`, `System`). Das Baufenster klappt nur bei Bedarf auf
+      und nutzt Größenklassen wie im Original: Wege, kleine, mittlere, große
+      Gebäude und Bergwerke.
+- [x] **Bauplatz-Klicklogik:** Wenn die Bauplatzansicht per Leertaste sichtbar
+      ist, setzt ein Klick auf Flaggen-/Straßenflaggen-Marker direkt die Flagge;
+      Klick auf Hütte/Haus/Burg/Mine öffnet unten ein nach Bauplatzgröße
+      gefiltertes Baufenster.
+- [x] **Einstellungsfenster (erste Version):** Taste **S** / Button Optionen zeigt
+      alle aktuell auslagerbaren Design-/Tuning-Dateien (`assets/ui.json`,
+      `assets/design.json`, `assets/tuning.json`, Bauplatz-/Flaggen-/Spieler-PNGs)
+      plus schnelle Toggles für Bauplätze, Nebel, KI und Pause.
 - [ ] **Nächster UI-Schnitt (Priorität 1):** Gebäude-Infofenster + obere
       Warenleiste zuerst, weil sie den Testfluss am stärksten verbessern.
-- [~] **Untere Bauleiste**: Icon-Buttons (vorhanden), Kategorie-Reiter,
-      **Tooltip** (Name, Kosten, Ein-/Ausgänge) beim Überfahren ✅.
-      Offen: Kategorie-Symbole, ausgewählte Kategorie/Gebäude hervorheben.
+- [~] **Unterer Rand**: dauerhaft nur Hauptbuttons; Gebäude-/Wirtschafts-/
+      Systemdetails liegen in Fenstern. Offen: richtige S2-artige Symbolbuttons,
+      Fensterkopfzeilen, Parken/Schließen per Rechtsklick und verschiebbare Fenster.
 - [x] **Cursor-Bauvorschau**: „Geist" des gewählten Gebäudes am Mauszeiger +
       BQ-Markierung am Knoten (grün=geht/rot=geht nicht), Eingangsflagge/-weg
       schon in der Vorschau (unit_renderer._draw_build_preview).
@@ -228,6 +245,8 @@ ohne Code, **bei jeder Auflösung scharf** (9-Patch).
 - [ ] **Tooltips** durchgängig; Cursor-Symbole je Modus (Flagge/Straße/Abriss).
 
 **B) Austauschbares, skalierbares UI-Design (Skin-System)**
+- [x] **`assets/ui.json` + `game/ui_skin.gd` als Startpunkt:** Panel-/Buttonfarben,
+      Randabstände und Basismasse sind aus dem Code gezogen.
 - [ ] Godot-**`Theme`-Ressource** zentral: alle Controls beziehen Styles daraus.
       Skin liegt unter `assets/ui/` und wird beim Start geladen (sonst Standard).
 - [ ] Panel-/Button-Hintergründe als **9-Patch** (`StyleBoxTexture`/`NinePatchRect`):
@@ -247,6 +266,21 @@ ohne Code, **bei jeder Auflösung scharf** (9-Patch).
   `GameTheme`, z. B. `game/ui_skin.gd`). Stretch-Modus bleibt `canvas_items`
   (skaliert die UI mit dem Fenster); 9-Patch hält Rahmen scharf.
 - Tooltips/Infofenster lesen aus `core/` (read-only), kein Logik-Code im UI.
+
+**D) Recherche-Abgleich S2 / RTTR (Stand 2026-06-08)**
+- Siedler-2-Referenz: Bauplatzansicht per **Space**, separate Hotkeys/Fenster für
+  Bauen (**B**), Statistik (**C**), Inventar (**I**), globale Wirtschaft (**L**),
+  Minikarte (**M**), Meldungen (**N**), Einstellungen (**S**), UI aus/an (**Y**)
+  und HQ-Sprung (**H**). Quelle: Ubisoft-Handbuch/ManualsPlus:
+  https://manuals.plus/ubisoft/the-settlers-ii-10th-anniversary-pc-cd-rom-game-manual
+- Bedienprinzip daraus: weniger dauerhafte Textleisten, mehr kontextuelle Fenster.
+  Klick auf sichtbare Bauplätze soll direkt zum passenden Bau-/Flaggenfenster
+  führen; Rechtsklick/Esc später als universelles Schließen/Abbrechen.
+- RTTR-Referenz: Open-Source-S2-Rewrite mit modernen Optionen/Addon-Settings und
+  originalnahem Fenster-/Wirtschaftsgefühl, aber ohne Code-Übernahme.
+  Quellen: https://github.com/Return-To-The-Roots/s25client und https://www.siedler25.org/
+- Für Grenzmark festgelegt: S2-Hotkeys werden als Orientierung übernommen, aber
+  die A*-Straßenplanung bleibt vorerst als komfortable Abweichung erhalten.
 
 ### Stufe 9 — Zusatz & Feinschliff
 - [ ] Träger-Warteverhalten optisch verbessern: wartende Träger stehen aktuell
@@ -319,7 +353,13 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [ ] Geologen: erkunden Berge & decken die Erzsorte auf (Schilder), bevor Minen lohnen
 - [x] Nebel des Krieges / Sichtbarkeit nur im erkundeten Gebiet (Taste F)
 - [ ] Erdarbeiter (Planierer) ebnen Bauland; Höhe beeinflusst Bau stärker
-- [ ] Tiere (Wild) und nachwachsende Ressourcen, Fisch erschöpft sich
+- [ ] Fisch als endlicher Kartenbestand statt unendliche Wasserquelle:
+      Wasser-/Küstenknoten bekommen Fischvorrat, Fischer verbraucht ihn, UI zeigt
+      "keine Fische" und spätere Regeneration/Schwärme bleiben optional.
+- [ ] Jäger als echte Naturressource: Wildtiere spawnen nur in/nahe Waldclustern
+      außerhalb dichter Bebauung (Startregel: mindestens ca. 10 große Bäume im
+      Suchradius), laufen auf der Karte und werden gezielt gejagt statt freier
+      Fleischproduktion.
 
 **Militär (mittel):**
 - [ ] Soldaten-Ränge mit Stufen (Gefreiter→General), Beförderung sichtbar
@@ -386,10 +426,14 @@ ROADMAP.md • README.md • assets/README.md • ai/README.md
 
 ## Steuerung (Stand aktuell)
 - **Rechte/mittlere Maustaste ziehen**: Karte schwenken  •  **Mausrad**: Zoom
-- **Untere Werkzeugleiste**: Modi & Kategorie-Tabs & Gebäude
-  (Tasten **1** Flagge, **2** Straße, **9** Abriss, **0** Auswahl)
+- **Untere Hauptleiste**: **Bauen**, **Wirtschaft**, **System** als Fensterzugriffe
+  (Tasten **1** Flagge, **2** Straße, **9** Abriss, **0/Esc** Auswahl/Fenster zu)
 - **Linksklick**: ausführen / im Auswahl-Modus Gebäude wählen bzw. Gegner angreifen
-- **Leertaste**: Bauplätze einblenden  •  **F**: Nebel an/aus  •  **Pause**: pausieren
+- **Leertaste**: Bauplätze einblenden; bei sichtbaren Markern öffnet Klick auf
+  Hütte/Haus/Burg/Mine das passende Baufenster, Flaggenmarker setzen direkt Flaggen
+- **B**: Baufenster  •  **I**: Wirtschaft/Waren  •  **S**: System/Design-Übersicht
+- **M**: Minikarte an/aus  •  **H**: zum HQ springen  •  **Y**: UI an/aus
+- **F**: Nebel an/aus  •  **Pause**: pausieren
 - **+/-**: Tempo  •  **P**: Produktion des gewählten Gebäudes an/aus
 - **K**: Gegner-KI an/aus  •  **J**: Gegner-KI wechseln
 - **F2/F3** Speichern/Laden  •  **F5** Neues Spiel
