@@ -210,6 +210,12 @@ im Stil von Die Siedler 2 / RTTR** (Holz-/Pergament-Paneele, verzierte Rahmen,
 Icon-Buttons, Tooltips) — und das **komplett austauschbar über ein Theme/Skin**,
 ohne Code, **bei jeder Auflösung scharf** (9-Patch).
 
+GitHub-Arbeitspakete:
+- https://github.com/JobbeDeluxe/grenzmark/issues/5 — S2-artiges Fenster- und Hauptleisten-System
+- https://github.com/JobbeDeluxe/grenzmark/issues/8 — Austauschbare 9-Patch-UI-Skins und Icon-Set
+- https://github.com/JobbeDeluxe/grenzmark/issues/3 — Ressourcen-Icons oben stark verkleinern
+- https://github.com/JobbeDeluxe/grenzmark/issues/4 — Kamera-Drag-Regress nach UI-Umbau
+
 **A) Konkrete UI-Bausteine, die schöner/neu werden müssen**
 - [x] **Erster UI-Schnitt (2026-06-08):** feste Randleisten statt loser Text-HUDs:
       obere Icon-Warenleiste, kontextuelles Auswahlfenster, untere Hauptleiste
@@ -321,6 +327,7 @@ Arbeitsliste, bis das Spiel „vollständig" ist (Ton/Musik kommt ganz zuletzt).
 
 **Bevölkerung & Träger (Kern, hoch):**
 - [ ] Echte Einwohnerzahl: Träger/Arbeiter sind begrenzte Bevölkerung aus dem HQ
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/9)
 - [ ] Werkzeuge: Berufe brauchen passendes Werkzeug (Schreiner/Werkzeugmacher)
 - [ ] Esel/Eselzüchter: Esel als Träger auf stark genutzten Straßen
 - [ ] Straßen-Ausbau zu „Eselstraßen"; mehrere Träger bei Stau
@@ -356,10 +363,12 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [ ] Fisch als endlicher Kartenbestand statt unendliche Wasserquelle:
       Wasser-/Küstenknoten bekommen Fischvorrat, Fischer verbraucht ihn, UI zeigt
       "keine Fische" und spätere Regeneration/Schwärme bleiben optional.
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/6)
 - [ ] Jäger als echte Naturressource: Wildtiere spawnen nur in/nahe Waldclustern
       außerhalb dichter Bebauung (Startregel: mindestens ca. 10 große Bäume im
       Suchradius), laufen auf der Karte und werden gezielt gejagt statt freier
       Fleischproduktion.
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/7)
 
 **Militär (mittel):**
 - [ ] Soldaten-Ränge mit Stufen (Gefreiter→General), Beförderung sichtbar

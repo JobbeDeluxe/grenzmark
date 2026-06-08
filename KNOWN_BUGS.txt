@@ -6,6 +6,8 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
 
 [2026-06-08] (OFFEN) Ressourcen-Icons oben viel zu groß
 ------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/3
+
   Nach dem UI-Umbau sind die Waren-/Ressourcen-Icons in der oberen Leiste noch
   deutlich zu groß. Gewünscht ist ungefähr ein Zehntel der aktuellen Wirkung:
   sehr kleine, dezente Status-Icons statt dominanter UI-Kacheln.
@@ -13,6 +15,8 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
 
 [2026-06-08] (OFFEN) Karte verschieben geht nicht mehr
 ------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/4
+
   Seit dem UI-Umbau lässt sich die Karte nicht mehr wie gewohnt verschieben.
   Verdacht: ein neues Control/Panel fängt Maus-Input ab oder liegt zu großflächig
   über der Spielwelt. Kamera-Drag mit rechter/mittlerer Maustaste prüfen.
@@ -105,6 +109,8 @@ Mögliche Lösungen (für später):
 
 [2026-06-07] (OFFEN) Lager hält keine Bevölkerung (S2: Personen im HQ)
 ------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/9
+
   In S2 sind Träger/Arbeiter eine endliche Bevölkerung, die aus dem Lager kommt und
   bei Gebäudeabriss/Bedarf zurückkehrt. Aktuell sind Träger/Arbeiter „unendlich".
   Größeres Feature (Bevölkerungssystem) — bewusst noch offen, separat planen.
