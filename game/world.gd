@@ -258,7 +258,7 @@ func _connect_new_building_to_owner_network(b: WorldState.Building) -> void:
 			continue
 		if f.pos != hq and state.find_route(hq, f.pos).size() < 2:
 			continue
-		var path := state.plan_road(f.pos, b.flag_pos, false, b.owner)
+		var path := state.plan_road(f.pos, b.flag_pos, b.owner)
 		if path.is_empty():
 			continue
 		if path.size() < best_len:
@@ -1784,7 +1784,7 @@ func _handle_road_click() -> bool:
 
 
 func _update_preview() -> void:
-	var path := state.plan_road(road_start, hover, true)  # fast mode für Vorschau
+	var path := state.plan_road(road_start, hover)  # gleiches optimales A* wie der Bau
 	unit_renderer.preview_path = path
 	unit_renderer.preview_ok = not path.is_empty()
 

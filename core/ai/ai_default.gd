@@ -168,7 +168,7 @@ func _can_connect_to_network(state: WorldState, owner: int, flag_pos: Vector2i) 
 			continue
 		if f.pos != hq and state.find_route(hq, f.pos).size() < 2:
 			continue
-		if not state.plan_road(f.pos, flag_pos, false, owner).is_empty():
+		if not state.plan_road(f.pos, flag_pos, owner).is_empty():
 			return true
 	return false
 
@@ -188,7 +188,7 @@ func _connect_to_network(eco: Economy, b: WorldState.Building) -> void:
 			continue
 		if f.pos != hq and state.find_route(hq, f.pos).size() < 2:
 			continue
-		var path := state.plan_road(f.pos, b.flag_pos, false, b.owner)
+		var path := state.plan_road(f.pos, b.flag_pos, b.owner)
 		if path.is_empty():
 			continue
 		if path.size() < best_len:

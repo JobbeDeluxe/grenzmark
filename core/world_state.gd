@@ -548,8 +548,9 @@ func can_place_road_flag(x: int, y: int, owner := 0) -> bool:
 
 ## Plant eine Straße von [param from] (muss eine Flagge sein) nach [param to].
 ## Liefert die Knotenfolge inkl. Endpunkten, oder leeres Array wenn unmöglich.
-## [param fast] = true für schnelle Vorschau: gewichtetes A* (suboptimal, aber viel schneller).
-func plan_road(from: Vector2i, to: Vector2i, fast := false, owner := -1) -> Array[Vector2i]:
+## Optimales A* mit Binär-Heap (siehe [method _heap_pop]) — schnell genug, dass
+## Vorschau und Bau denselben Pfad liefern (kein gewichtetes „fast"-A* mehr nötig).
+func plan_road(from: Vector2i, to: Vector2i, owner := -1) -> Array[Vector2i]:
 	var empty: Array[Vector2i] = []
 	var start_flag := flag_at(from)
 	if start_flag == null:
@@ -563,21 +564,28 @@ func plan_road(from: Vector2i, to: Vector2i, fast := false, owner := -1) -> Arra
 	# A* über begehbare, freie Knoten. Endpunkt darf eine Flagge sein.
 	var start_i := map.idx(from.x, from.y)
 	var goal_i := map.idx(to.x, to.y)
-	var h_weight := 3.5 if fast else 1.0   # gewichtetes A* für schnelle Vorschau
-	var cap := 1200 if fast else ROAD_SEARCH_CAP
+	var cap := ROAD_SEARCH_CAP
 
 	var came_from := {}
 	var g := { start_i: 0.0 }
-	var open := { start_i: _heuristic(from, to) * h_weight }  # idx -> f-Wert
+	# Open-Set als Binär-Min-Heap mit Lazy-Deletion: Einträge sind [f, idx];
+	# veraltete (mit größerem g neu eingereihte) Einträge werden beim Pop
+	# übersprungen. O(n log n) statt O(n²) — dadurch ist optimales A* schnell genug.
+	var heap: Array = []
+	_heap_push(heap, _heuristic(from, to), start_i)
+	var closed := {}
 	var iter := 0
 
-	while not open.is_empty():
+	while not heap.is_empty():
+		var cur_i: int = _heap_pop(heap)[1]
+		if closed.has(cur_i):
+			continue
+		closed[cur_i] = true
 		# Sicherung gegen Endlos-/Komplettsuche (z. B. unerreichbares Ziel über
 		# Wasser): sonst durchsucht A* die GANZE Karte → ~1 s Freeze beim Ziehen.
 		iter += 1
 		if iter > cap:
 			return empty
-		var cur_i := _pop_lowest(open)
 		var cur := Vector2i(cur_i % map.width, cur_i / map.width)
 		if cur_i == goal_i:
 			return _reconstruct(came_from, cur_i)
@@ -615,13 +623,13 @@ func plan_road(from: Vector2i, to: Vector2i, fast := false, owner := -1) -> Arra
 			if tentative < float(g.get(ni, INF)):
 				came_from[ni] = cur_i
 				g[ni] = tentative
-				open[ni] = tentative + _heuristic(n, to) * h_weight
+				_heap_push(heap, tentative + _heuristic(n, to), ni)
 
 	return empty
 
 
 func can_build_road(from: Vector2i, to: Vector2i, owner := -1) -> bool:
-	return not plan_road(from, to, false, owner).is_empty()
+	return not plan_road(from, to, owner).is_empty()
 
 
 ## Baut die geplante Straße. Erzeugt am Ziel bei Bedarf eine Flagge.
@@ -630,7 +638,7 @@ func build_road(from: Vector2i, to: Vector2i, owner := -1) -> Road:
 	if start_flag == null:
 		return null
 	var road_owner := start_flag.owner if owner < 0 else owner
-	var path := plan_road(from, to, false, road_owner)
+	var path := plan_road(from, to, road_owner)
 	if path.is_empty():
 		return null
 	var end := path[path.size() - 1]
@@ -658,6 +666,43 @@ func _heuristic(a: Vector2i, b: Vector2i) -> float:
 	return wa.distance_to(wb) / Grid.TILE_W
 
 
+# --- Binär-Min-Heap für A* (Einträge: [f: float, idx: int]) ---------------
+
+func _heap_push(heap: Array, f: float, idx: int) -> void:
+	heap.append([f, idx])
+	var c := heap.size() - 1
+	while c > 0:
+		var p := (c - 1) >> 1
+		if heap[p][0] <= heap[c][0]:
+			break
+		var tmp = heap[p]; heap[p] = heap[c]; heap[c] = tmp
+		c = p
+
+
+func _heap_pop(heap: Array) -> Array:
+	var top = heap[0]
+	var last = heap.pop_back()
+	if not heap.is_empty():
+		heap[0] = last
+		var n := heap.size()
+		var c := 0
+		while true:
+			var l := 2 * c + 1
+			var r := 2 * c + 2
+			var smallest := c
+			if l < n and heap[l][0] < heap[smallest][0]:
+				smallest = l
+			if r < n and heap[r][0] < heap[smallest][0]:
+				smallest = r
+			if smallest == c:
+				break
+			var tmp = heap[smallest]; heap[smallest] = heap[c]; heap[c] = tmp
+			c = smallest
+	return top
+
+
+## Linearer Pop für den kleinen Flaggen-Graph in [method find_route] (wenige
+## Knoten — hier lohnt der Heap nicht). [param open] = idx -> Distanz.
 func _pop_lowest(open: Dictionary) -> int:
 	var best_i := -1
 	var best_f := INF
