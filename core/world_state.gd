@@ -96,6 +96,22 @@ func in_territory(x: int, y: int) -> bool:
 	return territory.has(map.idx(x, y))
 
 
+func is_territory_border_node(x: int, y: int) -> bool:
+	if territory.is_empty() or not map.in_bounds(x, y) or not in_territory(x, y):
+		return false
+	for dir in Grid.DIRS:
+		var n := map.neighbor(x, y, dir)
+		if n.x < 0 or not in_territory(n.x, n.y):
+			return true
+	return false
+
+
+func has_building_territory_margin(x: int, y: int) -> bool:
+	if territory.is_empty():
+		return true
+	return in_territory(x, y) and not is_territory_border_node(x, y)
+
+
 ## Sichtbarkeit: deckt Knoten rund um eigene Gebäude/Flaggen/Straßen auf.
 ## Aufgedecktes bleibt aufgedeckt (wie in S2 die erkundete Karte).
 func recompute_visibility() -> void:
@@ -330,13 +346,15 @@ func flag_at(pos: Vector2i) -> Flag:
 # --------------------------------------------------------------------------
 
 func can_place_building(x: int, y: int, size: int) -> bool:
-	if not territory.is_empty() and not in_territory(x, y):
+	if not has_building_territory_margin(x, y):
 		return false
 	if _occ(x, y) != OBJ_NONE:
 		return false
 	# Eingangsflagge unten rechts muss frei oder schon eine Flagge sein.
 	var se := map.neighbor(x, y, Grid.SE)
 	if se.x < 0:
+		return false
+	if not has_building_territory_margin(se.x, se.y):
 		return false
 	if _occ(se.x, se.y) != OBJ_FLAG and not can_place_flag(se.x, se.y):
 		return false

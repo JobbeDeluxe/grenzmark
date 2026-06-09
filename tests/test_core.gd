@@ -31,6 +31,7 @@ func _initialize() -> void:
 	_test_promotion()
 	_test_roadsplit()
 	_test_build_help_respects_territory()
+	_test_building_needs_territory_margin()
 	_test_road_traffic_upgrade()
 	_test_swamp()
 	_test_tree_types_and_stone_stages()
@@ -190,7 +191,7 @@ func _test_military() -> void:
 	eco.resync()
 
 	var gd := BuildingCatalog.get_def("guardhouse")
-	var gh := state.place_building(12, 20, gd.size, false, "guardhouse",
+	var gh := state.place_building(12, 19, gd.size, false, "guardhouse",
 		int(gd.influence), true)
 	_check(gh != null, "Wachhaus im Gebiet platzierbar")
 	if gh == null:
@@ -381,11 +382,11 @@ func _test_building_spacing() -> void:
 	var eco := Economy.new(state)
 	state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
 	eco.resync()
-	var b := state.place_building(15, 15, WorldState.BQ_HUT, false, "woodcutter", 0, true)
+	var b := state.place_building(13, 14, WorldState.BQ_HUT, false, "woodcutter", 0, true)
 	_check(b != null, "Gebäude im Gebiet platzierbar")
 	if b == null:
 		return
-	var n := map.neighbor(15, 15, Grid.E)
+	var n := map.neighbor(13, 14, Grid.E)
 	_check(state.effective_bq(n.x, n.y) <= WorldState.BQ_FLAG,
 		"Direkt neben Gebäude nur noch Flagge (eff. BQ %d)" % state.effective_bq(n.x, n.y))
 	_check(not state.can_place_building(n.x, n.y, WorldState.BQ_HUT),
@@ -462,6 +463,28 @@ func _test_build_help_respects_territory() -> void:
 		"Bauhilfe zeigt Plätze im eigenen Gebiet")
 	_check(state.actual_build_spot_bq(35, 35) == WorldState.BQ_NOTHING,
 		"Bauhilfe zeigt keine fremden Kartenplätze außerhalb des Gebiets")
+
+
+func _test_building_needs_territory_margin() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	_check(hq != null, "HQ für Grenzbau-Test platzierbar")
+	var saw_border := false
+	var saw_inner_buildable := false
+	for k in state.territory:
+		var x := int(k) % map.width
+		var y := int(k) / map.width
+		if state.is_territory_border_node(x, y):
+			saw_border = true
+			_check(not state.can_place_building(x, y, WorldState.BQ_HUT),
+				"Bauen direkt auf der Grenze verboten")
+		elif state.can_place_building(x, y, WorldState.BQ_HUT):
+			saw_inner_buildable = true
+	_check(saw_border, "Grenzknoten im Territorium gefunden")
+	_check(saw_inner_buildable, "Innen im Gebiet bleiben Bauplätze erlaubt")
 
 
 func _test_road_traffic_upgrade() -> void:

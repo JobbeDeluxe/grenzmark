@@ -46,18 +46,21 @@ func _ready() -> void:
 		ids.append(id)
 
 	var vp := get_viewport_rect().size
+	var top_y := 38.0
+	var list_w := 156.0
+	var side_w := 232.0
 
 	# Titel
 	var title := Label.new()
-	title.text = "Design-Editor — Größe & Eingang live einstellen (speichert automatisch)"
-	title.position = Vector2(16, 10)
-	title.add_theme_font_size_override("font_size", 18)
+	title.text = "Design-Editor — Größe & Eingang"
+	title.position = Vector2(12, 8)
+	title.add_theme_font_size_override("font_size", 15)
 	add_child(title)
 
 	# Gebäudeliste links
 	var list := ItemList.new()
-	list.position = Vector2(16, 48)
-	list.size = Vector2(180, vp.y - 110)
+	list.position = Vector2(12, top_y)
+	list.size = Vector2(list_w, vp.y - top_y - 12)
 	for id in ids:
 		list.add_item(String(BuildingCatalog.get_def(id).get("name", id)))
 	list.item_selected.connect(_on_pick)
@@ -66,20 +69,20 @@ func _ready() -> void:
 
 	# Vorschau Mitte
 	_preview = DesignPreview.new()
-	_preview.position = Vector2(210, 48)
-	_preview.size = Vector2(vp.x - 210 - 280, vp.y - 110)
+	_preview.position = Vector2(180, top_y)
+	_preview.size = Vector2(maxf(260.0, vp.x - list_w - side_w - 64.0), vp.y - top_y - 12)
 	add_child(_preview)
 
 	# Regler rechts — in einem ScrollContainer, damit alle Regler (inkl. Bauplatz-
 	# Offset + Speichern-Button) auch bei vielen Einträgen erreichbar bleiben.
 	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(vp.x - 268, 48)
-	scroll.size = Vector2(260, vp.y - 96)
+	scroll.position = Vector2(vp.x - side_w - 12.0, top_y)
+	scroll.size = Vector2(side_w, vp.y - top_y - 12)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(scroll)
 	var panel := VBoxContainer.new()
-	panel.custom_minimum_size = Vector2(244, 0)
-	panel.add_theme_constant_override("separation", 6)
+	panel.custom_minimum_size = Vector2(side_w - 18.0, 0)
+	panel.add_theme_constant_override("separation", 4)
 	scroll.add_child(panel)
 
 	_w = _spin(panel, "Breite", 6, 160, 1)
@@ -94,9 +97,10 @@ func _ready() -> void:
 	# Vergleichsobjekt
 	var clabel := Label.new()
 	clabel.text = "Vergleichsobjekt"
+	clabel.add_theme_font_size_override("font_size", 11)
 	panel.add_child(clabel)
 	_compare = OptionButton.new()
-	_compare.custom_minimum_size = Vector2(244, 0)
+	_compare.custom_minimum_size = Vector2(206, 26)
 	_compare.add_item("— keins —")
 	for id in ids:
 		_compare.add_item(String(BuildingCatalog.get_def(id).get("name", id)))
@@ -104,8 +108,8 @@ func _ready() -> void:
 	panel.add_child(_compare)
 
 	var hint := Label.new()
-	hint.text = "Bild-Versatz verschiebt das Sprite zur Flagge.\nEingang = wo der Weg endet (Tür)."
-	hint.add_theme_font_size_override("font_size", 11)
+	hint.text = "Bild-Versatz verschiebt das Sprite.\nEingang = Weg-Ende an der Tür."
+	hint.add_theme_font_size_override("font_size", 10)
 	panel.add_child(hint)
 
 	# --- Bauplatz-Icon-Offset (Leertaste-Menü) ---
@@ -113,11 +117,11 @@ func _ready() -> void:
 	panel.add_child(sep)
 	var bspot_title := Label.new()
 	bspot_title.text = "Bauplatz-Icon Offset (Leertaste)"
-	bspot_title.add_theme_font_size_override("font_size", 13)
+	bspot_title.add_theme_font_size_override("font_size", 12)
 	panel.add_child(bspot_title)
 
 	_bspot_select = OptionButton.new()
-	_bspot_select.custom_minimum_size = Vector2(244, 0)
+	_bspot_select.custom_minimum_size = Vector2(206, 26)
 	for bt in ["flag", "road_flag", "castle", "house", "hut", "mine", "blocked"]:
 		_bspot_select.add_item(bt)
 	_bspot_select.item_selected.connect(_on_bspot_pick)
@@ -134,14 +138,14 @@ func _ready() -> void:
 	_select_bspot("flag")
 
 	var save := Button.new()
-	save.text = "💾 Speichern"
-	save.custom_minimum_size = Vector2(244, 34)
+	save.text = "Speichern"
+	save.custom_minimum_size = Vector2(206, 28)
 	save.pressed.connect(_save_cfg)
 	panel.add_child(save)
 
 	var back := Button.new()
-	back.text = "← Zurück zum Menü"
-	back.custom_minimum_size = Vector2(244, 30)
+	back.text = "Zurück zum Menü"
+	back.custom_minimum_size = Vector2(206, 28)
 	back.pressed.connect(func(): get_tree().change_scene_to_file("res://game/menu.tscn"))
 	panel.add_child(back)
 
@@ -158,16 +162,22 @@ func _on_compare(idx: int) -> void:
 
 
 func _spin(box: VBoxContainer, label: String, lo: float, hi: float, step: float) -> SpinBox:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	box.add_child(row)
 	var l := Label.new()
 	l.text = label
-	box.add_child(l)
+	l.custom_minimum_size = Vector2(112, 0)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.add_theme_font_size_override("font_size", 10)
+	row.add_child(l)
 	var s := SpinBox.new()
 	s.min_value = lo
 	s.max_value = hi
 	s.step = step
-	s.custom_minimum_size = Vector2(244, 0)
+	s.custom_minimum_size = Vector2(84, 24)
 	s.value_changed.connect(_on_value_changed)
-	box.add_child(s)
+	row.add_child(s)
 	return s
 
 
@@ -211,14 +221,20 @@ func _on_value_changed(_v: float) -> void:
 
 
 func _spin_bspot(box: VBoxContainer, label: String, lo: float, hi: float, step: float) -> SpinBox:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	box.add_child(row)
 	var l := Label.new()
 	l.text = label
-	box.add_child(l)
+	l.custom_minimum_size = Vector2(112, 0)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.add_theme_font_size_override("font_size", 10)
+	row.add_child(l)
 	var s := SpinBox.new()
 	s.min_value = lo; s.max_value = hi; s.step = step
-	s.custom_minimum_size = Vector2(244, 0)
+	s.custom_minimum_size = Vector2(84, 24)
 	s.value_changed.connect(_on_bspot_changed)
-	box.add_child(s)
+	row.add_child(s)
 	return s
 
 

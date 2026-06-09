@@ -117,10 +117,36 @@ func _build_settings_panel(box: Container) -> void:
 		var scale_btn := _button(row, choice, _on_ui_scale.bind(choice))
 		scale_btn.custom_minimum_size = Vector2(70, 32) * UISkin.ui_scale()
 
+	var sep := HSeparator.new()
+	inner.add_child(sep)
+
+	var start_title := Label.new()
+	start_title.text = "Startoptionen"
+	UISkin.apply_label(start_title, false, 14)
+	inner.add_child(start_title)
+
+	_checkbox(inner, "Bauhilfe beim Start zeigen", "start_build_spots", false)
+	_checkbox(inner, "Nebel des Krieges starten", "start_fog", false)
+	_checkbox(inner, "KI-Gegner aktiv", "start_ai", true)
+
+	var editor_btn := _button(inner, "Design-Editor", _on_editor)
+	editor_btn.custom_minimum_size = Vector2(160, 34) * UISkin.ui_scale()
+
 
 func _toggle_settings() -> void:
 	if _settings_panel != null:
 		_settings_panel.visible = not _settings_panel.visible
+
+
+func _checkbox(box: Container, text: String, key: String, fallback: bool) -> CheckBox:
+	var c := CheckBox.new()
+	c.text = text
+	c.button_pressed = UISkin.option_bool(key, fallback)
+	c.add_theme_font_size_override("font_size", maxi(9, roundi(12.0 * UISkin.ui_scale())))
+	c.add_theme_color_override("font_color", UISkin.color("font", Color.WHITE))
+	c.toggled.connect(func(v: bool): UISkin.set_option_bool(key, v))
+	box.add_child(c)
+	return c
 
 
 func _on_ui_scale(name: String) -> void:

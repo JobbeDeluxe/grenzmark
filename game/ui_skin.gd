@@ -11,6 +11,7 @@ static var _cfg := {}
 static var _runtime_loaded := false
 static var _ui_scale_override := 0.0
 static var _ui_scale_name := ""
+static var _options := {}
 
 
 static func cfg() -> Dictionary:
@@ -52,6 +53,17 @@ static func set_ui_scale_name(name: String) -> void:
 		key = "mittel"
 	_ui_scale_name = key
 	_ui_scale_override = float(presets[key])
+	_save_runtime()
+
+
+static func option_bool(key: String, fallback: bool) -> bool:
+	_ensure_runtime()
+	return bool(_options.get(key, fallback))
+
+
+static func set_option_bool(key: String, value: bool) -> void:
+	_ensure_runtime()
+	_options[key] = value
 	_save_runtime()
 
 
@@ -201,11 +213,18 @@ static func _ensure_runtime() -> void:
 	if data is Dictionary:
 		_ui_scale_override = float(data.get("ui_scale", 0.0))
 		_ui_scale_name = String(data.get("ui_scale_name", ""))
+		var opts = data.get("options", {})
+		if opts is Dictionary:
+			_options = opts
 
 
 static func _save_runtime() -> void:
 	var f := FileAccess.open(USER_CONFIG_PATH, FileAccess.WRITE)
 	if f == null:
 		return
-	f.store_var({ ui_scale = _ui_scale_override, ui_scale_name = _ui_scale_name }, true)
+	f.store_var({
+		ui_scale = _ui_scale_override,
+		ui_scale_name = _ui_scale_name,
+		options = _options,
+	}, true)
 	f.close()

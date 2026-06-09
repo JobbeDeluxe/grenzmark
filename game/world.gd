@@ -45,6 +45,7 @@ var _sel_btn_demolish: Button
 var _sel_btn_attack: Button
 var _status_label: Label
 var _build_panel: PanelContainer
+var _build_action_row: HBoxContainer
 var _build_group_row: HBoxContainer
 var _build_row: GridContainer
 var _build_caption: Label
@@ -87,6 +88,7 @@ func _new_game() -> void:
 	economy = Economy.new(state)
 	_wire_world()
 	_apply_ai()
+	_apply_start_options()
 	var hq := _place_headquarters()
 	_ensure_test_pond_near(hq)
 	_place_enemy(hq)
@@ -179,6 +181,15 @@ func _apply_ai() -> void:
 		ai_list = AIRegistry.list()
 	ai_choice = clampi(ai_choice, 0, ai_list.size() - 1)
 	economy.ai = AIRegistry.create(ai_list[ai_choice])
+
+
+func _apply_start_options() -> void:
+	if renderer != null:
+		renderer.show_build_spots = UISkin.option_bool("start_build_spots", false)
+		renderer.fog_enabled = UISkin.option_bool("start_fog", false)
+		renderer.queue_redraw()
+	if economy != null:
+		economy.ai_enabled = UISkin.option_bool("start_ai", true)
 
 
 func _cycle_ai() -> void:
@@ -282,11 +293,10 @@ func _check_game_over() -> void:
 # --------------------------------------------------------------------------
 
 const BUILD_GROUPS := [
-	["Wege", "roads"],
+	["Bergwerk", "mine"],
 	["Klein", "hut"],
 	["Mittel", "house"],
 	["Gross", "castle"],
-	["Mine", "mine"],
 ]
 
 
@@ -377,6 +387,13 @@ func _build_ui() -> void:
 	_build_caption = Label.new()
 	UISkin.apply_label(_build_caption, true, 12)
 	build_box.add_child(_build_caption)
+	_build_action_row = HBoxContainer.new()
+	_build_action_row.add_theme_constant_override("separation", 4)
+	build_box.add_child(_build_action_row)
+	_tbutton(_build_action_row, "Flagge", _set_mode.bind(MODE_FLAG))
+	_tbutton(_build_action_row, "Strasse", _set_mode.bind(MODE_ROAD))
+	_tbutton(_build_action_row, "Abriss", _set_mode.bind(MODE_DELETE))
+	_tbutton(_build_action_row, "Bauhilfe", _toggle_build_spots)
 	_build_group_row = HBoxContainer.new()
 	_build_group_row.add_theme_constant_override("separation", 4)
 	build_box.add_child(_build_group_row)
@@ -836,6 +853,11 @@ func _update_settings_text() -> void:
 		"Hotkeys: Space Bauplaetze, B Baufenster, S Optionen, I Waren, " + \
 		"M Minikarte, H HQ, F Nebel, Y UI aus/an.\n\n" + \
 		"UI-Groesse: %s\n\n" % UISkin.ui_scale_name() + \
+		"Startoptionen: Bauhilfe %s, Nebel %s, KI %s\n\n" % [
+			"AN" if UISkin.option_bool("start_build_spots", false) else "AUS",
+			"AN" if UISkin.option_bool("start_fog", false) else "AUS",
+			"AN" if UISkin.option_bool("start_ai", true) else "AUS",
+		] + \
 		"Anpassbar:\n" + \
 		"- assets/ui.json: UI-Farben, Randabstaende, Panel-/Button-Groessen\n" + \
 		"- assets/design.json: Gebaeude-/Flaggen-/Bauplatzgroessen und Eingange\n" + \
@@ -847,18 +869,21 @@ func _update_settings_text() -> void:
 
 func _toggle_build_spots() -> void:
 	renderer.show_build_spots = not renderer.show_build_spots
+	UISkin.set_option_bool("start_build_spots", renderer.show_build_spots)
 	renderer.queue_redraw()
 	_update_labels()
 
 
 func _toggle_fog() -> void:
 	renderer.fog_enabled = not renderer.fog_enabled
+	UISkin.set_option_bool("start_fog", renderer.fog_enabled)
 	renderer.queue_redraw()
 	_flash("Nebel " + ("AN" if renderer.fog_enabled else "AUS"))
 
 
 func _toggle_ai() -> void:
 	economy.ai_enabled = not economy.ai_enabled
+	UISkin.set_option_bool("start_ai", economy.ai_enabled)
 	_flash("KI " + ("AN" if economy.ai_enabled else "AUS"))
 	_update_labels()
 
@@ -1185,16 +1210,10 @@ func _show_category(cat: String) -> void:
 		ch.queue_free()
 	if _build_caption != null:
 		if build_window_spot.x >= 0:
-			_build_caption.text = "Bauplatz (%d,%d): bis %s - %s" % [
+			_build_caption.text = "Haus bauen (%d,%d): bis %s - %s" % [
 				build_window_spot.x, build_window_spot.y, _bq_name(build_filter_bq), _group_label(cat)]
 		else:
-			_build_caption.text = "Baufenster - %s" % _group_label(cat)
-	if cat == "roads":
-		_tbutton(_build_row, "Flagge", _set_mode.bind(MODE_FLAG))
-		_tbutton(_build_row, "Strasse", _set_mode.bind(MODE_ROAD))
-		_tbutton(_build_row, "Abriss", _set_mode.bind(MODE_DELETE))
-		_tbutton(_build_row, "Bauhilfe", _toggle_build_spots)
-		return
+			_build_caption.text = "Haus bauen - %s" % _group_label(cat)
 	for id in BuildingCatalog.menu_order():
 		var def := BuildingCatalog.get_def(id)
 		if _building_in_group(id, cat) and _building_allowed_by_filter(id):
@@ -1214,11 +1233,10 @@ func _show_category(cat: String) -> void:
 
 func _group_label(group: String) -> String:
 	match group:
-		"roads": return "Wege"
+		"mine": return "Bergwerke"
 		"hut": return "Kleine Haeuser"
 		"house": return "Mittlere Haeuser"
 		"castle": return "Grosse Haeuser"
-		"mine": return "Bergwerke"
 	return group
 
 
@@ -1249,7 +1267,7 @@ func _first_category_for_bq(bq: int) -> String:
 		WorldState.BQ_CASTLE: return "castle"
 		WorldState.BQ_HOUSE: return "house"
 		WorldState.BQ_HUT: return "hut"
-	return "roads"
+	return "hut"
 
 
 ## Tooltip-Text eines Gebäudes: Name, Baukosten, Ein-/Ausgänge.
@@ -1738,6 +1756,7 @@ func _load_game() -> void:
 		economy.restore_tree_growth(tree_growth)
 	_wire_world()
 	_apply_ai()
+	_apply_start_options()
 	economy.resync()
 	renderer.queue_redraw()
 	_flash("Geladen.")

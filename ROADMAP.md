@@ -44,6 +44,8 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Flaggen setzen (mit Abstandsregel)
 - [x] Straßenbau per Auto-Pfad (A* über begehbare freie Knoten)
 - [x] Gebäude setzen (mit automatischer Flagge am Eingang)
+- [x] Gebäude dürfen nicht direkt auf dem eigenen Grenzsaum stehen; Gebäude und
+      Eingangsflagge brauchen einen Knoten inneren Gebietsabstand.
 - [x] Wege-Pfadfindung über das Flaggen-/Straßennetz (Dijkstra)
 - [x] HUD: Modus + Knoten-Info (Koordinaten, Terrain, BQ)
 - [x] Headless-Selbsttests für die Kern-Geometrie
@@ -167,10 +169,14 @@ Das Skelett, auf dem alles aufbaut.
   Baumtypen/-stufen, Stein-Stufen und Bauhilfe-Symbole liegen als PNGs in `assets/`.
 - Bauhilfe per Leertaste zeigt Größen/Symbole, Flaggenplätze und Straßen-Flaggen
   nur dort, wo wirklich gebaut werden kann; nicht baubare Knoten bleiben leer.
+- Bauhilfe/Gebäudebau respektiert den Grenzsaum: direkt auf der Grenze werden
+  keine Gebäude-Bauplätze mehr angeboten.
 - Der Hover-Cursor zeigt die Bauplatzgröße direkt am Knoten (Flagge, Hütte, Haus,
   Burg, Mine bzw. Straßen-Flagge), damit die Bauhilfe näher am S2-Gefühl bleibt.
 - UI-Skalierung klein/mittel/groß ist im Spiel und im Hauptmenü umschaltbar
   (`user://ui_settings.dat`, Vorgabe über `assets/ui.json`).
+- Hauptmenü-Einstellungen speichern Startoptionen für Bauhilfe, Nebel des Krieges
+  und KI-Gegner; die Ingame-Schalter schreiben dieselben Optionen zurück.
 - Gebäudefenster können parallel offen bleiben; Klick auf ein weiteres Gebäude
   überschreibt nicht mehr das vorige Fenster.
 - Straßen haben Trampelpfad-Texturen, texturierte Gebäudeeingänge und eine
@@ -233,8 +239,10 @@ GitHub-Arbeitspakete:
       und gerahmte Minikarte.
 - [x] **S2-näherer zweiter UI-Schnitt:** Unten bleiben nur drei Hauptbuttons
       (`Bauen`, `Wirtschaft`, `System`). Das Baufenster klappt nur bei Bedarf auf
-      und nutzt Größenklassen wie im Original: Wege, kleine, mittlere, große
-      Gebäude und Bergwerke.
+      und trennt Wege-/Bauhilfe-Aktionen von den Gebäudekategorien.
+- [x] **S2-näheres Baufenster (2026-06-09):** Wege/Flagge/Abriss/Bauhilfe als
+      Aktionszeile, darunter vier Gebäudekategorien nach Handbuch:
+      Bergwerk, klein, mittel, groß.
 - [x] **Bauplatz-Klicklogik:** Wenn die Bauplatzansicht per Leertaste sichtbar
       ist, setzt ein Klick auf Flaggen-/Straßenflaggen-Marker direkt die Flagge;
       Klick auf Hütte/Haus/Burg/Mine öffnet unten ein nach Bauplatzgröße
@@ -245,6 +253,8 @@ GitHub-Arbeitspakete:
       plus schnelle Toggles für Bauplätze, Nebel, KI und Pause.
 - [x] **UI-Skalierung (2026-06-09):** klein/mittel/groß über Systemfenster und
       Hauptmenü-Einstellungen; Auswahl wird in `user://ui_settings.dat` gemerkt.
+- [x] **Hauptmenü-Startoptionen (2026-06-09):** Bauhilfe, Nebel und KI-Gegner
+      sind vor Spielstart anwählbar und werden persistent gespeichert.
 - [x] **Parallele Gebäudefenster (2026-06-09):** jedes angeklickte Gebäude öffnet
       sein eigenes Fenster; vorhandene Fenster werden fokussiert statt überschrieben.
 - [ ] **Nächster UI-Schnitt (Priorität 1):** Warenleiste und Gebäudefenster
@@ -283,6 +293,9 @@ GitHub-Arbeitspakete:
 - [ ] Fensterpositionen/-Anker noch weiter aus `world.gd` nach `assets/ui.json`
       ziehen.
 - [ ] **Eigener UI-Editor/Vorschau** (analog Design-Editor) wäre Bonus.
+- [x] **Design-Editor kompakter (2026-06-09):** schmalere Seitenleisten,
+      kurze Reglerzeilen und kleinere Bedienelemente, damit er bei normaler
+      Fenstergröße ohne störendes Überragen nutzbar bleibt.
 - [ ] **Detaillierte Design-Vorgabe** für eigene Skins in `assets/README.md`
       (9-Patch-Ränder, Maße, Zustände, Schrift, Farben) — Pflicht, damit andere
       Skins „einfach passen".
@@ -467,14 +480,16 @@ ROADMAP.md • README.md • assets/README.md • ai/README.md
   (mehrere bleiben parallel offen), Gegnerangriff über das Gebäudefenster
 - **Leertaste**: Bauplätze einblenden; bei sichtbaren Markern öffnet Klick auf
   Hütte/Haus/Burg/Mine das passende Baufenster, Flaggenmarker setzen direkt Flaggen
-- **B**: Baufenster  •  **I**: Wirtschaft/Waren  •  **S**: System/Design-Übersicht
+- **B**: Baufenster mit Aktionszeile + Kategorien Bergwerk/Klein/Mittel/Gross
+  •  **I**: Wirtschaft/Waren  •  **S**: System/Design-Übersicht
 - **M**: Minikarte an/aus  •  **H**: zum HQ springen  •  **Y**: UI an/aus
 - **F**: Nebel an/aus  •  **Pause**: pausieren
 - **+/-**: Tempo  •  **P**: Produktion des gewählten Gebäudes an/aus
 - **K**: Gegner-KI an/aus  •  **J**: Gegner-KI wechseln
 - **F2/F3** Speichern/Laden  •  **F5** Neues Spiel
 - **Minikarte unten rechts**: Klick zentriert die Kamera
-- **Hauptmenü → Einstellungen**: UI-Größe klein/mittel/groß wählen
+- **Hauptmenü → Einstellungen**: UI-Größe klein/mittel/groß und Startoptionen
+  für Bauhilfe, Nebel und KI wählen
 - **Hauptmenü → Design-Editor**: Gebäudegrößen/Position/Eingang live einstellen
 
 ## Architektur-Notizen (für Wiedereinstieg)
