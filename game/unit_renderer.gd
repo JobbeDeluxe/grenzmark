@@ -206,14 +206,10 @@ func _draw_build_preview() -> void:
 	var tex := GameTheme.building_texture(build_preview_id)
 	if tex != null:
 		var sz := _bld_dims(size, build_preview_id).x * GameTheme.texture_scale()
-		var tex_p := p + Vector2(0.0, sz)
-		draw_texture_rect(tex, Rect2(tex_p.x - sz * 0.5, tex_p.y - sz, sz, sz), false, tint)
-		p = tex_p
+		draw_texture_rect(tex, Rect2(p.x - sz * 0.5, p.y - sz, sz, sz), false, tint)
 	else:
 		var base := _bld_dims(size, build_preview_id)
-		var box_p := p + Vector2(0.0, base.y)
-		draw_rect(Rect2(box_p.x - base.x * 0.5, box_p.y - base.y, base.x, base.y), tint)
-		p = box_p
+		draw_rect(Rect2(p.x - base.x * 0.5, p.y - base.y, base.x, base.y), tint)
 	# Eingangsflagge am SE-Nachbarn + kurzer Eingangsweg (wie im fertigen Bau).
 	var fl := state.map.neighbor(hover.x, hover.y, Grid.SE)
 	if state.map.in_bounds(fl.x, fl.y):
@@ -399,16 +395,17 @@ func _draw_hover() -> void:
 	if not state.map.in_bounds(hover.x, hover.y):
 		return
 	var p := state.map.node_world(hover.x, hover.y)
+	var marker_p := p + Vector2(0.0, 22.0)
 	var road_flag := state.can_place_road_flag(hover.x, hover.y)
 	var build_bq := state.actual_build_spot_bq(hover.x, hover.y)
 	var shown_bq := build_bq if build_bq != WorldState.BQ_NOTHING else (WorldState.BQ_FLAG if road_flag else WorldState.BQ_NOTHING)
 	var shown_as_road_flag := road_flag and build_bq == WorldState.BQ_NOTHING
 	var d := PackedVector2Array([
-		p + Vector2(0, -11), p + Vector2(16, 0),
-		p + Vector2(0, 11), p + Vector2(-16, 0),
+		marker_p + Vector2(0, -11), marker_p + Vector2(16, 0),
+		marker_p + Vector2(0, 11), marker_p + Vector2(-16, 0),
 	])
 	draw_polyline(d + PackedVector2Array([d[0]]), Color(1, 1, 1, 0.88), 2.0)
-	_draw_hover_build_marker(p, shown_bq, shown_as_road_flag)
+	_draw_hover_build_marker(marker_p, shown_bq, shown_as_road_flag)
 	if state.map.in_bounds(road_start.x, road_start.y):
 		var sp := state.map.node_world(road_start.x, road_start.y)
 		draw_circle(sp, 7.0, Color(0.3, 0.6, 1.0, 0.85))

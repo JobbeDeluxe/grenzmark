@@ -272,10 +272,10 @@ GitHub-Arbeitspakete:
       und schönere Fenster-Skins.
 - [x] **Cursor-Bauvorschau**: „Geist" des gewählten Gebäudes am Mauszeiger +
       BQ-Markierung am Knoten (grün=geht/rot=geht nicht), Eingangsflagge/-weg
-      schon in der Vorschau; Hover-Geist um eine Gebäudehöhe nach unten gesetzt,
-      damit er am Cursor nicht mehr zu hoch schwebt (unit_renderer._draw_build_preview).
+      schon in der Vorschau (unit_renderer._draw_build_preview).
 - [x] **Hover-Bauhilfe (2026-06-09):** der Cursor zeigt am aktuellen Knoten
-      sichtbar die zulässige Baugröße bzw. Straßen-Flagge statt nur einen Punkt.
+      sichtbar die zulässige Baugröße bzw. Straßen-Flagge statt nur einen Punkt;
+      Diamant/Punkt/Kurzlabel sind um eine Iconhöhe nach unten gesetzt.
 - [~] **Gebäude-Infofenster** (bei Auswahl): erste Version mit Gebäude-Bild,
       Status, Produktion an/aus, Abreißen, Angriff/Sprung. Offen: Produktivität
       in %, Eingangs-/Ausgangslager mit Waren-Icons, Garnison/Rang-Details,
