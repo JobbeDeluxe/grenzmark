@@ -23,6 +23,7 @@ func _initialize() -> void:
 	_test_building_spacing()
 	_test_road_and_route()
 	_test_economy()
+	_test_stop_finishes_cycle()
 	_test_military()
 	_test_combat()
 	_test_enemy_road_people()
@@ -182,6 +183,59 @@ func _test_economy() -> void:
 	state.remove_at(road.nodes[1])
 	eco.resync()
 	_check(eco.carriers.is_empty(), "Träger nach Straßen-Abriss entfernt")
+
+
+## Issue #14: "Stop" blockiert nur den nächsten Arbeitsgang, friert den laufenden
+## nicht ein. Der Arbeiter beendet seinen Zyklus und verharrt erst danach im Haus.
+func _test_stop_finishes_cycle() -> void:
+	var map := _flat_map(24, 24)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_check(hq != null, "Stop-Test: HQ platzierbar")
+	if hq == null:
+		return
+	eco.resync()
+	# Fertiger Holzfäller im Gebiet (sofort besetzt) + reifer Baum in Reichweite.
+	var wc := state.place_building(10, 7, WorldState.BQ_HOUSE, false, "woodcutter", 0, false)
+	_check(wc != null, "Stop-Test: Holzfäller platzierbar")
+	if wc == null:
+		return
+	map.set_map_object(10, 6, MapData.MO_TREE)
+	map.set_tree_stage(10, 6, MapData.TREE_BIG)
+	eco.resync()
+	var bs = eco.bstates.get(map.idx(wc.pos.x, wc.pos.y))
+	_check(bs != null, "Stop-Test: BState vorhanden")
+	if bs == null:
+		return
+
+	# In einen laufenden Arbeitsgang kommen (Arbeiter verlässt das Haus).
+	var entered_cycle := false
+	for t in 600:
+		eco.tick()
+		if bs.wphase != Economy.WK_IDLE:
+			entered_cycle = true
+			break
+	_check(entered_cycle, "Stop-Test: Arbeiter startet einen Arbeitsgang")
+
+	# Mitten im Zyklus stoppen -> der Gang soll zu Ende laufen (kein Einfrieren).
+	bs.stopped = true
+	var returned_home := false
+	for t in 3000:
+		eco.tick()
+		if bs.wphase == Economy.WK_IDLE:
+			returned_home = true
+			break
+	_check(returned_home, "Stop-Test: laufender Gang wird trotz Stop beendet")
+
+	# Im Haus angekommen und gestoppt -> es startet KEIN neuer Gang.
+	var stayed_home := true
+	for t in 600:
+		eco.tick()
+		if bs.wphase != Economy.WK_IDLE:
+			stayed_home = false
+			break
+	_check(stayed_home, "Stop-Test: gestoppter Arbeiter startet keinen neuen Gang")
 
 
 func _test_military() -> void:

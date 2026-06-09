@@ -731,6 +731,12 @@ func _tick_building(bs: BState) -> void:
 				_dispatch_worker(bs)
 			return
 	if bs.stopped:
+		# "Stop" blockiert nur den NÄCHSTEN Arbeitsgang, nicht den laufenden:
+		# Ein begonnener Zyklus (Hinweg/Aktion/Rückweg/Wartezeit) wird zu Ende
+		# gebracht. Erst wenn der Arbeiter wieder im Haus ist (WK_IDLE), verharrt
+		# er dort und startet keinen neuen Gang mehr.
+		if bs.wphase != WK_IDLE:
+			_tick_work(bs)
 		_ship_outputs(bs)  # vorhandene Ausgänge noch abtransportieren
 		return
 	_request_inputs(bs)
