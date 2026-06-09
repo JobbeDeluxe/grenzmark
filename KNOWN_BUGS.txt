@@ -95,7 +95,7 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
   `_test_enemy_road_people()` und erweiterter `_test_ai()`.
 
 
-[2026-06-09] (OFFEN) Karten-Generator erzeugt lange zackige Terrain-Kanten
+[2026-06-09] (IN ARBEIT) Karten-Generator erzeugt lange zackige Terrain-Kanten
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/19
 
@@ -111,6 +111,15 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
   Zusätzlich offen: Höhen sauberer respektieren, Granit/Steine als natürliche
   Pakete verteilen, Erz nicht als dauerhaft sichtbares Kartenobjekt zeichnen,
   sondern unterirdisch führen und später über Geologen/Debug sichtbar machen.
+
+  Erster Fix-Schnitt (2026-06-09): Die reine Dreieck-Glättung reichte laut Test
+  nicht aus. Der Generator leitet Terrain jetzt zuerst als Knoten-/Regionenmaske
+  ab und malt diese per Hex-Brush auf die Dreiecke; der Kanten-Cleanup bleibt nur
+  als Sicherheitsnetz. Der Start-Teich nutzt dieselbe Brush-Logik. Steine werden
+  nicht mehr einzeln über die Wiese gewürfelt, sondern als wenige Haufen gesetzt;
+  zusätzlich bekommt jeder Besitzer beim Start einen Steincluster im eigenen
+  Territorium, falls dort keiner liegt. Weiter offen: unterirdisches Erzmodell
+  plus Geologe/Debug-Anzeige.
 
 
 [2026-06-09] (BEHOBEN) Gebäude konnten direkt auf der Grenze gebaut werden

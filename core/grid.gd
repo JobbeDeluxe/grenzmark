@@ -73,6 +73,45 @@ static func triangle_corners(x: int, y: int, kind: int) -> Array:
 	return [Vector2i(x, y), neighbor(x, y, SE), neighbor(x, y, SW)]
 
 
+## Die bis zu 3 Dreiecke, die mit diesem Dreieck eine Kante teilen.
+## Randdreiecke koennen Nachbarn ausserhalb der Karte liefern; MapData filtert
+## oder behandelt diese Stellen als Wasser.
+static func tri_edge_neighbors(x: int, y: int, kind: int) -> Array:
+	var self_pos := Vector2i(x, y)
+	var corners := triangle_corners(x, y, kind)
+	var edges := [
+		[corners[0], corners[1]],
+		[corners[1], corners[2]],
+		[corners[2], corners[0]],
+	]
+	var out := []
+	var seen := {}
+	for edge in edges:
+		var found := false
+		for c in edge:
+			for tri in triangles_around(c.x, c.y):
+				var pos: Vector2i = tri.pos
+				var tk: int = tri.kind
+				if pos == self_pos and tk == kind:
+					continue
+				if not _tri_has_edge(pos.x, pos.y, tk, edge[0], edge[1]):
+					continue
+				var key := "%d,%d,%d" % [pos.x, pos.y, tk]
+				if not seen.has(key):
+					out.append({ pos = pos, kind = tk })
+					seen[key] = true
+				found = true
+				break
+			if found:
+				break
+	return out
+
+
+static func _tri_has_edge(x: int, y: int, kind: int, a: Vector2i, b: Vector2i) -> bool:
+	var corners := triangle_corners(x, y, kind)
+	return corners.has(a) and corners.has(b)
+
+
 ## Die 6 Dreiecke, die einen Knoten umgeben (für BauQualität & Schattierung).
 ## Jeder Eintrag ist { pos = Vector2i, kind = TRI_R|TRI_D }.
 static func triangles_around(x: int, y: int) -> Array:

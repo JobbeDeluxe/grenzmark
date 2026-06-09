@@ -15,6 +15,8 @@ func _initialize() -> void:
 	_test_triangles_around()
 	_test_map_generation()
 	_test_worldgen_96()
+	_test_mapgen_cleanup_and_stone_clusters()
+	_test_start_territory_stone_guarantee()
 	_test_ore_types()
 	_test_catalog_complete()
 	_test_asset_files()
@@ -440,6 +442,43 @@ func _test_worldgen_96() -> void:
 			if state.compute_bq(xx, yy) >= WorldState.BQ_CASTLE:
 				castle += 1
 	_check(castle >= 2, "Mindestens zwei Burgplätze (Spieler + Gegner): %d" % castle)
+
+
+func _test_mapgen_cleanup_and_stone_clusters() -> void:
+	var map := MapGenerator.generate(96, 96, 1337)
+	var again := MapGenerator.generate(96, 96, 1337)
+	_check(map.heights == again.heights and map.terr_r == again.terr_r \
+			and map.terr_d == again.terr_d and map.objects == again.objects,
+		"#19: Kartengenerator bleibt deterministisch")
+	var spikes := _terrain_spike_count(map)
+	_check(spikes <= 8, "#19: wenige isolierte Terrain-Dreiecke (%d)" % spikes)
+	var stone_sizes := _stone_component_sizes(map)
+	var stones := 0
+	var clustered := 0
+	for s in stone_sizes:
+		stones += int(s)
+		if int(s) >= 2:
+			clustered += int(s)
+	_check(stones > 0, "#19: Steincluster erzeugen Steine (%d)" % stones)
+	_check(clustered * 100 >= stones * 60,
+		"#19: Mehrheit der Steine liegt in Clustern (%d/%d)" % [clustered, stones])
+
+
+func _test_start_territory_stone_guarantee() -> void:
+	var map := _flat_map(40, 40)
+	var world := World.new()
+	world.map = map
+	world.state = WorldState.new(map)
+	world.state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false, 0)
+	world.state.place_building(28, 28, WorldState.BQ_CASTLE, true, "hq", 9, false, 1)
+	world.state.recompute_territory()
+	world._ensure_stone_cluster_in_territory(0)
+	world._ensure_stone_cluster_in_territory(1)
+	_check(_owner_territory_stones(world.state, 0) >= 3,
+		"#19: Spieler startet mit Steincluster im Gebiet")
+	_check(_owner_territory_stones(world.state, 1) >= 3,
+		"#19: KI startet mit Steincluster im Gebiet")
+	world.free()
 
 
 func _test_catalog_complete() -> void:
@@ -909,6 +948,61 @@ func _test_territory_stickiness() -> void:
 		"#15: nach Verlust des Halters geht der gedeckte Knoten an den Gegner")
 	_check(not state.in_territory(node.x, node.y),
 		"#15: Knoten ist dann nicht mehr Spielergebiet")
+
+
+func _terrain_spike_count(map: MapData) -> int:
+	var spikes := 0
+	for y in map.height:
+		for x in map.width:
+			for kind in [Grid.TRI_R, Grid.TRI_D]:
+				var current := map.get_tri(Vector2i(x, y), kind)
+				var same := 0
+				var total := 0
+				for nb in Grid.tri_edge_neighbors(x, y, kind):
+					var nt := map.get_tri(nb.pos, int(nb.kind))
+					if nt == current:
+						same += 1
+					total += 1
+				if total >= 3 and same == 0:
+					spikes += 1
+	return spikes
+
+
+func _stone_component_sizes(map: MapData) -> Array[int]:
+	var sizes: Array[int] = []
+	var seen := {}
+	for key in map.objects:
+		var i := int(key)
+		if seen.has(i) or map.objects[i] != MapData.MO_STONE:
+			continue
+		var size := 0
+		var stack: Array[int] = [i]
+		seen[i] = true
+		while not stack.is_empty():
+			var cur := int(stack.pop_back())
+			size += 1
+			var x := cur % map.width
+			var y := int(cur / map.width)
+			for dir in Grid.DIRS:
+				var n := map.neighbor(x, y, dir)
+				if n.x < 0:
+					continue
+				var ni := map.idx(n.x, n.y)
+				if seen.has(ni) or map.objects.get(ni, -1) != MapData.MO_STONE:
+					continue
+				seen[ni] = true
+				stack.append(ni)
+		sizes.append(size)
+	return sizes
+
+
+func _owner_territory_stones(state: WorldState, owner: int) -> int:
+	var n := 0
+	var area := state.owner_territory(owner)
+	for k in area:
+		if state.map.objects.get(k, -1) == MapData.MO_STONE:
+			n += 1
+	return n
 
 
 func _flat_map(w: int, h: int) -> MapData:

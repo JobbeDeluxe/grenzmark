@@ -60,6 +60,11 @@ Das Skelett, auf dem alles aufbaut.
 - [ ] Bessere Karten-Generierung (Inseln, Flüsse, Berg-Adern mit Erzen).
       Wichtig: S2-artige Hex-Pinsel/Brush-Stamps statt langer Dreiecks-Zacken,
       Höhen-/Terrain-Glättung, Granit/Steine als Pakete, unterirdische Erze.
+      Erster Schnitt (2026-06-09): Terrain wird als Knoten-/Regionenmaske
+      klassifiziert und per Hex-Brush auf Dreiecke gemalt; Kanten-Cleanup bleibt
+      als Sicherheitsnetz. Start-Teich nutzt dieselbe Brush-Logik. Steincluster
+      statt Einzelstreuung; Spieler/KI bekommen je einen Steincluster im Gebiet.
+      Offen bleiben unterirdische Erze und Geologen-Anbindung.
       (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/19)
 - [x] Test-Teich im Startgebiet (kleiner See nahe HQ), damit Fischerhütte ohne
       Kartenglück getestet werden kann.
@@ -158,6 +163,9 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Design-Editor (Hauptmenü) für Gebäudegrößen/Position/Eingang
 - [ ] Große UI-Überarbeitung → eigene **Stufe 8** (siehe unten)
 - [ ] Spielziele/Missionen wählbar; Statistik-Bildschirme
+- [ ] Weltseed/Kartenwahl (#27): Zufallsseed anzeigen/eingeben, `DEVMAP` als
+      reproduzierbare Entwicklerkarte, Kartenimport und später Editor-Karten
+      vorbereiten.
 - [ ] Ton, Musik, Optionen (ganz zuletzt)
 
 ### Stufe 6 — Multiplayer

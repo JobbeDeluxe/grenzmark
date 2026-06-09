@@ -93,7 +93,11 @@ func _new_game() -> void:
 	_apply_start_options()
 	var hq := _place_headquarters()
 	_ensure_test_pond_near(hq)
+	state.recompute_territory()
+	_ensure_stone_cluster_in_territory(0)
 	_place_enemy(hq)
+	state.recompute_territory()
+	_ensure_stone_cluster_in_territory(1)
 	economy.resync()
 	camera.position = map.node_world(hq.x, hq.y) if hq.x >= 0 \
 		else map.node_world(MAP_W / 2, MAP_H / 2)
@@ -165,16 +169,88 @@ func _ensure_test_pond_near(hq: Vector2i) -> void:
 			if state._occ(p.x, p.y) != WorldState.OBJ_NONE:
 				continue
 			var d := WorldState.hex_distance(center, p)
-			if d <= 2:
-				map.set_height(p.x, p.y, 2)
-				map.set_tri(p, Grid.TRI_R, Terrain.WATER)
-				map.set_tri(p, Grid.TRI_D, Terrain.WATER)
-				map.clear_map_object(p.x, p.y)
-			elif d == 3:
-				map.set_height(p.x, p.y, 4)
-				map.set_tri(p, Grid.TRI_R, Terrain.SAND)
-				map.set_tri(p, Grid.TRI_D, Terrain.SAND)
-				map.clear_map_object(p.x, p.y)
+			if d <= 3:
+				MapGenerator.paint_hex_terrain(map, p, Terrain.SAND, 4, true)
+	for dy in range(-3, 4):
+		for dx in range(-3, 4):
+			var p := center + Vector2i(dx, dy)
+			if not map.in_bounds(p.x, p.y):
+				continue
+			if state._occ(p.x, p.y) != WorldState.OBJ_NONE:
+				continue
+			if WorldState.hex_distance(center, p) <= 2:
+				MapGenerator.paint_hex_terrain(map, p, Terrain.WATER, 2, true)
+
+
+func _ensure_stone_cluster_in_territory(owner: int) -> void:
+	var area := state.owner_territory(owner)
+	if area.is_empty():
+		return
+	for k in area:
+		if map.objects.get(k, -1) == MapData.MO_STONE:
+			return
+	var hq := _owner_hq_pos(owner)
+	var best := Vector2i(-1, -1)
+	var best_score := 1 << 30
+	for k in area:
+		var p := Vector2i(int(k) % map.width, int(int(k) / map.width))
+		var slots := _stone_cluster_slots(p, owner)
+		if slots.size() < 3:
+			continue
+		var d := WorldState.hex_distance(hq, p) if hq.x >= 0 else 0
+		if d < 3:
+			continue
+		var score := absi(d - 5) * 100 - slots.size()
+		if score < best_score:
+			best_score = score
+			best = p
+	if best.x < 0:
+		return
+	var slots := _stone_cluster_slots(best, owner)
+	var placed := 0
+	for p in slots:
+		map.set_map_object(p.x, p.y, MapData.MO_STONE)
+		map.set_stone_stage(p.x, p.y, MapData.STONE_BIG if placed < 2 else MapData.STONE_MEDIUM)
+		placed += 1
+		if placed >= 5:
+			break
+
+
+func _stone_cluster_slots(center: Vector2i, owner: int) -> Array[Vector2i]:
+	var slots: Array[Vector2i] = []
+	for r in range(0, 3):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var p := center + Vector2i(dx, dy)
+				if not map.in_bounds(p.x, p.y):
+					continue
+				if WorldState.hex_distance(center, p) != r:
+					continue
+				if not state.in_owner_territory(owner, p.x, p.y):
+					continue
+				if state._occ(p.x, p.y) != WorldState.OBJ_NONE:
+					continue
+				if map.map_object(p.x, p.y) != -1:
+					continue
+				if not _node_all_terrain(p, Terrain.MEADOW):
+					continue
+				slots.append(p)
+	return slots
+
+
+func _node_all_terrain(pos: Vector2i, terrain: int) -> bool:
+	for t in map.terrains_around(pos.x, pos.y):
+		if t != terrain:
+			return false
+	return true
+
+
+func _owner_hq_pos(owner: int) -> Vector2i:
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		if b.is_hq and b.owner == owner:
+			return b.pos
+	return Vector2i(-1, -1)
 
 
 ## Gewählte Gegner-KI auf die Economy anwenden.
