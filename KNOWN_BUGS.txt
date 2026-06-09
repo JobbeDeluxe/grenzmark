@@ -4,6 +4,45 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-09] (BEHOBEN) Gebäudeklick überschreibt vorheriges Auswahlfenster
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/5
+
+  Symptom: Es gab nur ein einziges Auswahlfenster; Klick auf ein neues Gebäude
+  ersetzte den Inhalt des alten Fensters. Das fühlte sich nicht wie S2 an, wo
+  mehrere Informationsfenster parallel offen bleiben können.
+
+  Fix: Gebäude öffnen jetzt dynamische Fenster pro Gebäude-Knoten. Bereits offene
+  Gebäudefenster werden fokussiert/aktualisiert, nicht überschrieben. Aktionen
+  wie Produktion stoppen, Abriss, Sprung zum Gebäude und Angriff arbeiten über
+  das jeweilige Fenster.
+
+
+[2026-06-09] (BEHOBEN) Hover-Cursor zeigte Bauplatzgröße nicht deutlich
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/5
+
+  Symptom: Der Cursor war im Bau-/Auswahlkontext nur ein Punkt bzw. zu wenig
+  aussagekräftig. Nach S2-Vorbild soll die Bauhilfe klar zeigen, ob an der Stelle
+  Flagge, Hütte, Haus, Burg oder Mine möglich ist.
+
+  Fix: UnitRenderer zeichnet am Hover-Knoten jetzt ein Bauhilfe-Badge mit Symbol
+  und Kurztext. Bauplätze (Hütte/Haus/Burg/Mine) haben Vorrang vor reinen
+  Straßen-Flaggen, damit die Gebäudegröße direkt sichtbar bleibt.
+
+
+[2026-06-09] (BEHOBEN) UI war nur über ui.json skalierbar, nicht im Spielmenü
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/5
+
+  Symptom: Die Leisten/Fenster wirkten zu groß, aber die UI-Skalierung war keine
+  spielinterne Einstellung.
+
+  Fix: UI-Skalierung klein/mittel/groß über Systemfenster im Spiel und über
+  "Einstellungen" im Hauptmenü. Die Auswahl wird in `user://ui_settings.dat`
+  gespeichert und beim Start wieder geladen.
+
+
 [2026-06-09] (OFFEN, WIEDER AUFGETRETEN 2026-06-09) Sprites/Flaggen/Einheiten falsch tiefen-sortiert
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/11

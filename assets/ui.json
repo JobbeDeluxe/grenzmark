@@ -1,12 +1,22 @@
 {
   "_hint": "UI skin/layout values. Change here, restart Godot. Future skins can replace PNGs plus these colors/sizes without touching code.",
+  "scale_presets": {
+    "klein": 0.72,
+    "mittel": 0.82,
+    "gross": 1.0
+  },
   "layout": {
+    "ui_scale": 0.82,
     "edge_margin": 8,
     "top_bar_height": 52,
     "right_panel_width": 260,
     "bottom_bar_height": 46,
     "build_panel_width": 850,
     "build_panel_height": 170,
+    "selection_panel_width": 280,
+    "selection_panel_height": 220,
+    "selection_icon_size": 42,
+    "window_cascade": 26,
     "minimap_size": 188,
     "button_width": 86,
     "button_height": 26,

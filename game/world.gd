@@ -59,6 +59,7 @@ var _settings_body: Label
 var _minimap_panel: PanelContainer
 var _flag_menu: PanelContainer
 var _flag_menu_pos := Vector2i(-1, -1)
+var _building_windows := {}
 var _ui_root: Control
 var ui_category := "hut"
 var build_filter_bq := -1
@@ -254,8 +255,7 @@ func _process(delta: float) -> void:
 			unit_renderer.invalidate_occluders()  # Bau/Abriss/Baum → Occluder neu
 	if not _stock_counts.is_empty():
 		_update_stock()
-	if _sel_label != null:
-		_update_selection_panel()
+	_update_building_windows()
 	_check_game_over()
 
 
@@ -341,43 +341,7 @@ func _build_ui() -> void:
 	top_row.add_child(stock_grid)
 	_build_stock_cells(stock_grid)
 
-	# Rechts: Auswahlfenster (Gebäudefenster) — Chrome mit Titel/Schließen/Drag.
-	_selection_panel = _floating_panel(Vector2(1, 0), Vector2(-right_w - edge, edge + top_h + 8),
-		Vector2(-edge, edge + top_h + 236))
-	_selection_panel.visible = false
-	var side_box := _add_window_chrome(_selection_panel, "Gebaeude", _clear_selection)
-	var sel_head := HBoxContainer.new()
-	sel_head.add_theme_constant_override("separation", 8)
-	sel_head.mouse_filter = Control.MOUSE_FILTER_PASS
-	side_box.add_child(sel_head)
-	_sel_icon = TextureRect.new()
-	_sel_icon.custom_minimum_size = Vector2(52, 52)
-	# Ohne EXPAND_IGNORE_SIZE erzwingt das große Gebäude-PNG seine eigene Mindestgröße
-	# und sprengt das Auswahlfenster (läuft über Rand/hinter die Minikarte).
-	_sel_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_sel_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_sel_icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_sel_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	sel_head.add_child(_sel_icon)
-	_sel_title_label = Label.new()
-	_sel_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_sel_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_sel_title_label.mouse_filter = Control.MOUSE_FILTER_PASS
-	UISkin.apply_label(_sel_title_label, false, 15)
-	sel_head.add_child(_sel_title_label)
-	_sel_label = Label.new()
-	_sel_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_sel_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_sel_label.mouse_filter = Control.MOUSE_FILTER_PASS
-	UISkin.apply_label(_sel_label, true, 12)
-	side_box.add_child(_sel_label)
-	var sel_actions := HBoxContainer.new()
-	sel_actions.add_theme_constant_override("separation", 4)
-	side_box.add_child(sel_actions)
-	_sel_btn_stop = _tbutton(sel_actions, "Stop", _toggle_selected_production)
-	_sel_btn_goto = _tbutton(sel_actions, "Zum Geb.", _selection_goto)
-	_sel_btn_demolish = _tbutton(sel_actions, "Abriss", _delete_selected)
-	_sel_btn_attack = _tbutton(sel_actions, "Angreifen", _attack_selected)
+	# Gebäudefenster werden beim Anklicken dynamisch erzeugt und bleiben parallel offen.
 
 	_minimap_panel = _floating_panel(Vector2(1, 1), Vector2(-mini_size - edge, -mini_size - edge),
 		Vector2(-edge, -edge))
@@ -484,6 +448,12 @@ func _build_ui() -> void:
 	_tbutton(settings_actions, "Nebel", _toggle_fog)
 	_tbutton(settings_actions, "KI", _toggle_ai)
 	_tbutton(settings_actions, "Pause", _toggle_pause)
+	var scale_actions := HBoxContainer.new()
+	scale_actions.add_theme_constant_override("separation", 4)
+	settings_box.add_child(scale_actions)
+	_tbutton(scale_actions, "UI klein", _set_ui_scale.bind("klein"))
+	_tbutton(scale_actions, "UI mittel", _set_ui_scale.bind("mittel"))
+	_tbutton(scale_actions, "UI gross", _set_ui_scale.bind("gross"))
 	_update_settings_text()
 
 	# Flaggen-Kontextmenü (S2-artig): erscheint an der angeklickten Flagge.
@@ -832,6 +802,26 @@ func _toggle_settings() -> void:
 		_update_settings_text()
 
 
+func _set_ui_scale(name: String) -> void:
+	UISkin.set_ui_scale_name(name)
+	call_deferred("_rebuild_ui_after_scale")
+
+
+func _rebuild_ui_after_scale() -> void:
+	var old_layer: Node = _ui_root.get_parent() if _ui_root != null else null
+	if old_layer != null:
+		old_layer.queue_free()
+	_ui_root = null
+	_building_windows.clear()
+	_build_ui()
+	_update_labels()
+	_update_stock()
+	if _settings_panel != null:
+		_settings_panel.visible = true
+		_update_settings_text()
+	_flash("UI-Groesse: " + UISkin.ui_scale_name())
+
+
 func _hide_management_panels(except: Control = null) -> void:
 	for p in [_build_panel, _economy_panel, _settings_panel, _mainsel_panel,
 			_buildings_panel, _stats_panel]:
@@ -845,6 +835,7 @@ func _update_settings_text() -> void:
 	_settings_body.text = \
 		"Hotkeys: Space Bauplaetze, B Baufenster, S Optionen, I Waren, " + \
 		"M Minikarte, H HQ, F Nebel, Y UI aus/an.\n\n" + \
+		"UI-Groesse: %s\n\n" % UISkin.ui_scale_name() + \
 		"Anpassbar:\n" + \
 		"- assets/ui.json: UI-Farben, Randabstaende, Panel-/Button-Groessen\n" + \
 		"- assets/design.json: Gebaeude-/Flaggen-/Bauplatzgroessen und Eingange\n" + \
@@ -896,7 +887,6 @@ func _escape_or_select() -> void:
 func _open_flag_menu(flagpos: Vector2i) -> void:
 	_flag_menu_pos = flagpos
 	selected = null
-	_update_selection_panel()
 	_hide_management_panels()
 	# Welt-Knoten → Bildschirmkoordinate, Menü daneben platzieren (im Bild halten).
 	var world := map.node_world(flagpos.x, flagpos.y)
@@ -960,7 +950,7 @@ func _toggle_selected_production() -> void:
 		return
 	var stopped := economy.toggle_production(selected)
 	_flash("Produktion " + ("gestoppt" if stopped else "laeuft"))
-	_update_selection_panel()
+	_update_building_windows()
 
 
 func _delete_selected() -> void:
@@ -973,12 +963,13 @@ func _delete_selected() -> void:
 		economy.resync()
 		renderer.queue_redraw()
 		_flash("Gebaeude abgerissen.")
-		_update_selection_panel()
+		_update_building_windows()
 
 
 func _clear_selection() -> void:
 	selected = null
-	_update_selection_panel()
+	if _selection_panel != null:
+		_selection_panel.visible = false
 
 
 func _selection_goto() -> void:
@@ -988,10 +979,185 @@ func _selection_goto() -> void:
 	_flash("Zum Gebaeude gesprungen.")
 
 
+func _open_building_window(b: WorldState.Building) -> void:
+	if b == null:
+		return
+	var idx := map.idx(b.pos.x, b.pos.y)
+	selected = b
+	if _building_windows.has(idx):
+		var existing: Dictionary = _building_windows[idx]
+		var panel: PanelContainer = existing["panel"]
+		panel.visible = true
+		panel.move_to_front()
+		_update_one_building_window(idx)
+		return
+	var world := map.node_world(b.pos.x, b.pos.y)
+	var screen := get_viewport().get_canvas_transform() * world
+	var vp := get_viewport().get_visible_rect().size
+	var w := UISkin.layout_num("selection_panel_width", 260)
+	var h := UISkin.layout_num("selection_panel_height", 205)
+	var cascade := float(_building_windows.size() % 5) * UISkin.layout_num("window_cascade", 22)
+	var x: float = clampf(screen.x + 16.0 + cascade, 4.0, vp.x - w - 4.0)
+	var y: float = clampf(screen.y - h * 0.55 + cascade, 4.0, vp.y - h - 4.0)
+	var panel := _floating_panel(Vector2.ZERO, Vector2(x, y), Vector2(x + w, y + h))
+	var content := _add_window_chrome(panel, _building_window_title(b), _close_building_window.bind(idx))
+
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	head.mouse_filter = Control.MOUSE_FILTER_PASS
+	content.add_child(head)
+	var icon := TextureRect.new()
+	var icon_size := UISkin.layout_num("selection_icon_size", 52)
+	icon.custom_minimum_size = Vector2(icon_size, icon_size)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	head.add_child(icon)
+	var title := Label.new()
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.mouse_filter = Control.MOUSE_FILTER_PASS
+	UISkin.apply_label(title, false, 14)
+	head.add_child(title)
+
+	var info := Label.new()
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	info.mouse_filter = Control.MOUSE_FILTER_PASS
+	UISkin.apply_label(info, true, 11)
+	content.add_child(info)
+
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 4)
+	content.add_child(actions)
+	var stop := _tbutton(actions, "Stop", _toggle_production_window.bind(idx))
+	var goto_btn := _tbutton(actions, "Zum Geb.", _goto_building_window.bind(idx))
+	var demolish := _tbutton(actions, "Abriss", _delete_building_window.bind(idx))
+	var attack := _tbutton(actions, "Angriff", _attack_building_window.bind(idx))
+
+	_building_windows[idx] = {
+		panel = panel, title = title, icon = icon, info = info,
+		stop = stop, goto_btn = goto_btn, demolish = demolish, attack = attack,
+	}
+	_update_one_building_window(idx)
+
+
+func _close_building_window(idx: int) -> void:
+	if not _building_windows.has(idx):
+		return
+	var entry: Dictionary = _building_windows[idx]
+	var panel: PanelContainer = entry["panel"]
+	panel.queue_free()
+	_building_windows.erase(idx)
+	if selected != null and map.idx(selected.pos.x, selected.pos.y) == idx:
+		selected = null
+
+
+func _update_building_windows() -> void:
+	if _building_windows.is_empty():
+		return
+	var gone := []
+	for idx in _building_windows.keys():
+		if not state.buildings.has(idx):
+			gone.append(idx)
+		else:
+			_update_one_building_window(int(idx))
+	for idx in gone:
+		_close_building_window(int(idx))
+
+
+func _update_one_building_window(idx: int) -> void:
+	if not _building_windows.has(idx) or not state.buildings.has(idx):
+		return
+	var b: WorldState.Building = state.buildings[idx]
+	var entry: Dictionary = _building_windows[idx]
+	var title_text := _building_window_title(b)
+	var panel: PanelContainer = entry["panel"]
+	var title_label: Label = entry["title"]
+	var icon: TextureRect = entry["icon"]
+	var info: Label = entry["info"]
+	var stop: Button = entry["stop"]
+	var goto_btn: Button = entry["goto_btn"]
+	var demolish: Button = entry["demolish"]
+	var attack: Button = entry["attack"]
+	if panel.has_meta("title_label"):
+		(panel.get_meta("title_label") as Label).text = title_text
+	title_label.text = title_text
+	icon.texture = GameTheme.building_texture(b.def_id, b.owner)
+	var lines := economy.building_status(b)
+	if b.influence > 0:
+		lines += "\nGarnison: %d/%d  Rangbonus: %d" % [b.garrison, b.capacity, b.promotions]
+	info.text = lines
+	var own := b.owner == 0
+	stop.visible = own and not b.is_hq
+	demolish.visible = own and not b.is_hq
+	goto_btn.visible = true
+	attack.visible = (not own) and b.influence > 0
+
+
+func _building_window_title(b: WorldState.Building) -> String:
+	var d := BuildingCatalog.get_def(b.def_id)
+	var title := String(d.get("name", b.def_id))
+	if b.owner == 1:
+		title += " (Gegner)"
+	if b.under_construction:
+		title += " (Bau)"
+	return title
+
+
+func _toggle_production_window(idx: int) -> void:
+	if not state.buildings.has(idx):
+		return
+	selected = state.buildings[idx]
+	_toggle_selected_production()
+	_update_one_building_window(idx)
+
+
+func _goto_building_window(idx: int) -> void:
+	if not state.buildings.has(idx):
+		return
+	var b: WorldState.Building = state.buildings[idx]
+	selected = b
+	camera.position = map.node_world(b.pos.x, b.pos.y)
+	_flash("Zum Gebaeude gesprungen.")
+
+
+func _delete_building_window(idx: int) -> void:
+	if not state.buildings.has(idx):
+		_close_building_window(idx)
+		return
+	var b: WorldState.Building = state.buildings[idx]
+	if b.is_hq or b.owner != 0:
+		_flash("Abriss: eigenes Nicht-HQ-Gebaeude waehlen.")
+		return
+	selected = b
+	var pos := b.pos
+	if state.remove_at(pos):
+		_close_building_window(idx)
+		economy.resync()
+		renderer.queue_redraw()
+		_flash("Gebaeude abgerissen.")
+
+
+func _attack_building_window(idx: int) -> void:
+	if not state.buildings.has(idx):
+		return
+	var target: WorldState.Building = state.buildings[idx]
+	selected = target
+	_attack_target(target)
+	_update_one_building_window(idx)
+
+
 ## Greift das ausgewählte Gegner-Militärgebäude an — wählt automatisch das eigene
 ## Militärgebäude mit den meisten Soldaten in Reichweite (siehe Issue #16).
 func _attack_selected() -> void:
 	if selected == null or selected.owner != 1 or selected.influence <= 0:
+		return
+	_attack_target(selected)
+	_update_building_windows()
+
+
+func _attack_target(target: WorldState.Building) -> void:
+	if target == null or target.owner != 1 or target.influence <= 0:
 		return
 	var best: WorldState.Building = null
 	var best_g := 0
@@ -999,7 +1165,7 @@ func _attack_selected() -> void:
 		var b: WorldState.Building = state.buildings[i]
 		if b.owner != 0 or b.influence <= 0 or b.garrison <= 0:
 			continue
-		if WorldState.hex_distance(b.pos, selected.pos) > b.influence + selected.influence + 2:
+		if WorldState.hex_distance(b.pos, target.pos) > b.influence + target.influence + 2:
 			continue
 		if b.garrison > best_g:
 			best_g = b.garrison
@@ -1007,9 +1173,8 @@ func _attack_selected() -> void:
 	if best == null:
 		_flash("Kein eigenes Militaergebaeude mit Soldaten in Reichweite.")
 		return
-	var n := economy.send_attackers(best, selected)
+	var n := economy.send_attackers(best, target)
 	_flash("Angriff mit %d Soldaten!" % n)
-	_update_selection_panel()
 
 
 func _show_category(cat: String) -> void:
@@ -1234,6 +1399,8 @@ func _update_economy_panel() -> void:
 
 
 func _update_selection_panel() -> void:
+	if _selection_panel == null or _sel_label == null:
+		return
 	if selected == null:
 		if _selection_panel != null:
 			_selection_panel.visible = false
@@ -1355,6 +1522,8 @@ func _handle_click() -> void:
 				# Gebäude (eigen ODER Gegner) auswählen; Angriff läuft über das
 				# kontextabhängige Auswahlfenster (Issue #16).
 				selected = clicked
+				if clicked != null:
+					_open_building_window(clicked)
 				_close_flag_menu()
 		MODE_FLAG:
 			changed = state.place_flag(hover.x, hover.y) != null

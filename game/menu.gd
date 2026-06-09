@@ -1,10 +1,13 @@
 extends Control
 
-## Einfaches Hauptmenü: Neues Spiel, Laden, Beenden.
+## Einfaches Hauptmenü: Neues Spiel, Laden, Einstellungen, Beenden.
 
 const WORLD_SCENE := "res://game/main.tscn"
 const SAVE_PATH := "user://settlers_save.dat"
 const MENU_BACKGROUND_PATH := "res://assets/ui/main_menu_background.png"
+const UISkin := preload("res://game/ui_skin.gd")
+
+var _settings_panel: PanelContainer
 
 
 func _ready() -> void:
@@ -19,24 +22,27 @@ func _ready() -> void:
 
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.custom_minimum_size = Vector2(240, 240)
-	box.add_theme_constant_override("separation", 14)
+	box.custom_minimum_size = Vector2(260, 260) * UISkin.ui_scale()
+	box.add_theme_constant_override("separation", roundi(14.0 * UISkin.ui_scale()))
 	center.add_child(box)
 
 	var title := Label.new()
 	title.text = "GRENZMARK"
-	title.add_theme_font_size_override("font_size", 32)
+	UISkin.apply_label(title, false, 32)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 
 	var sub := Label.new()
 	sub.text = "klassischer Aufbau auf Knoten, Flaggen und Wegen"
+	UISkin.apply_label(sub, true, 13)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(sub)
 
 	_button(box, "Neues Spiel", _on_new)
 	var load_btn := _button(box, "Spiel laden", _on_load)
 	load_btn.disabled = not FileAccess.file_exists(SAVE_PATH)
+	_button(box, "Einstellungen", _toggle_settings)
+	_build_settings_panel(box)
 	_button(box, "Design-Editor", _on_editor)
 	_button(box, "Beenden", _on_quit)
 
@@ -74,14 +80,52 @@ func _on_editor() -> void:
 	get_tree().change_scene_to_file("res://game/design_editor.tscn")
 
 
-func _button(box: VBoxContainer, text: String, cb: Callable) -> Button:
+func _button(box: Container, text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(220, 40)
-	b.add_theme_font_size_override("font_size", 18)
+	UISkin.apply_button(b)
+	b.custom_minimum_size = Vector2(220, 40) * UISkin.ui_scale()
 	b.pressed.connect(cb)
 	box.add_child(b)
 	return b
+
+
+func _build_settings_panel(box: Container) -> void:
+	_settings_panel = PanelContainer.new()
+	_settings_panel.visible = false
+	_settings_panel.add_theme_stylebox_override("panel", UISkin.panel_style("panel"))
+	box.add_child(_settings_panel)
+
+	var inner := VBoxContainer.new()
+	inner.add_theme_constant_override("separation", roundi(8.0 * UISkin.ui_scale()))
+	_settings_panel.add_child(inner)
+
+	var title := Label.new()
+	title.text = "Einstellungen"
+	UISkin.apply_label(title, false, 15)
+	inner.add_child(title)
+
+	var info := Label.new()
+	info.text = "UI-Groesse: %s" % UISkin.ui_scale_name()
+	UISkin.apply_label(info, true, 12)
+	inner.add_child(info)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", roundi(4.0 * UISkin.ui_scale()))
+	inner.add_child(row)
+	for choice in ["klein", "mittel", "gross"]:
+		var scale_btn := _button(row, choice, _on_ui_scale.bind(choice))
+		scale_btn.custom_minimum_size = Vector2(70, 32) * UISkin.ui_scale()
+
+
+func _toggle_settings() -> void:
+	if _settings_panel != null:
+		_settings_panel.visible = not _settings_panel.visible
+
+
+func _on_ui_scale(name: String) -> void:
+	UISkin.set_ui_scale_name(name)
+	get_tree().reload_current_scene()
 
 
 func _on_new() -> void:

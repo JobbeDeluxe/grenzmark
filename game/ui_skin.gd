@@ -1,12 +1,16 @@
 class_name UISkin
 extends RefCounted
 
-## Small data-driven UI skin layer. It keeps the current game UI replaceable
-## without forcing every window/button color into World.gd.
+## Kleine datengetriebene UI-Skin-Schicht. Hält Farben, Maße und Skins
+## austauschbar, ohne jede Fenster-/Button-Optik in World.gd zu verdrahten.
 
 const CONFIG_PATH := "res://assets/ui.json"
+const USER_CONFIG_PATH := "user://ui_settings.dat"
 
 static var _cfg := {}
+static var _runtime_loaded := false
+static var _ui_scale_override := 0.0
+static var _ui_scale_name := ""
 
 
 static func cfg() -> Dictionary:
@@ -16,7 +20,39 @@ static func cfg() -> Dictionary:
 
 
 static func layout_num(key: String, fallback: float) -> float:
-	return float(cfg().get("layout", {}).get(key, fallback))
+	var v := float(cfg().get("layout", {}).get(key, fallback))
+	if key == "ui_scale":
+		return v
+	return v * ui_scale()
+
+
+static func ui_scale() -> float:
+	_ensure_runtime()
+	if _ui_scale_override > 0.0:
+		return _ui_scale_override
+	return float(cfg().get("layout", {}).get("ui_scale", 1.0))
+
+
+static func ui_scale_name() -> String:
+	_ensure_runtime()
+	if _ui_scale_name != "":
+		return _ui_scale_name
+	var scale := ui_scale()
+	var presets := _scale_presets()
+	for k in presets:
+		if absf(float(presets[k]) - scale) < 0.01:
+			return String(k)
+	return "mittel"
+
+
+static func set_ui_scale_name(name: String) -> void:
+	var key := name.to_lower()
+	var presets := _scale_presets()
+	if not presets.has(key):
+		key = "mittel"
+	_ui_scale_name = key
+	_ui_scale_override = float(presets[key])
+	_save_runtime()
 
 
 static func color(key: String, fallback: Color) -> Color:
@@ -108,7 +144,7 @@ static func _texture_box(key: String) -> StyleBoxTexture:
 
 
 static func apply_label(label: Label, muted := false, size := 13) -> void:
-	label.add_theme_font_size_override("font_size", size)
+	label.add_theme_font_size_override("font_size", maxi(8, roundi(float(size) * ui_scale())))
 	label.add_theme_color_override("font_color",
 		color("font_muted" if muted else "font", Color.WHITE))
 
@@ -116,7 +152,7 @@ static func apply_label(label: Label, muted := false, size := 13) -> void:
 static func apply_button(button: Button) -> void:
 	button.custom_minimum_size = Vector2(layout_num("button_width", 96),
 		layout_num("button_height", 28))
-	button.add_theme_font_size_override("font_size", 12)
+	button.add_theme_font_size_override("font_size", maxi(8, roundi(12.0 * ui_scale())))
 	button.add_theme_color_override("font_color", color("font", Color.WHITE))
 	button.add_theme_stylebox_override("normal", button_style("button"))
 	button.add_theme_stylebox_override("hover", button_style("button_hover"))
@@ -140,3 +176,36 @@ static func _load_cfg() -> Dictionary:
 	var parsed = JSON.parse_string(f.get_as_text())
 	f.close()
 	return parsed if parsed is Dictionary else {}
+
+
+static func _scale_presets() -> Dictionary:
+	var defaults := { klein = 0.72, mittel = 0.82, gross = 1.0 }
+	var raw = cfg().get("scale_presets", {})
+	if raw is Dictionary:
+		for k in raw:
+			defaults[String(k)] = float(raw[k])
+	return defaults
+
+
+static func _ensure_runtime() -> void:
+	if _runtime_loaded:
+		return
+	_runtime_loaded = true
+	if not FileAccess.file_exists(USER_CONFIG_PATH):
+		return
+	var f := FileAccess.open(USER_CONFIG_PATH, FileAccess.READ)
+	if f == null:
+		return
+	var data = f.get_var(true)
+	f.close()
+	if data is Dictionary:
+		_ui_scale_override = float(data.get("ui_scale", 0.0))
+		_ui_scale_name = String(data.get("ui_scale_name", ""))
+
+
+static func _save_runtime() -> void:
+	var f := FileAccess.open(USER_CONFIG_PATH, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_var({ ui_scale = _ui_scale_override, ui_scale_name = _ui_scale_name }, true)
+	f.close()

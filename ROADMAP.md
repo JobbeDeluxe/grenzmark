@@ -158,7 +158,7 @@ Das Skelett, auf dem alles aufbaut.
 - [ ] Eingaben als Kommandos synchronisieren, nicht Zustände
 - [ ] Lobby, Sync-Prüfung (Checksum pro Tick)
 
-## Ist/Soll-Abgleich (Stand 2026-06-07)
+## Ist/Soll-Abgleich (Stand 2026-06-09)
 
 **Ist jetzt stabil spielbar / erledigt:**
 - Kernsimulation mit Karte, BQ/Flaggen/Straßen, HQ-Lager, Warenfluss, Bauarbeiter,
@@ -167,6 +167,12 @@ Das Skelett, auf dem alles aufbaut.
   Baumtypen/-stufen, Stein-Stufen und Bauhilfe-Symbole liegen als PNGs in `assets/`.
 - Bauhilfe per Leertaste zeigt Größen/Symbole, Flaggenplätze und Straßen-Flaggen
   nur dort, wo wirklich gebaut werden kann; nicht baubare Knoten bleiben leer.
+- Der Hover-Cursor zeigt die Bauplatzgröße direkt am Knoten (Flagge, Hütte, Haus,
+  Burg, Mine bzw. Straßen-Flagge), damit die Bauhilfe näher am S2-Gefühl bleibt.
+- UI-Skalierung klein/mittel/groß ist im Spiel und im Hauptmenü umschaltbar
+  (`user://ui_settings.dat`, Vorgabe über `assets/ui.json`).
+- Gebäudefenster können parallel offen bleiben; Klick auf ein weiteres Gebäude
+  überschreibt nicht mehr das vorige Fenster.
 - Straßen haben Trampelpfad-Texturen, texturierte Gebäudeeingänge und eine
   sichtbare Kopfsteinpflaster-Stufe nach Transportlast.
 
@@ -174,13 +180,14 @@ Das Skelett, auf dem alles aufbaut.
 - **UI ist jetzt der wichtigste nächste Schritt.** Die Logik hat genug Substanz,
   aber Bedienung/Infofenster/Ressourcenanzeige sind noch zu textlastig und nicht
   genug wie ein Siedler-artiges Werkzeugbrett.
-- Gebäude-Infofenster fehlen noch: Produktivität, Eingänge/Ausgänge, Garnison,
-  Produktionsstopp, Abriss, Prioritäten und Lagerstatus sollten visuell steuerbar
-  werden.
+- Gebäude-Infofenster haben eine erste parallele Fenster-Version mit Bild,
+  Status, Stop/Abriss/Sprung/Angriff. Produktivität, Eingänge/Ausgänge,
+  Prioritäten und Lagerstatus brauchen noch eigene Icon-/Register-Ansichten.
 - Ressourcen-/Lagerleiste oben ist noch eine Textliste; Waren brauchen Icons,
   Zahlen und klare Warnzustände.
-- Bau-/Verwaltungsfenster sind jetzt nur noch bei Bedarf offen; brauchen aber
-  noch echte Icon-Grafiken, verschiebbare Fenster und austauschbare 9-Patch-Skins.
+- Bau-/Verwaltungsfenster sind jetzt nur noch bei Bedarf offen und lassen sich
+  verschieben/schließen/parken; offen bleiben echte Symbolbuttons und ein
+  schönerer austauschbarer 9-Patch-Skin.
 - Minikarte braucht Rahmen/Overlay-Schalter; aktuelle Anzeige ist funktional,
   aber nicht in ein UI-System eingebettet.
 - Bevölkerung/Werkzeuge/Esel/mehrere Lagerhäuser sind weiter große Mechanik-Lücken,
@@ -236,17 +243,24 @@ GitHub-Arbeitspakete:
       alle aktuell auslagerbaren Design-/Tuning-Dateien (`assets/ui.json`,
       `assets/design.json`, `assets/tuning.json`, Bauplatz-/Flaggen-/Spieler-PNGs)
       plus schnelle Toggles für Bauplätze, Nebel, KI und Pause.
-- [ ] **Nächster UI-Schnitt (Priorität 1):** Gebäude-Infofenster + obere
-      Warenleiste zuerst, weil sie den Testfluss am stärksten verbessern.
+- [x] **UI-Skalierung (2026-06-09):** klein/mittel/groß über Systemfenster und
+      Hauptmenü-Einstellungen; Auswahl wird in `user://ui_settings.dat` gemerkt.
+- [x] **Parallele Gebäudefenster (2026-06-09):** jedes angeklickte Gebäude öffnet
+      sein eigenes Fenster; vorhandene Fenster werden fokussiert statt überschrieben.
+- [ ] **Nächster UI-Schnitt (Priorität 1):** Warenleiste und Gebäudefenster
+      stärker ikonisieren, weil sie den Testfluss am stärksten verbessern.
 - [~] **Unterer Rand**: dauerhaft nur Hauptbuttons; Gebäude-/Wirtschafts-/
-      Systemdetails liegen in Fenstern. Offen: richtige S2-artige Symbolbuttons,
-      Fensterkopfzeilen, Parken/Schließen per Rechtsklick und verschiebbare Fenster.
+      Systemdetails liegen in Fenstern. Offen: richtige S2-artige Symbolbuttons
+      und schönere Fenster-Skins.
 - [x] **Cursor-Bauvorschau**: „Geist" des gewählten Gebäudes am Mauszeiger +
       BQ-Markierung am Knoten (grün=geht/rot=geht nicht), Eingangsflagge/-weg
       schon in der Vorschau (unit_renderer._draw_build_preview).
-- [ ] **Gebäude-Infofenster** (bei Auswahl): Gebäude-Bild, Produktivität in %,
-      Eingangs-/Ausgangslager mit Waren-Icons, Garnison/Rang, Buttons
-      (Produktion an/aus, Abreißen, Priorität).
+- [x] **Hover-Bauhilfe (2026-06-09):** der Cursor zeigt am aktuellen Knoten
+      sichtbar die zulässige Baugröße bzw. Straßen-Flagge statt nur einen Punkt.
+- [~] **Gebäude-Infofenster** (bei Auswahl): erste Version mit Gebäude-Bild,
+      Status, Produktion an/aus, Abreißen, Angriff/Sprung. Offen: Produktivität
+      in %, Eingangs-/Ausgangslager mit Waren-Icons, Garnison/Rang-Details,
+      Priorität.
 - [ ] **Ressourcen-/Lagerleiste oben**: Waren als **Icons mit Zahl** statt Textliste.
 - [ ] **Minikarte** in gerahmtem Panel; Umschalter für Overlays (Gebiet, Bauplätze, Nebel).
 - [ ] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion) und
@@ -264,8 +278,10 @@ GitHub-Arbeitspakete:
 - [ ] **Button-Zustände** (normal/hover/pressed/disabled) als 9-Patch bzw. je ein PNG.
 - [ ] **Icon-Set** unter `assets/ui/icons/` (build/flag/road/demolish/stop/stats/…),
       Waren-Icons aus `assets/goods/` wiederverwenden.
-- [ ] **`assets/ui.json`** für Layout: globale UI-Skalierung, Schriftgröße,
-      Panel-Größen/-Positionen, Icon-Rastergröße → ohne Code anpassbar.
+- [x] **`assets/ui.json`** für Layout: globale UI-Skalierung, Schriftgröße,
+      Basis-Panel-Größen und Icon-Rastergröße → ohne Code anpassbar.
+- [ ] Fensterpositionen/-Anker noch weiter aus `world.gd` nach `assets/ui.json`
+      ziehen.
 - [ ] **Eigener UI-Editor/Vorschau** (analog Design-Editor) wäre Bonus.
 - [ ] **Detaillierte Design-Vorgabe** für eigene Skins in `assets/README.md`
       (9-Patch-Ränder, Maße, Zustände, Schrift, Farben) — Pflicht, damit andere
@@ -277,7 +293,7 @@ GitHub-Arbeitspakete:
   (skaliert die UI mit dem Fenster); 9-Patch hält Rahmen scharf.
 - Tooltips/Infofenster lesen aus `core/` (read-only), kein Logik-Code im UI.
 
-**D) Recherche-Abgleich S2 / RTTR (Stand 2026-06-08)**
+**D) Recherche-Abgleich S2 / RTTR (Stand 2026-06-09)**
 - Siedler-2-Referenz: Bauplatzansicht per **Space**, separate Hotkeys/Fenster für
   Bauen (**B**), Statistik (**C**), Inventar (**I**), globale Wirtschaft (**L**),
   Minikarte (**M**), Meldungen (**N**), Einstellungen (**S**), UI aus/an (**Y**)
@@ -286,6 +302,12 @@ GitHub-Arbeitspakete:
 - Bedienprinzip daraus: weniger dauerhafte Textleisten, mehr kontextuelle Fenster.
   Klick auf sichtbare Bauplätze soll direkt zum passenden Bau-/Flaggenfenster
   führen; Rechtsklick/Esc später als universelles Schließen/Abbrechen.
+- Deutsches S2-Gold-Handbuch: Das Baufenster hat in der zweiten Reihe die
+  Gebäudekategorien Bergwerk/kleines/mittleres/großes Haus; die Bauhilfe zeigt
+  gelbe Symbole für Fahne, kleines Haus, mittleres Haus, großes Haus, Bergwerk
+  und Hafen/Haus. Mittlere/große Bauplätze dürfen kleinere Gebäude aufnehmen,
+  umgekehrt nicht.
+  Quelle: https://www.mogelpower.de/manuals/Die_Siedler_2_Gold_Deutsch_Manual.pdf
 - RTTR-Referenz: Open-Source-S2-Rewrite mit modernen Optionen/Addon-Settings und
   originalnahem Fenster-/Wirtschaftsgefühl, aber ohne Code-Übernahme.
   Quellen: https://github.com/Return-To-The-Roots/s25client und https://www.siedler25.org/
@@ -441,7 +463,8 @@ ROADMAP.md • README.md • assets/README.md • ai/README.md
 - **Rechte/mittlere Maustaste ziehen**: Karte schwenken  •  **Mausrad**: Zoom
 - **Untere Hauptleiste**: **Bauen**, **Wirtschaft**, **System** als Fensterzugriffe
   (Tasten **1** Flagge, **2** Straße, **9** Abriss, **0/Esc** Auswahl/Fenster zu)
-- **Linksklick**: ausführen / im Auswahl-Modus Gebäude wählen bzw. Gegner angreifen
+- **Linksklick**: ausführen / im Auswahl-Modus Gebäude-Fenster öffnen
+  (mehrere bleiben parallel offen), Gegnerangriff über das Gebäudefenster
 - **Leertaste**: Bauplätze einblenden; bei sichtbaren Markern öffnet Klick auf
   Hütte/Haus/Burg/Mine das passende Baufenster, Flaggenmarker setzen direkt Flaggen
 - **B**: Baufenster  •  **I**: Wirtschaft/Waren  •  **S**: System/Design-Übersicht
@@ -451,6 +474,7 @@ ROADMAP.md • README.md • assets/README.md • ai/README.md
 - **K**: Gegner-KI an/aus  •  **J**: Gegner-KI wechseln
 - **F2/F3** Speichern/Laden  •  **F5** Neues Spiel
 - **Minikarte unten rechts**: Klick zentriert die Kamera
+- **Hauptmenü → Einstellungen**: UI-Größe klein/mittel/groß wählen
 - **Hauptmenü → Design-Editor**: Gebäudegrößen/Position/Eingang live einstellen
 
 ## Architektur-Notizen (für Wiedereinstieg)

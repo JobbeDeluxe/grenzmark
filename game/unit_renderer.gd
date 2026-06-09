@@ -15,6 +15,7 @@ var preview_path: Array[Vector2i] = []
 var preview_ok := false
 var build_preview_id := ""   # im Bau-Modus: Geist dieses Gebäudes am Mauszeiger
 var _anim_time := 0.0
+var _font: Font = ThemeDB.fallback_font
 
 
 func setup(eco: Economy) -> void:
@@ -395,15 +396,80 @@ func _draw_hover() -> void:
 	if not state.map.in_bounds(hover.x, hover.y):
 		return
 	var p := state.map.node_world(hover.x, hover.y)
+	var road_flag := state.can_place_road_flag(hover.x, hover.y)
+	var build_bq := state.actual_build_spot_bq(hover.x, hover.y)
+	var shown_bq := build_bq if build_bq != WorldState.BQ_NOTHING else (WorldState.BQ_FLAG if road_flag else WorldState.BQ_NOTHING)
+	var shown_as_road_flag := road_flag and build_bq == WorldState.BQ_NOTHING
 	var d := PackedVector2Array([
-		p + Vector2(0, -8), p + Vector2(12, 0),
-		p + Vector2(0, 8), p + Vector2(-12, 0),
+		p + Vector2(0, -11), p + Vector2(16, 0),
+		p + Vector2(0, 11), p + Vector2(-16, 0),
 	])
-	draw_polyline(d + PackedVector2Array([d[0]]), Color(1, 1, 1, 0.85), 1.5)
-	draw_circle(p, 4.0, _bq_color(state.effective_bq(hover.x, hover.y)))
+	draw_polyline(d + PackedVector2Array([d[0]]), Color(1, 1, 1, 0.88), 2.0)
+	_draw_hover_build_marker(p, shown_bq, shown_as_road_flag)
 	if state.map.in_bounds(road_start.x, road_start.y):
 		var sp := state.map.node_world(road_start.x, road_start.y)
 		draw_circle(sp, 7.0, Color(0.3, 0.6, 1.0, 0.85))
+
+
+func _draw_hover_build_marker(p: Vector2, bq: int, road_flag := false) -> void:
+	var col := _bq_color(bq)
+	if bq < WorldState.BQ_FLAG:
+		draw_circle(p, 4.0, Color(0.6, 0.6, 0.6, 0.55))
+		return
+	var key := _bq_key(bq, road_flag)
+	var tex := GameTheme.build_spot_texture(key)
+	if tex != null:
+		var sz := Vector2(22, 22)
+		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y - 8.0, sz.x, sz.y), false,
+			Color(1, 1, 1, 0.78))
+	else:
+		match bq:
+			WorldState.BQ_CASTLE:
+				draw_rect(Rect2(p.x - 10, p.y - 24, 20, 15), col, false, 2.0)
+				draw_rect(Rect2(p.x - 5, p.y - 31, 10, 8), col.lightened(0.15), false, 1.4)
+			WorldState.BQ_HOUSE:
+				draw_rect(Rect2(p.x - 8, p.y - 22, 16, 12), col, false, 1.8)
+				draw_line(p + Vector2(-8, -22), p + Vector2(0, -30), col, 1.5, true)
+				draw_line(p + Vector2(8, -22), p + Vector2(0, -30), col, 1.5, true)
+			WorldState.BQ_HUT:
+				draw_rect(Rect2(p.x - 6, p.y - 20, 12, 10), col, false, 1.7)
+			WorldState.BQ_MINE:
+				draw_polyline(PackedVector2Array([
+					p + Vector2(-9, -10), p + Vector2(9, -10),
+					p + Vector2(0, -28), p + Vector2(-9, -10)
+				]), col, 1.8, true)
+			WorldState.BQ_FLAG:
+				draw_line(p + Vector2(0, -24), p + Vector2(0, -10), col, 1.5, true)
+				draw_rect(Rect2(p.x, p.y - 24, 9, 6), col)
+	var text := "Weg-F" if road_flag else _bq_short(bq)
+	var badge := Rect2(p.x + 11, p.y - 31, maxf(30.0, float(text.length()) * 6.2), 14)
+	draw_rect(badge, Color(0.05, 0.04, 0.03, 0.72))
+	draw_rect(badge, col, false, 1.0)
+	draw_string(_font, badge.position + Vector2(3, 10), text,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 0.95, 0.82))
+	draw_circle(p, 3.0, col)
+
+
+func _bq_key(bq: int, road_flag := false) -> String:
+	if road_flag:
+		return "road_flag"
+	match bq:
+		WorldState.BQ_CASTLE: return "castle"
+		WorldState.BQ_HOUSE: return "house"
+		WorldState.BQ_HUT: return "hut"
+		WorldState.BQ_MINE: return "mine"
+		WorldState.BQ_FLAG: return "flag"
+	return ""
+
+
+func _bq_short(bq: int) -> String:
+	match bq:
+		WorldState.BQ_CASTLE: return "Burg"
+		WorldState.BQ_HOUSE: return "Haus"
+		WorldState.BQ_HUT: return "Hütte"
+		WorldState.BQ_MINE: return "Mine"
+		WorldState.BQ_FLAG: return "Flagge"
+	return "-"
 
 
 func _bq_color(bq: int) -> Color:
