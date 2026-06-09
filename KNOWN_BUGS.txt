@@ -4,6 +4,23 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-09] (BEHOBEN) Baufenster-Inhalt skalierte beim Resize nicht mit
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/5
+
+  Symptom: Das Baufenster selbst ließ sich vergrößern/verkleinern, aber die
+  Aktionszeile, Kategorien und Gebäude-Buttons nutzten die neue Fenstergröße
+  nicht sauber mit. Zusätzlich öffnete ein Klick auf einen Bauhilfe-Marker das
+  gefilterte Baufenster an der allgemeinen Menüposition statt nahe am geklickten
+  Symbol.
+
+  Fix: Das Baufenster berechnet beim Öffnen und Ziehen einen eigenen
+  Inhaltsskalierungsfaktor, passt Button-Größen, Abstände, Scrollbereich und
+  Rasterspalten an und positioniert sich bei Klick auf Hütte/Haus/Burg/Mine
+  neben dem angeklickten Bauhilfe-Knoten. Öffnung über B-Button/Hotkey bleibt an
+  der normalen Menüposition.
+
+
 [2026-06-09] (BEHOBEN) Bauhilfe-Hovericon schwebte zu hoch
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/5

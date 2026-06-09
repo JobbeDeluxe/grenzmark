@@ -47,6 +47,7 @@ var _status_label: Label
 var _build_panel: PanelContainer
 var _build_action_row: HBoxContainer
 var _build_group_row: HBoxContainer
+var _build_scroll: ScrollContainer
 var _build_row: GridContainer
 var _build_caption: Label
 var _build_group_buttons := {}
@@ -323,6 +324,7 @@ const BUILD_GROUPS := [
 	["Mittel", "house", "house"],
 	["Groß", "castle", "castle"],
 ]
+const BUILD_MIN_PANEL_SIZE := Vector2(280, 172)
 
 
 func _build_ui() -> void:
@@ -408,6 +410,7 @@ func _build_ui() -> void:
 	_build_panel = _floating_panel(Vector2(0, 1), Vector2(edge, -bottom_h - build_h - edge * 2.0),
 		Vector2(edge + build_w, -bottom_h - edge * 2.0))
 	_build_panel.visible = false
+	_build_panel.resized.connect(_refresh_build_panel_layout)
 	var build_box := _add_window_chrome(_build_panel, "Bauen", _toggle_build_panel)
 	_build_caption = Label.new()
 	UISkin.apply_label(_build_caption, true, 12)
@@ -434,16 +437,18 @@ func _build_ui() -> void:
 			_group_label(c[1]), GameTheme.build_spot_texture(String(c[2])), Vector2(88, 44))
 		cat_btn.toggle_mode = true
 		_build_group_buttons[c[1]] = cat_btn
-	var build_scroll := ScrollContainer.new()
-	build_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	build_scroll.custom_minimum_size = Vector2(maxf(build_w - 20.0, 120.0), 112.0 * UISkin.ui_scale())
-	build_box.add_child(build_scroll)
+	_build_scroll = ScrollContainer.new()
+	_build_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_build_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_build_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_build_scroll.custom_minimum_size = Vector2(0, 112.0 * UISkin.ui_scale())
+	build_box.add_child(_build_scroll)
 	_build_row = GridContainer.new()
 	_build_row.columns = 4
 	_build_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_build_row.add_theme_constant_override("h_separation", 5)
 	_build_row.add_theme_constant_override("v_separation", 5)
-	build_scroll.add_child(_build_row)
+	_build_scroll.add_child(_build_row)
 	_show_category(ui_category)
 
 	_economy_panel = _floating_panel(Vector2(0, 1), Vector2(edge + 304, -bottom_h - 250 - edge * 2.0),
@@ -562,12 +567,12 @@ func _floating_panel(anchor: Vector2, from: Vector2, to: Vector2) -> PanelContai
 ## Button, Rechtsklick-zum-Schließen. Liefert den Inhalts-Container zurück.
 func _add_window_chrome(panel: PanelContainer, title: String, on_close: Callable) -> VBoxContainer:
 	var outer := VBoxContainer.new()
-	outer.add_theme_constant_override("separation", 6)
+	outer.add_theme_constant_override("separation", roundi(6.0 * UISkin.ui_scale()))
 	outer.mouse_filter = Control.MOUSE_FILTER_PASS
 	panel.add_child(outer)
 
 	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 6)
+	head.add_theme_constant_override("separation", roundi(6.0 * UISkin.ui_scale()))
 	# Kopfzeile ist Ziehfläche: Maus-Events hier bewegen das Fenster.
 	head.mouse_filter = Control.MOUSE_FILTER_STOP
 	var drag := {active = false, start_mouse = Vector2.ZERO, start = Vector2.ZERO}
@@ -582,7 +587,7 @@ func _add_window_chrome(panel: PanelContainer, title: String, on_close: Callable
 	head.add_child(title_label)
 
 	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 6)
+	content.add_theme_constant_override("separation", roundi(6.0 * UISkin.ui_scale()))
 	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.mouse_filter = Control.MOUSE_FILTER_PASS
 
@@ -608,7 +613,7 @@ func _add_window_chrome(panel: PanelContainer, title: String, on_close: Callable
 	outer.add_child(grip_row)
 	var grip := ColorRect.new()
 	grip.color = UISkin.color("accent", Color(0.9, 0.74, 0.33)).darkened(0.1)
-	grip.custom_minimum_size = Vector2(14, 14)
+	grip.custom_minimum_size = Vector2(14, 14) * UISkin.ui_scale()
 	grip.mouse_filter = Control.MOUSE_FILTER_STOP
 	grip.tooltip_text = "Groesse ziehen"
 	var rs := {active = false, start_mouse = Vector2.ZERO, w = 0.0, h = 0.0}
@@ -648,8 +653,8 @@ func _window_expand(panel: PanelContainer) -> void:
 func _chrome_button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(24, 22)
-	b.add_theme_font_size_override("font_size", 12)
+	b.custom_minimum_size = Vector2(24, 22) * UISkin.ui_scale()
+	b.add_theme_font_size_override("font_size", maxi(8, roundi(12.0 * UISkin.ui_scale())))
 	b.add_theme_color_override("font_color", UISkin.color("font", Color.WHITE))
 	b.add_theme_stylebox_override("normal", UISkin.button_style("button"))
 	b.add_theme_stylebox_override("hover", UISkin.button_style("button_hover"))
@@ -696,13 +701,17 @@ func _window_resize_input(panel: PanelContainer, rs: Dictionary, ev: InputEvent)
 			rs.active = false
 	elif ev is InputEventMouseMotion and rs.active:
 		var delta: Vector2 = panel.get_global_mouse_position() - (rs.start_mouse as Vector2)
-		var nw: float = maxf(140.0, float(rs.w) + delta.x)
-		var nh: float = maxf(70.0, float(rs.h) + delta.y)
+		var min_size := BUILD_MIN_PANEL_SIZE * UISkin.ui_scale() if panel == _build_panel \
+			else Vector2(140, 70) * UISkin.ui_scale()
+		var nw: float = maxf(min_size.x, float(rs.w) + delta.x)
+		var nh: float = maxf(min_size.y, float(rs.h) + delta.y)
 		panel.offset_right = panel.offset_left + nw
 		panel.offset_bottom = panel.offset_top + nh
 		# Volle Höhe nachführen, damit Ein-/Ausklappen die neue Größe behält.
 		if panel.has_meta("full_height"):
 			panel.set_meta("full_height", nh)
+		if panel == _build_panel:
+			_refresh_build_panel_layout()
 
 
 func _build_stock_cells(parent: GridContainer) -> void:
@@ -735,9 +744,107 @@ func _open_general_build_menu() -> void:
 	build_window_spot = Vector2i(-1, -1)
 	if _build_panel != null:
 		_hide_management_panels(_build_panel)
+		_position_build_panel_default()
 		_build_panel.visible = true
 	_show_category(ui_category)
 	_flash("Baufenster: alle Gebaeude. Space zeigt Bauplaetze; Klick auf Marker filtert passend.")
+
+
+func _position_build_panel_default() -> void:
+	if _build_panel == null:
+		return
+	var edge := UISkin.layout_num("edge_margin", 8)
+	var bottom_h := UISkin.layout_num("bottom_bar_height", 46)
+	var build_w := UISkin.layout_num("build_panel_width", 430)
+	var build_h := UISkin.layout_num("build_panel_height", 245)
+	var view := get_viewport_rect().size
+	var size := Vector2(build_w, build_h)
+	var pos := Vector2(edge, view.y - bottom_h - size.y - edge * 2.0)
+	pos.x = clampf(pos.x, edge, maxf(edge, view.x - size.x - edge))
+	pos.y = clampf(pos.y, edge, maxf(edge, view.y - size.y - edge))
+	_set_panel_screen_rect(_build_panel, pos, size)
+	_refresh_build_panel_layout()
+
+
+func _position_build_panel_near_node(node: Vector2i) -> void:
+	if _build_panel == null:
+		return
+	var world := map.node_world(node.x, node.y)
+	var screen: Vector2 = get_viewport().get_canvas_transform() * world
+	var size := _panel_size(_build_panel)
+	var edge := UISkin.layout_num("edge_margin", 8)
+	var gap := 18.0 * UISkin.ui_scale()
+	var view := get_viewport_rect().size
+	var pos := screen + Vector2(gap, -size.y * 0.5)
+	if pos.x + size.x > view.x - edge:
+		pos.x = screen.x - size.x - gap
+	pos.x = clampf(pos.x, edge, maxf(edge, view.x - size.x - edge))
+	pos.y = clampf(pos.y, edge, maxf(edge, view.y - size.y - edge))
+	_set_panel_screen_rect(_build_panel, pos, size)
+	_refresh_build_panel_layout()
+
+
+func _set_panel_screen_rect(panel: PanelContainer, pos: Vector2, size: Vector2) -> void:
+	panel.anchor_left = 0.0
+	panel.anchor_top = 0.0
+	panel.anchor_right = 0.0
+	panel.anchor_bottom = 0.0
+	panel.offset_left = pos.x
+	panel.offset_top = pos.y
+	panel.offset_right = pos.x + size.x
+	panel.offset_bottom = pos.y + size.y
+
+
+func _panel_size(panel: PanelContainer) -> Vector2:
+	return Vector2(panel.offset_right - panel.offset_left, panel.offset_bottom - panel.offset_top)
+
+
+func _build_content_scale() -> float:
+	if _build_panel == null:
+		return 1.0
+	var base := Vector2(UISkin.layout_num("build_panel_width", 430),
+		UISkin.layout_num("build_panel_height", 245))
+	var size := _panel_size(_build_panel)
+	if base.x <= 0.0 or base.y <= 0.0:
+		return 1.0
+	return clampf(minf(size.x / base.x, size.y / base.y), 0.82, 1.55)
+
+
+func _build_columns_for_width(content_scale: float) -> int:
+	if _build_panel == null:
+		return 4
+	var usable := maxf(_panel_size(_build_panel).x - 32.0 * UISkin.ui_scale(), 120.0)
+	var cell := (92.0 * UISkin.ui_scale() * content_scale) + 6.0 * UISkin.ui_scale()
+	return clampi(int(floor(usable / maxf(cell, 1.0))), 2, 6)
+
+
+func _refresh_build_panel_layout() -> void:
+	if _build_panel == null or _build_row == null:
+		return
+	var content_scale := _build_content_scale()
+	var sep := maxi(3, roundi(5.0 * UISkin.ui_scale() * content_scale))
+	if _build_action_row != null:
+		_build_action_row.add_theme_constant_override("separation", sep)
+	if _build_group_row != null:
+		_build_group_row.add_theme_constant_override("separation", sep)
+	if _build_scroll != null:
+		_build_scroll.custom_minimum_size = Vector2(0,
+			maxf(96.0, 112.0 * UISkin.ui_scale() * content_scale))
+	_build_row.columns = _build_columns_for_width(content_scale)
+	_build_row.add_theme_constant_override("h_separation", sep)
+	_build_row.add_theme_constant_override("v_separation", sep)
+	_rescale_build_buttons(_build_panel, content_scale)
+
+
+func _rescale_build_buttons(root: Node, content_scale: float) -> void:
+	for child in root.get_children():
+		if child is Button and child.has_meta("base_size"):
+			var btn := child as Button
+			var base: Vector2 = btn.get_meta("base_size")
+			btn.custom_minimum_size = base * UISkin.ui_scale() * content_scale
+			btn.add_theme_font_size_override("font_size",
+				maxi(8, roundi(12.0 * UISkin.ui_scale() * content_scale)))
+		_rescale_build_buttons(child, content_scale)
 
 
 func _toggle_build_panel() -> void:
@@ -749,6 +856,7 @@ func _toggle_build_panel() -> void:
 	if next:
 		build_filter_bq = -1
 		build_window_spot = Vector2i(-1, -1)
+		_position_build_panel_default()
 		_show_category(ui_category)
 
 
@@ -1247,6 +1355,7 @@ func _show_category(cat: String) -> void:
 	ui_category = cat
 	if _build_row == null:
 		return
+	var content_scale := _build_content_scale()
 	for group in _build_group_buttons:
 		var group_btn: Button = _build_group_buttons[group]
 		group_btn.button_pressed = String(group) == cat
@@ -1263,12 +1372,13 @@ func _show_category(cat: String) -> void:
 			var cb := _build_from_spot.bind(id) if build_window_spot.x >= 0 else _select_building.bind(id)
 			var tex := GameTheme.building_texture(id)
 			_build_icon_button(_build_row, GameTheme.building_label(id), cb,
-				_building_tooltip(id), tex, Vector2(92, 46))
+				_building_tooltip(id), tex, Vector2(92, 46), content_scale)
 	if _build_row.get_child_count() == 0:
 		var empty := Label.new()
 		empty.text = "Keine passenden Gebäude in dieser Kategorie."
 		UISkin.apply_label(empty, true, 12)
 		_build_row.add_child(empty)
+	_refresh_build_panel_layout()
 
 
 func _group_label(group: String) -> String:
@@ -1358,12 +1468,15 @@ func _tbutton(row: Container, text: String, cb: Callable) -> Button:
 
 
 func _build_icon_button(row: Container, text: String, cb: Callable, tooltip := "",
-		icon: Texture2D = null, min_size := Vector2(64, 38)) -> Button:
+		icon: Texture2D = null, min_size := Vector2(64, 38), content_scale := 1.0) -> Button:
 	var btn := Button.new()
 	btn.text = text
 	btn.tooltip_text = tooltip
 	UISkin.apply_button(btn)
-	btn.custom_minimum_size = min_size * UISkin.ui_scale()
+	btn.custom_minimum_size = min_size * UISkin.ui_scale() * content_scale
+	btn.add_theme_font_size_override("font_size",
+		maxi(8, roundi(12.0 * UISkin.ui_scale() * content_scale)))
+	btn.set_meta("base_size", min_size)
 	btn.pressed.connect(cb)
 	if icon != null:
 		btn.icon = icon
@@ -1637,6 +1750,7 @@ func _handle_build_spot_click() -> bool:
 	if _build_panel != null:
 		_hide_management_panels(_build_panel)
 		_build_panel.visible = true
+		_position_build_panel_near_node(hover)
 	_show_category(ui_category)
 	_flash("Bauplatz gewaehlt: %s. Im Baufenster Gebaeude waehlen." % _bq_name(bq))
 	return true

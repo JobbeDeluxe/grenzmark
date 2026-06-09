@@ -255,6 +255,10 @@ GitHub-Arbeitspakete:
       ist, setzt ein Klick auf Flaggen-/Straßenflaggen-Marker direkt die Flagge;
       Klick auf Hütte/Haus/Burg/Mine öffnet unten ein nach Bauplatzgröße
       gefiltertes Baufenster.
+- [x] **Baufenster-Resize/Position (2026-06-09):** Fenstergröße skaliert jetzt
+      auch Inhalt, Abstände, Scrollbereich und Rasterspalten; Bauhilfe-Klicks
+      öffnen das gefilterte Baufenster nahe am angeklickten Marker, Menü/Hotkey
+      weiterhin an der normalen Baufensterposition.
 - [x] **Einstellungsfenster (erste Version):** Taste **S** / Button Optionen zeigt
       alle aktuell auslagerbaren Design-/Tuning-Dateien (`assets/ui.json`,
       `assets/design.json`, `assets/tuning.json`, Bauplatz-/Flaggen-/Spieler-PNGs)
@@ -265,8 +269,10 @@ GitHub-Arbeitspakete:
       sind vor Spielstart anwählbar und werden persistent gespeichert.
 - [x] **Parallele Gebäudefenster (2026-06-09):** jedes angeklickte Gebäude öffnet
       sein eigenes Fenster; vorhandene Fenster werden fokussiert statt überschrieben.
-- [ ] **Nächster UI-Schnitt (Priorität 1):** Warenleiste und Gebäudefenster
-      stärker ikonisieren, weil sie den Testfluss am stärksten verbessern.
+- [ ] **Nächster UI-Schnitt (Priorität 1):** Gebäude-Infofenster S2-näher machen:
+      Produktivität in %, Eingangs-/Ausgangswaren als Icons, Warnzustände,
+      Garnison/Rang und Prioritäten; danach die Warenleiste oben weiter
+      ikonisieren.
 - [~] **Unterer Rand**: dauerhaft nur Hauptbuttons; Gebäude-/Wirtschafts-/
       Systemdetails liegen in Fenstern. Offen: richtige S2-artige Symbolbuttons
       und schönere Fenster-Skins.
