@@ -95,7 +95,7 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
   `_test_enemy_road_people()` und erweiterter `_test_ai()`.
 
 
-[2026-06-09] (IN ARBEIT) Karten-Generator erzeugt lange zackige Terrain-Kanten
+[2026-06-09] (BEHOBEN 2026-06-10) Karten-Generator: Zacken, sichtbares Erz, Streusteine
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/19
 
@@ -118,8 +118,18 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
   als Sicherheitsnetz. Der Start-Teich nutzt dieselbe Brush-Logik. Steine werden
   nicht mehr einzeln über die Wiese gewürfelt, sondern als wenige Haufen gesetzt;
   zusätzlich bekommt jeder Besitzer beim Start einen Steincluster im eigenen
-  Territorium, falls dort keiner liegt. Weiter offen: unterirdisches Erzmodell
-  plus Geologe/Debug-Anzeige.
+  Territorium, falls dort keiner liegt.
+
+  Erz unterirdisch (2026-06-10): Erz ist kein sichtbares Kartenobjekt mehr.
+  MapData hat eine versteckte Lagerstätten-Schicht (ore_deposit_kind/amount/found);
+  der Generator legt Adern im Berginneren an (Menge skaliert mit Aderstärke →
+  endlicher Abbau). Die Mine sucht & baut Vorkommen im Umkreis (ORE_RADIUS) ab
+  und erschöpft sie schlagweise (Economy._find_deposit / take_ore_deposit).
+  Save/Load erweitert. Tests: _test_ore_deposit_mining, erweiterte _test_ore_types
+  und _test_worldgen_96 (kein sichtbares MO_ORE mehr).
+
+  Weiter offen, aber in #21 (Erkundung): Geologe/Aussichtsturm/Nebel decken die
+  Vorkommen sichtbar auf (ore_deposit_found ist dafür bereits vorbereitet).
 
 
 [2026-06-09] (BEHOBEN) Gebäude konnten direkt auf der Grenze gebaut werden

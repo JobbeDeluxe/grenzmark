@@ -1909,6 +1909,9 @@ func _save_game() -> void:
 		heights = map.heights, terr_r = map.terr_r, terr_d = map.terr_d,
 		objects = map.objects.duplicate(),
 		ore_kind = map.ore_kind.duplicate(),
+		ore_deposit_kind = map.ore_deposit_kind.duplicate(),
+		ore_deposit_amount = map.ore_deposit_amount.duplicate(),
+		ore_deposit_found = map.ore_deposit_found.duplicate(),
 		tree_stage = map.tree_stage.duplicate(),
 		tree_type = map.tree_type.duplicate(),
 		stone_stage = map.stone_stage.duplicate(),
@@ -1957,6 +1960,15 @@ func _load_game() -> void:
 	map.terr_d = data.terr_d
 	map.objects = data.objects
 	map.ore_kind = data.get("ore_kind", {})
+	var saved_dep_kind = data.get("ore_deposit_kind", {})
+	if saved_dep_kind is Dictionary:
+		map.ore_deposit_kind = saved_dep_kind
+	var saved_dep_amount = data.get("ore_deposit_amount", {})
+	if saved_dep_amount is Dictionary:
+		map.ore_deposit_amount = saved_dep_amount
+	var saved_dep_found = data.get("ore_deposit_found", {})
+	if saved_dep_found is Dictionary:
+		map.ore_deposit_found = saved_dep_found
 	var saved_tree_stage = data.get("tree_stage", {})
 	if saved_tree_stage is Dictionary:
 		map.tree_stage = saved_tree_stage

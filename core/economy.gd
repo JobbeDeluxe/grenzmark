@@ -1054,7 +1054,7 @@ func _resource_target(bs: BState) -> Vector2i:
 	match String(bs.def.get("resource", "")):
 		"tree": return _find_mature_tree(bs.bld.pos, RES_RADIUS)
 		"stone": return _find_object(bs.bld.pos, MapData.MO_STONE, RES_RADIUS)
-		"ore": return _find_ore(bs.bld.pos, int(bs.def.get("mineral", -1)), ORE_RADIUS)
+		"ore": return _find_deposit(bs.bld.pos, int(bs.def.get("mineral", -1)), ORE_RADIUS)
 		"plant_tree": return _find_plant_spot(bs.bld.pos)
 		"water": return _find_water_edge(bs.bld.pos)
 	return Vector2i(-1, -1)
@@ -1087,8 +1087,8 @@ func _do_resource_action(bs: BState) -> void:
 						state.map.clear_map_object(n.x, n.y)
 				dirty = true
 		"ore":
-			if state.map.map_object(n.x, n.y) == MapData.MO_ORE:
-				state.map.clear_map_object(n.x, n.y)
+			# Unterirdisches Vorkommen abbauen (eine Einheit; bei 0 erschöpft).
+			if state.map.take_ore_deposit(n.x, n.y):
 				dirty = true
 		"plant_tree":
 			if not state.has_object(n.x, n.y):
@@ -1166,8 +1166,9 @@ func _find_mature_tree(center: Vector2i, radius: int) -> Vector2i:
 	return Vector2i(-1, -1)
 
 
-## Erz der passenden Sorte suchen (mineral < 0 = beliebiges Erz).
-func _find_ore(center: Vector2i, mineral: int, radius: int) -> Vector2i:
+## Unterirdisches Erz-Vorkommen der passenden Sorte im Umkreis suchen
+## (mineral < 0 = beliebiges Erz). Liefert den nächstgelegenen Fundknoten.
+func _find_deposit(center: Vector2i, mineral: int, radius: int) -> Vector2i:
 	for r in range(1, radius + 1):
 		for dy in range(-r, r + 1):
 			for dx in range(-r, r + 1):
@@ -1177,9 +1178,9 @@ func _find_ore(center: Vector2i, mineral: int, radius: int) -> Vector2i:
 					continue
 				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
 					continue
-				if state.map.map_object(x, y) != MapData.MO_ORE:
+				if state.map.ore_deposit_amount_at(x, y) <= 0:
 					continue
-				if mineral < 0 or state.map.ore_kind_at(x, y) == mineral:
+				if mineral < 0 or state.map.ore_deposit_kind_at(x, y) == mineral:
 					return Vector2i(x, y)
 	return Vector2i(-1, -1)
 

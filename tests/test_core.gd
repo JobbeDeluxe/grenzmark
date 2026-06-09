@@ -18,6 +18,7 @@ func _initialize() -> void:
 	_test_mapgen_cleanup_and_stone_clusters()
 	_test_start_territory_stone_guarantee()
 	_test_ore_types()
+	_test_ore_deposit_mining()
 	_test_catalog_complete()
 	_test_asset_files()
 	_test_visibility()
@@ -429,11 +430,17 @@ func _test_worldgen_96() -> void:
 		for xx in map.width:
 			if map.get_tri(Vector2i(xx, yy), Grid.TRI_R) == Terrain.MOUNTAIN:
 				mountain += 1
-	for k in map.objects:
-		if map.objects[k] == MapData.MO_ORE:
+	for k in map.ore_deposit_amount:
+		if int(map.ore_deposit_amount[k]) > 0:
 			ore += 1
 	_check(mountain > 50, "Karte hat Gebirge (%d Dreiecke)" % mountain)
-	_check(ore > 0, "Gebirge enthält Erz (%d)" % ore)
+	_check(ore > 0, "Gebirge enthält unterirdische Erz-Vorkommen (%d)" % ore)
+	# Erz ist unterirdisch — es darf kein sichtbares MO_ORE-Objekt auf der Karte sein.
+	var visible_ore := 0
+	for k in map.objects:
+		if map.objects[k] == MapData.MO_ORE:
+			visible_ore += 1
+	_check(visible_ore == 0, "Kein sichtbares Erz-Objekt auf der Karte (%d)" % visible_ore)
 	# Es gibt einen Burgplatz (für Spieler- und Gegner-HQ).
 	var state := WorldState.new(map)
 	var castle := 0
@@ -507,18 +514,37 @@ func _test_visibility() -> void:
 
 func _test_ore_types() -> void:
 	var map := _flat_map(20, 20)
-	map.set_map_object(10, 8, MapData.MO_ORE)
-	map.set_ore_kind(10, 8, MapData.ORE_COAL)
-	map.set_map_object(12, 12, MapData.MO_ORE)
-	map.set_ore_kind(12, 12, MapData.ORE_IRON)
+	map.set_ore_deposit(10, 8, MapData.ORE_COAL, 5)
+	map.set_ore_deposit(12, 12, MapData.ORE_IRON, 5)
 	var state := WorldState.new(map)
 	var eco := Economy.new(state)
-	_check(eco._find_ore(Vector2i(10, 10), MapData.ORE_IRON, 6) == Vector2i(12, 12),
-		"Eisenmine findet Eisenerz, nicht Kohle")
-	_check(eco._find_ore(Vector2i(10, 10), MapData.ORE_COAL, 6) == Vector2i(10, 8),
-		"Kohlemine findet Kohle")
-	_check(eco._find_ore(Vector2i(10, 10), MapData.ORE_GOLD, 6).x < 0,
-		"Keine Goldader in der Nähe → kein Fund")
+	_check(eco._find_deposit(Vector2i(10, 10), MapData.ORE_IRON, 6) == Vector2i(12, 12),
+		"Eisenmine findet Eisen-Vorkommen, nicht Kohle")
+	_check(eco._find_deposit(Vector2i(10, 10), MapData.ORE_COAL, 6) == Vector2i(10, 8),
+		"Kohlemine findet Kohle-Vorkommen")
+	_check(eco._find_deposit(Vector2i(10, 10), MapData.ORE_GOLD, 6).x < 0,
+		"Keine Gold-Ader in der Nähe → kein Fund")
+
+
+## #19: Erz liegt unterirdisch. Die Mine findet ein Vorkommen im Radius (nicht
+## nur am eigenen Knoten) und baut es Schlag für Schlag ab, bis es erschöpft ist.
+func _test_ore_deposit_mining() -> void:
+	var map := _flat_map(20, 20)
+	map.set_ore_deposit(10, 8, MapData.ORE_IRON, 3)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var target := eco._find_deposit(Vector2i(10, 10), MapData.ORE_IRON, Economy.ORE_RADIUS)
+	_check(target == Vector2i(10, 8), "Mine findet Erz-Vorkommen im Radius (nicht nur am Knoten)")
+	var bs := Economy.BState.new()
+	bs.def = { resource = "ore" }
+	bs.worker_target = Vector2i(10, 8)
+	eco._do_resource_action(bs)
+	_check(map.ore_deposit_amount_at(10, 8) == 2, "1. Abbau: Menge 3 → 2")
+	eco._do_resource_action(bs)
+	eco._do_resource_action(bs)
+	_check(map.ore_deposit_amount_at(10, 8) == 0, "Vorkommen nach 3 Schlägen erschöpft")
+	_check(eco._find_deposit(Vector2i(10, 10), MapData.ORE_IRON, Economy.ORE_RADIUS).x < 0,
+		"Erschöpftes Vorkommen wird nicht mehr gefunden")
 
 
 func _test_building_spacing() -> void:

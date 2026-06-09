@@ -64,8 +64,9 @@ Das Skelett, auf dem alles aufbaut.
       klassifiziert und per Hex-Brush auf Dreiecke gemalt; Kanten-Cleanup bleibt
       als Sicherheitsnetz. Start-Teich nutzt dieselbe Brush-Logik. Steincluster
       statt Einzelstreuung; Spieler/KI bekommen je einen Steincluster im Gebiet.
-      Offen bleiben unterirdische Erze und Geologen-Anbindung.
-      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/19)
+      Erz unterirdisch (2026-06-10): versteckte Lagerstätten-Schicht, Adern im
+      Berg, Mine baut endlich im Umkreis ab. Geologen-/Nebel-Aufdeckung folgt in
+      #21. (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/19)
 - [x] Test-Teich im Startgebiet (kleiner See nahe HQ), damit Fischerhütte ohne
       Kartenglück getestet werden kann.
 - [x] Nebel des Krieges + Sicht umschaltbar (Taste F); Karte wird um eigene

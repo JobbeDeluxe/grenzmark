@@ -18,9 +18,17 @@ var terr_d: PackedByteArray    # Terrain des unteren Dreiecks pro Knoten
 enum { MO_TREE, MO_STONE, MO_ORE }
 var objects: Dictionary = {}   # idx -> MO_*
 
-# Erzsorte je Erz-Knoten (nur gesetzt, wo objects == MO_ORE).
+# Erzsorten. ore_kind/MO_ORE bleiben nur für optionale dekorative Erzbrocken;
+# die SPIELRELEVANTE Ressource liegt unterirdisch in den Lagerstätten unten.
 enum { ORE_COAL, ORE_IRON, ORE_GOLD, ORE_GRANITE }
-var ore_kind: Dictionary = {}  # idx -> ORE_*
+var ore_kind: Dictionary = {}  # idx -> ORE_* (nur Deko-Objekte)
+
+# Unterirdische Erz-Lagerstätten (in S2 unsichtbar bis ein Geologe sie aufdeckt).
+# Eine Mine baut im Umkreis ab; jedes Vorkommen liefert `amount` Einheiten, dann
+# ist es erschöpft. `found` wird später vom Geologen/Debug gesetzt (#21).
+var ore_deposit_kind: Dictionary = {}    # idx -> ORE_*
+var ore_deposit_amount: Dictionary = {}  # idx -> verbleibende Menge (>0)
+var ore_deposit_found: Dictionary = {}   # idx -> true (aufgedeckt)
 
 # Wachstumsstufe je Baum-Knoten: 0 = Setzling, 1 = kleiner Baum, 2 = großer Baum.
 # Nur Stufe 2 darf gefällt werden. Ohne Eintrag gilt ein Baum als ausgewachsen (2),
@@ -163,6 +171,56 @@ func ore_kind_at(x: int, y: int) -> int:
 
 func set_ore_kind(x: int, y: int, kind: int) -> void:
 	ore_kind[idx(x, y)] = kind
+
+
+# --- Unterirdische Erz-Lagerstätten ---------------------------------------
+
+func ore_deposit_kind_at(x: int, y: int) -> int:
+	return ore_deposit_kind.get(idx(x, y), -1)
+
+
+func ore_deposit_amount_at(x: int, y: int) -> int:
+	return ore_deposit_amount.get(idx(x, y), 0)
+
+
+func ore_deposit_found_at(x: int, y: int) -> bool:
+	return ore_deposit_found.get(idx(x, y), false)
+
+
+func set_ore_deposit(x: int, y: int, kind: int, amount: int) -> void:
+	var i := idx(x, y)
+	if amount <= 0:
+		ore_deposit_kind.erase(i)
+		ore_deposit_amount.erase(i)
+		ore_deposit_found.erase(i)
+		return
+	ore_deposit_kind[i] = kind
+	ore_deposit_amount[i] = amount
+
+
+func set_ore_deposit_found(x: int, y: int, found: bool) -> void:
+	var i := idx(x, y)
+	if found:
+		ore_deposit_found[i] = true
+	else:
+		ore_deposit_found.erase(i)
+
+
+## Baut eine Einheit aus dem Vorkommen ab. Gibt true zurück, wenn etwas abgebaut
+## wurde; leert das Vorkommen bei Erschöpfung.
+func take_ore_deposit(x: int, y: int) -> bool:
+	var i := idx(x, y)
+	var amount: int = ore_deposit_amount.get(i, 0)
+	if amount <= 0:
+		return false
+	amount -= 1
+	if amount <= 0:
+		ore_deposit_kind.erase(i)
+		ore_deposit_amount.erase(i)
+		ore_deposit_found.erase(i)
+	else:
+		ore_deposit_amount[i] = amount
+	return true
 
 
 ## Bildschirmposition eines Knotens inklusive seiner Höhe.

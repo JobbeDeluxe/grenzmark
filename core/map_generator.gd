@@ -85,6 +85,12 @@ static func _scatter_objects(map: MapData, seed: int) -> void:
 	vein.seed = seed + 7
 	vein.frequency = 0.07
 
+	# Füll-/Adern-Maske für unterirdische Lagerstätten (zusammenhängende Adern).
+	var deposit := FastNoiseLite.new()
+	deposit.noise_type = FastNoiseLite.TYPE_VALUE
+	deposit.seed = seed + 13
+	deposit.frequency = 0.09
+
 	var stone_candidates: Array[Vector2i] = []
 	for y in map.height:
 		for x in map.width:
@@ -96,9 +102,14 @@ static func _scatter_objects(map: MapData, seed: int) -> void:
 				if t != Terrain.MEADOW: all_meadow = false
 				if t != Terrain.MOUNTAIN: all_mountain = false
 			if all_mountain:
-				if rng.randf() < 0.18:
-					map.set_map_object(x, y, MapData.MO_ORE)
-					map.set_ore_kind(x, y, _ore_kind_for(vein.get_noise_2d(x, y) * 0.5 + 0.5))
+				# Erz ist UNTERIRDISCH: kein sichtbares Objekt, sondern ein
+				# verstecktes Vorkommen. Adern entstehen aus der glatten Maske,
+				# die Menge skaliert mit der Aderstärke (endlicher Abbau).
+				var dv := deposit.get_noise_2d(x, y) * 0.5 + 0.5
+				if dv > 0.55:
+					var kind := _ore_kind_for(vein.get_noise_2d(x, y) * 0.5 + 0.5)
+					var amount := 3 + int((dv - 0.55) / 0.45 * 7.0)   # 3..10
+					map.set_ore_deposit(x, y, kind, amount)
 			elif all_meadow:
 				var f := forest.get_noise_2d(x, y) * 0.5 + 0.5
 				if f > 0.62:
