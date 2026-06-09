@@ -17,6 +17,7 @@ func _initialize() -> void:
 	_test_worldgen_96()
 	_test_ore_types()
 	_test_catalog_complete()
+	_test_asset_files()
 	_test_visibility()
 	_test_bq_and_flags()
 	_test_building_spacing()
@@ -337,6 +338,15 @@ func _test_worldgen_96() -> void:
 func _test_catalog_complete() -> void:
 	for id in ["hunter", "pigfarm", "slaughterhouse", "toolmaker", "granitemine"]:
 		_check(not BuildingCatalog.get_def(id).is_empty(), "Gebäude im Katalog: %s" % id)
+
+
+func _test_asset_files() -> void:
+	for g in Goods.COUNT:
+		_check(FileAccess.file_exists("res://assets/goods/%d.png" % g),
+			"Waren-Icon vorhanden: %d %s" % [g, Goods.name_of(g)])
+	for id in BuildingCatalog.defs().keys():
+		_check(FileAccess.file_exists("res://assets/buildings/%s.png" % id),
+			"Gebäude-Sprite vorhanden: %s" % id)
 
 
 func _test_visibility() -> void:

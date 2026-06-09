@@ -273,7 +273,7 @@ Waren ins Gebäude bringen.
 `<nummer>` der Waren (aus `core/goods.gd`):
 0 Holz · 1 Bretter · 2 Steine · 3 Getreide · 4 Mehl · 5 Wasser · 6 Brot ·
 7 Fisch · 8 Fleisch · 9 Kohle · 10 Eisenerz · 11 Eisen · 12 Golderz ·
-13 Münzen · 14 Bier · 15 Werkzeug · 16 Schwert · 17 Schild.
+13 Münzen · 14 Bier · 15 Werkzeug · 16 Schwert · 17 Schild · 18 Schwein.
 
 ## UI-Design (austauschbar & skalierbar) — TEILWEISE UMGESETZT (Stufe 8)
 

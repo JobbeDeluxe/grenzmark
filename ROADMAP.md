@@ -191,6 +191,9 @@ Das Skelett, auf dem alles aufbaut.
 ### Stufe 7 — Eigenes Gesicht
 - [x] Automatisches Laden austauschbarer Texturen aus `assets/` (sonst Platzhalter)
 - [x] Gerichtete Lauf-Animationen (6 Weg-Richtungen) per Sprite-Sheet aus assets/units/
+      Offen: saubere Animationsbilder/Sprite-Sheets für Träger, Arbeiter,
+      Soldaten, Flaggen und Gebäude-Arbeitsprozesse sammeln (Issue:
+      https://github.com/JobbeDeluxe/grenzmark/issues/12).
 - [x] Terrain-Texturierung (assets/terrain/, getilte UVs) — sonst Flächenfarbe
 - [x] Straßen-Texturen (assets/roads/road.png + pro Untergrund <terrain>.png,
       segmentweise längs gekachelt) — sonst Linie
@@ -201,6 +204,7 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Spielerfarben als eigene PNGs vorbereitet: Flaggen für Spieler 0-5,
       rote Gegner-Gebäudevarianten (`*_1.png`) für alle blau markierten Gebäude
 - [ ] Vollständiger eigener Grafiksatz (alle Gebäude/Waren/Einheiten)
+      Aktueller Asset-Audit und Folgearbeit: https://github.com/JobbeDeluxe/grenzmark/issues/13
 - [ ] Eigene Mechanik-Erweiterungen nach Geschmack
 
 ### Stufe 8 — UI-Überarbeitung (austauschbar & skalierbar) ⭐ NÄCHSTER GROSSER PUNKT

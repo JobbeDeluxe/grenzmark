@@ -48,6 +48,8 @@ var _economy_panel: PanelContainer
 var _settings_panel: PanelContainer
 var _settings_body: Label
 var _minimap_panel: PanelContainer
+var _flag_menu: PanelContainer
+var _flag_menu_pos := Vector2i(-1, -1)
 var _ui_root: Control
 var ui_category := "hut"
 var build_filter_bq := -1
@@ -391,9 +393,7 @@ func _build_ui() -> void:
 	_build_panel = _floating_panel(Vector2(0, 1), Vector2(edge, -bottom_h - build_h - edge * 2.0),
 		Vector2(edge + build_w, -bottom_h - edge * 2.0))
 	_build_panel.visible = false
-	var build_box := VBoxContainer.new()
-	build_box.add_theme_constant_override("separation", 5)
-	_build_panel.add_child(build_box)
+	var build_box := _add_window_chrome(_build_panel, "Bauen", _toggle_build_panel)
 	_build_caption = Label.new()
 	UISkin.apply_label(_build_caption, true, 12)
 	build_box.add_child(_build_caption)
@@ -411,13 +411,7 @@ func _build_ui() -> void:
 	_economy_panel = _floating_panel(Vector2(0, 1), Vector2(edge + 304, -bottom_h - 250 - edge * 2.0),
 		Vector2(edge + 604, -bottom_h - edge * 2.0))
 	_economy_panel.visible = false
-	var economy_box := VBoxContainer.new()
-	economy_box.add_theme_constant_override("separation", 6)
-	_economy_panel.add_child(economy_box)
-	var economy_title := Label.new()
-	economy_title.text = "Wirtschaft"
-	UISkin.apply_label(economy_title, false, 15)
-	economy_box.add_child(economy_title)
+	var economy_box := _add_window_chrome(_economy_panel, "Wirtschaft", _toggle_economy_panel)
 	_stock_label = Label.new()
 	_stock_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	UISkin.apply_label(_stock_label, true, 11)
@@ -425,13 +419,7 @@ func _build_ui() -> void:
 
 	_settings_panel = _floating_panel(Vector2(0.5, 0.5), Vector2(-260, -180), Vector2(260, 180))
 	_settings_panel.visible = false
-	var settings_box := VBoxContainer.new()
-	settings_box.add_theme_constant_override("separation", 8)
-	_settings_panel.add_child(settings_box)
-	var settings_title := Label.new()
-	settings_title.text = "Einstellungen & anpassbares Design"
-	UISkin.apply_label(settings_title, false, 16)
-	settings_box.add_child(settings_title)
+	var settings_box := _add_window_chrome(_settings_panel, "Einstellungen & Design", _toggle_settings)
 	_settings_body = Label.new()
 	_settings_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	UISkin.apply_label(_settings_body, true, 12)
@@ -443,8 +431,20 @@ func _build_ui() -> void:
 	_tbutton(settings_actions, "Nebel", _toggle_fog)
 	_tbutton(settings_actions, "KI", _toggle_ai)
 	_tbutton(settings_actions, "Pause", _toggle_pause)
-	_tbutton(settings_actions, "Schliessen", _toggle_settings)
 	_update_settings_text()
+
+	# Flaggen-Kontextmenü (S2-artig): erscheint an der angeklickten Flagge.
+	_flag_menu = _floating_panel(Vector2(0, 0), Vector2(0, 0), Vector2(168, 0))
+	_flag_menu.visible = false
+	var flag_box := _add_window_chrome(_flag_menu, "Flagge", _close_flag_menu)
+	_tbutton(flag_box, "Weg bauen", _flag_menu_build_road)
+	_tbutton(flag_box, "Flagge entfernen", _flag_menu_remove)
+	var geo := _tbutton(flag_box, "Geologe", _noop)
+	geo.disabled = true
+	geo.tooltip_text = "Noch nicht implementiert"
+	var scout := _tbutton(flag_box, "Spaeher", _noop)
+	scout.disabled = true
+	scout.tooltip_text = "Noch nicht implementiert"
 
 	# Sieg/Niederlage-Anzeige (zentriert)
 	_status_label = Label.new()
@@ -475,6 +475,37 @@ func _floating_panel(anchor: Vector2, from: Vector2, to: Vector2) -> PanelContai
 	panel.offset_bottom = to.y
 	_ui_root.add_child(panel)
 	return panel
+
+
+## Gibt einem Fenster eine S2-artige Kopfzeile (Titel + Schließen) und liefert den
+## Inhalts-Container zurück, in den der Aufrufer seine Widgets hängt.
+func _add_window_chrome(panel: PanelContainer, title: String, on_close: Callable) -> VBoxContainer:
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 6)
+	panel.add_child(outer)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 6)
+	outer.add_child(head)
+	var title_label := Label.new()
+	UISkin.apply_label(title_label, false, 14)
+	title_label.text = title
+	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(title_label)
+	var close := Button.new()
+	close.text = "X"
+	close.custom_minimum_size = Vector2(24, 22)
+	close.add_theme_font_size_override("font_size", 12)
+	close.add_theme_color_override("font_color", UISkin.color("font", Color.WHITE))
+	close.add_theme_stylebox_override("normal", UISkin.button_style("button"))
+	close.add_theme_stylebox_override("hover", UISkin.button_style("button_hover"))
+	close.add_theme_stylebox_override("pressed", UISkin.button_style("button_pressed"))
+	close.pressed.connect(on_close)
+	head.add_child(close)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 6)
+	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer.add_child(content)
+	return content
 
 
 func _build_stock_cells(parent: GridContainer) -> void:
@@ -589,11 +620,72 @@ func _toggle_pause() -> void:
 
 
 func _escape_or_select() -> void:
+	if _flag_menu != null and _flag_menu.visible:
+		_close_flag_menu()
+		return
 	for p in [_build_panel, _economy_panel, _settings_panel]:
 		if p != null and p.visible:
 			p.visible = false
 			return
 	_set_mode(MODE_SELECT)
+
+
+# --------------------------------------------------------------------------
+#  Flaggen-Kontextmenü (S2-artig)
+# --------------------------------------------------------------------------
+
+func _open_flag_menu(flagpos: Vector2i) -> void:
+	_flag_menu_pos = flagpos
+	selected = null
+	_update_selection_panel()
+	_hide_management_panels()
+	# Welt-Knoten → Bildschirmkoordinate, Menü daneben platzieren (im Bild halten).
+	var world := map.node_world(flagpos.x, flagpos.y)
+	var screen := get_viewport().get_canvas_transform() * world
+	var vp := get_viewport().get_visible_rect().size
+	var w := 168.0
+	var h := 150.0
+	var x: float = clampf(screen.x + 10.0, 4.0, vp.x - w - 4.0)
+	var y: float = clampf(screen.y - h * 0.4, 4.0, vp.y - h - 4.0)
+	_flag_menu.offset_left = x
+	_flag_menu.offset_top = y
+	_flag_menu.offset_right = x + w
+	_flag_menu.offset_bottom = y + h
+	_flag_menu.visible = true
+
+
+func _close_flag_menu() -> void:
+	if _flag_menu != null:
+		_flag_menu.visible = false
+	_flag_menu_pos = Vector2i(-1, -1)
+
+
+func _flag_menu_build_road() -> void:
+	var fp := _flag_menu_pos
+	if fp.x < 0:
+		return
+	_close_flag_menu()
+	_set_mode(MODE_ROAD)
+	road_start = fp
+	unit_renderer.road_start = fp
+	_flash("Weg bauen: Ziel-Flagge anklicken.")
+
+
+func _flag_menu_remove() -> void:
+	var fp := _flag_menu_pos
+	_close_flag_menu()
+	if fp.x < 0:
+		return
+	if state.remove_at(fp):
+		economy.resync()
+		renderer.queue_redraw()
+		_flash("Flagge entfernt.")
+	else:
+		_flash("Flagge laesst sich nicht entfernen.")
+
+
+func _noop() -> void:
+	pass
 
 
 func _focus_headquarters() -> void:
@@ -918,6 +1010,8 @@ func _set_mode(m: int) -> void:
 	road_start = Vector2i(-1, -1)
 	build_filter_bq = -1
 	build_window_spot = Vector2i(-1, -1)
+	if _flag_menu != null:
+		_flag_menu.visible = false
 	if _build_panel != null:
 		_build_panel.visible = false
 	_show_category(ui_category)
@@ -952,8 +1046,12 @@ func _handle_click() -> void:
 			if clicked != null and clicked.owner == 1 and selected != null \
 					and selected.owner == 0 and selected.influence > 0 and selected.garrison > 0:
 				_try_attack(selected, clicked)
+			elif clicked == null and state.flag_at(hover) != null \
+					and not state.enemy_territory.has(map.idx(hover.x, hover.y)):
+				_open_flag_menu(hover)   # eigene Flagge angeklickt → Kontextmenü
 			else:
 				selected = clicked
+				_close_flag_menu()
 		MODE_FLAG:
 			changed = state.place_flag(hover.x, hover.y) != null
 		MODE_BUILD:
