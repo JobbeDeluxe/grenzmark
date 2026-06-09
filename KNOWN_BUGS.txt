@@ -4,6 +4,26 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-09] (BEHOBEN) Gegner baute keine sichtbaren Straßen und Menschen
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/22
+
+  Symptom: Die Gegner-KI setzte zwar Gebäude und Garnisonen, aber es entstanden
+  keine sichtbaren Gegnerstraßen. Dadurch liefen auch keine Gegnerträger oder
+  Gegnerarbeiter herum; die KI-Wirtschaft wirkte unsichtbar bzw. leblos.
+
+  Ursache: Gegnergebäude wurden roh in den `WorldState` geschrieben und die
+  Economy simulierte nur Spieler-Gebäude. Flaggen und Straßen hatten außerdem
+  keinen eigenen Besitzer; Träger wurden ausschließlich vom Spieler-HQ entsandt.
+
+  Fix: Flaggen/Straßen tragen nun einen Besitzer. Die Default-KI setzt Gebäude
+  über owner-bewusste Bauregeln, hängt sie nur an das vom Gegner-HQ erreichbare
+  eigene Netz und baut sichtbare Gegnerstraßen. Die Economy dispatcht Träger und
+  Arbeiter vom jeweiligen Besitzer-HQ; Gegnergebäude bekommen eine leichte
+  Visual-Logik, ohne das Spieler-HQ-Lager zu vermischen. Tests:
+  `_test_enemy_road_people()` und erweiterter `_test_ai()`.
+
+
 [2026-06-09] (OFFEN) Karten-Generator erzeugt lange zackige Terrain-Kanten
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/19

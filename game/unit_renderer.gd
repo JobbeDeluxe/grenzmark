@@ -145,8 +145,7 @@ func _collect_occluders() -> void:
 	var flag_sz := GameTheme.flag_draw_size()
 	for i in state.flags:
 		var f: WorldState.Flag = state.flags[i]
-		var fowner := 1 if state.enemy_territory.has(map.idx(f.pos.x, f.pos.y)) else 0
-		var ftex := GameTheme.flag_texture(fowner)
+		var ftex := GameTheme.flag_texture(f.owner)
 		if ftex == null:
 			continue
 		_occluders.append({ base = map.node_world(f.pos.x, f.pos.y), tex = ftex,
@@ -346,7 +345,7 @@ func _draw_carriers() -> void:
 			continue  # unbesetzte Straße (kein Träger zugeteilt) → nichts zeichnen
 		var p := economy.carrier_world(c)
 		var carry := c.carrying.type if c.carrying != null else -1
-		_unit("carrier", p, economy.carrier_facing(c), 0, carry)
+		_unit("carrier", p, economy.carrier_facing(c), c.road.owner, carry)
 		_occlude(p)
 
 
@@ -356,7 +355,7 @@ func _draw_workers() -> void:
 		if not economy.has_worker(bs):
 			continue
 		var p := economy.worker_world(bs)
-		_unit("worker", p, economy.worker_facing(bs), 0)
+		_unit("worker", p, economy.worker_facing(bs), bs.bld.owner)
 		_occlude(p)
 
 

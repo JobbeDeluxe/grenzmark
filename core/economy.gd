@@ -201,16 +201,18 @@ func resync() -> void:
 	hq_idx = -1
 	for i in state.buildings:
 		var b: WorldState.Building = state.buildings[i]
-		if b.owner != 0:
-			continue  # Gegner-Gebäude werden nicht simuliert
+		var bf := state.ensure_flag(b.flag_pos.x, b.flag_pos.y, b.owner)
+		if bf == null:
+			continue
 		if b.is_hq:
-			hq_idx = i
-			hq_flag = state.map.idx(b.flag_pos.x, b.flag_pos.y)
-			if not _hq_inited:
-				_init_hq_stock()
-				_hq_inited = true
-			if hq_house == null:
-				hq_house = HouseCarrier.new()
+			if b.owner == 0:
+				hq_idx = i
+				hq_flag = state.map.idx(b.flag_pos.x, b.flag_pos.y)
+				if not _hq_inited:
+					_init_hq_stock()
+					_hq_inited = true
+				if hq_house == null:
+					hq_house = HouseCarrier.new()
 			continue
 		flag_to_building[state.map.idx(b.flag_pos.x, b.flag_pos.y)] = i
 		if int(BuildingCatalog.get_def(b.def_id).get("influence", 0)) > 0:
@@ -229,7 +231,7 @@ func resync() -> void:
 		else:
 			bstates[i].bld = b
 	for i in bstates.keys():
-		if not state.buildings.has(i) or state.buildings[i].owner != 0:
+		if not state.buildings.has(i) or state.buildings[i].is_hq:
 			bstates.erase(i)
 
 	for fi in flag_goods.keys():
@@ -426,6 +428,8 @@ func _tick_soldiers() -> void:
 		if not bstates.has(i):
 			continue
 		var bs: BState = bstates[i]
+		if bs.bld.owner != 0:
+			continue
 		if bs.is_construction or int(bs.def.get("influence", 0)) <= 0:
 			continue
 		var inc: int = _inc_soldiers.get(i, 0)
@@ -575,11 +579,11 @@ func _activate_carrier(road: WorldState.Road, end: int) -> void:
 	c.state = C_IDLE
 
 
-## Flaggenposition des eigenen HQ (nicht der Gebäudeknoten!).
-func _hq_flag_pos() -> Vector2i:
+## Flaggenposition des HQ eines Besitzers (nicht der Gebäudeknoten!).
+func _hq_flag_pos(owner := 0) -> Vector2i:
 	for i in state.buildings:
 		var b: WorldState.Building = state.buildings[i]
-		if b.is_hq and b.owner == 0:
+		if b.is_hq and b.owner == owner:
 			return b.flag_pos
 	return Vector2i(-1, -1)
 
@@ -647,7 +651,7 @@ func _tick_dispatch() -> void:
 ## Schickt einen Träger vom HQ zur neuen Straße. OHNE HQ-Verbindung passiert
 ## nichts — die Straße bleibt unbesetzt, bis sie (später) verbunden ist.
 func _dispatch_carrier(c: Carrier) -> void:
-	var hq := _hq_flag_pos()
+	var hq := _hq_flag_pos(c.road.owner)
 	if hq.x < 0:
 		return
 	var best: Array[Vector2i] = []
@@ -666,6 +670,7 @@ func _dispatch_carrier(c: Carrier) -> void:
 		return
 	var m := Marcher.new()
 	m.purpose_carrier = true
+	m.attacker_owner = c.road.owner
 	m.car_road = c.road
 	m.car_end = best_end
 	m.route = best
@@ -711,6 +716,9 @@ func marcher_facing(m: Marcher) -> Vector2:
 
 
 func _tick_building(bs: BState) -> void:
+	if bs.bld.owner != 0:
+		_tick_enemy_building_visual(bs)
+		return
 	if bs.is_construction:
 		_tick_construction(bs)
 		return
@@ -730,6 +738,61 @@ func _tick_building(bs: BState) -> void:
 	_ship_outputs(bs)
 
 
+## Sichtbare, vereinfachte Gegner-Wirtschaft: Gegnergebäude mischen sich nicht in
+## das Spieler-HQ-Lager ein, schicken aber Arbeiter sichtbar vom eigenen HQ und
+## lassen Ressourcenarbeiter in ihrer Umgebung arbeiten.
+func _tick_enemy_building_visual(bs: BState) -> void:
+	if bs.is_construction:
+		bs.bld.under_construction = false
+		bs.is_construction = false
+	if int(bs.def.get("influence", 0)) > 0:
+		bs.staffed = true
+		return
+	if not bs.staffed:
+		if not bs.worker_sent:
+			_dispatch_worker(bs)
+		return
+	var resource := String(bs.def.get("resource", ""))
+	if resource == "":
+		if bs.work_timer > 0:
+			bs.work_timer -= 1
+		else:
+			bs.work_timer = int(bs.def.get("work", 120)) + 120
+		return
+	match bs.wphase:
+		WK_IDLE:
+			if bs.work_timer > 0:
+				bs.work_timer -= 1
+				return
+			var tgt := _resource_target(bs)
+			if tgt.x < 0:
+				bs.work_timer = 180
+				return
+			bs.worker_target = tgt
+			bs.producing = true
+			_enter_wphase(bs, WK_OUT, _worker_walk_ticks(bs, tgt))
+		WK_OUT:
+			bs.ph_t -= 1.0
+			if bs.ph_t <= 0.0:
+				_enter_wphase(bs, WK_WORK, float(Tuning.work_action(bs.bld.def_id, resource)))
+		WK_WORK:
+			bs.ph_t -= 1.0
+			if bs.ph_t <= 0.0:
+				_do_resource_action(bs)
+				_enter_wphase(bs, WK_BACK, _worker_walk_ticks(bs, bs.worker_target))
+		WK_BACK:
+			bs.ph_t -= 1.0
+			if bs.ph_t <= 0.0:
+				_enter_wphase(bs, WK_WAIT, float(Tuning.work_wait(bs.bld.def_id, resource)))
+		WK_WAIT:
+			bs.ph_t -= 1.0
+			if bs.ph_t <= 0.0:
+				bs.producing = false
+				bs.worker_target = Vector2i(-1, -1)
+				bs.wphase = WK_IDLE
+				bs.work_timer = 120
+
+
 ## Produktion eines Gebäudes anhalten/fortsetzen.
 func toggle_production(bld: WorldState.Building) -> bool:
 	var bs: BState = bstates.get(state.map.idx(bld.pos.x, bld.pos.y))
@@ -741,7 +804,7 @@ func toggle_production(bld: WorldState.Building) -> bool:
 
 ## Schickt einen Arbeiter vom HQ, der das Gebäude besetzt (dann läuft Produktion).
 func _dispatch_worker(bs: BState) -> void:
-	var hq := _hq_flag_pos()
+	var hq := _hq_flag_pos(bs.bld.owner)
 	var w := state.map.width
 	if hq.x < 0:
 		bs.staffed = true   # keine HQ (z. B. Testkarte ohne Lager) → sofort besetzen
@@ -757,6 +820,7 @@ func _dispatch_worker(bs: BState) -> void:
 	bs.worker_sent = true
 	var m := Marcher.new()
 	m.purpose_worker = true
+	m.attacker_owner = bs.bld.owner
 	m.work_bidx = bs.idx
 	m.route = route
 	m.leg = 0

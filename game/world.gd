@@ -234,20 +234,44 @@ func _farthest_castle_spot(from: Vector2i) -> Vector2i:
 
 func _add_building_raw(pos: Vector2i, size: int, def_id: String, infl: int,
 		owner: int, gar: int, cap: int, is_hq: bool) -> void:
-	var b := WorldState.Building.new()
-	b.pos = pos
-	b.size = size
-	b.def_id = def_id
-	b.influence = infl
-	b.owner = owner
-	b.under_construction = false
+	var b := state.place_building(pos.x, pos.y, size, is_hq, def_id, infl, false, owner)
+	if b == null:
+		return
 	b.garrison = gar
 	b.capacity = cap
-	b.is_hq = is_hq
-	b.flag_pos = map.neighbor(pos.x, pos.y, Grid.SE)
-	var i := map.idx(pos.x, pos.y)
-	state.buildings[i] = b
-	state.occupied[i] = WorldState.OBJ_BUILDING
+	state.recompute_territory()
+	if not is_hq:
+		_connect_new_building_to_owner_network(b)
+
+
+func _connect_new_building_to_owner_network(b: WorldState.Building) -> void:
+	var hq := _owner_hq_flag_pos(b.owner)
+	if hq.x < 0:
+		return
+	var best_from := Vector2i(-1, -1)
+	var best_len := 1 << 30
+	for fi in state.flags:
+		var f: WorldState.Flag = state.flags[fi]
+		if f.owner != b.owner or f.pos == b.flag_pos:
+			continue
+		if f.pos != hq and state.find_route(hq, f.pos).size() < 2:
+			continue
+		var path := state.plan_road(f.pos, b.flag_pos, false, b.owner)
+		if path.is_empty():
+			continue
+		if path.size() < best_len:
+			best_len = path.size()
+			best_from = f.pos
+	if best_from.x >= 0:
+		state.build_road(best_from, b.flag_pos, b.owner)
+
+
+func _owner_hq_flag_pos(owner: int) -> Vector2i:
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		if b.is_hq and b.owner == owner:
+			return b.flag_pos
+	return Vector2i(-1, -1)
 
 
 func _process(delta: float) -> void:
@@ -1681,11 +1705,12 @@ func _save_game() -> void:
 			gar = b.garrison, cap = b.capacity, owner = b.owner, promo = b.promotions,
 		})
 	for i in state.flags:
-		data.flags.append(state.flags[i].pos)
+		var f: WorldState.Flag = state.flags[i]
+		data.flags.append({ pos = f.pos, owner = f.owner })
 	for r in state.roads:
 		data.roads.append({
 			nodes = r.nodes.duplicate(), a = r.a, b = r.b,
-			traffic = r.traffic, level = r.level,
+			owner = r.owner, traffic = r.traffic, level = r.level,
 		})
 
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
@@ -1726,7 +1751,11 @@ func _load_game() -> void:
 	state = WorldState.new(map)
 
 	for fp in data.flags:
-		state.place_flag(fp.x, fp.y)
+		if fp is Dictionary:
+			var pos: Vector2i = fp.pos
+			state.ensure_flag(pos.x, pos.y, int(fp.get("owner", 0)))
+		else:
+			state.place_flag(fp.x, fp.y)
 	for bd in data.buildings:
 		var bb := WorldState.Building.new()
 		bb.pos = bd.pos; bb.size = bd.size; bb.flag_pos = bd.flag
@@ -1741,6 +1770,7 @@ func _load_game() -> void:
 	for rd in data.roads:
 		var rr := WorldState.Road.new()
 		rr.nodes = rd.nodes; rr.a = rd.a; rr.b = rd.b
+		rr.owner = int(rd.get("owner", 0))
 		rr.traffic = int(rd.get("traffic", 0))
 		rr.level = int(rd.get("level", WorldState.ROAD_DIRT))
 		for k in range(1, rr.nodes.size() - 1):

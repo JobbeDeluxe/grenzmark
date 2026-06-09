@@ -73,7 +73,7 @@ func _draw_billboards() -> void:
 		var bp := map.node_world(b.pos.x, b.pos.y) + GameTheme.building_offset(b.def_id)
 		var foot := map.node_world(b.pos.x, b.pos.y).y
 		items.append({ y = foot, fn = func(): _paint_building(bp, b) })
-		if b.owner == 1:
+		if b.owner == 1 and state.flag_at(b.flag_pos) == null:
 			var fp := map.node_world(b.flag_pos.x, b.flag_pos.y)
 			items.append({ y = fp.y, fn = func(): _paint_enemy_flag(fp) })
 	for i in state.flags:
@@ -608,11 +608,10 @@ func _paint_flag(top: Vector2, col: Color) -> void:
 ## Flaggen IMMER exakt auf ihrem Knoten zeichnen — sonst passen Bild und
 ## Mausklick/Picking nicht mehr zusammen (Straßen ließen sich nicht verbinden).
 func _paint_own_flag(p: Vector2, f: WorldState.Flag) -> void:
-	var owner := 1 if state.enemy_territory.has(state.map.idx(f.pos.x, f.pos.y)) else 0
-	var tex := GameTheme.flag_texture(owner)
+	var tex := GameTheme.flag_texture(f.owner)
 	if tex != null:
 		var sz := GameTheme.flag_draw_size()
 		# Pfahl-Basis liegt auf dem Knoten; Textur geht nach oben.
 		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
 	else:
-		_paint_flag(p + Vector2(0, -16), GameTheme.flag_color(owner))
+		_paint_flag(p + Vector2(0, -16), GameTheme.flag_color(f.owner))

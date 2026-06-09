@@ -17,6 +17,7 @@ class Flag:
 	extends RefCounted
 	var pos: Vector2i
 	var id: int
+	var owner := 0
 
 
 class Building:
@@ -39,6 +40,7 @@ class Road:
 	var nodes: Array[Vector2i] = []   # Knotenfolge inkl. beider Flaggen
 	var a: Vector2i
 	var b: Vector2i
+	var owner := 0
 	var traffic := 0
 	var level := ROAD_DIRT
 	func length() -> int:
@@ -96,20 +98,38 @@ func in_territory(x: int, y: int) -> bool:
 	return territory.has(map.idx(x, y))
 
 
-func is_territory_border_node(x: int, y: int) -> bool:
-	if territory.is_empty() or not map.in_bounds(x, y) or not in_territory(x, y):
+func owner_territory(owner: int) -> Dictionary:
+	return territory if owner == 0 else enemy_territory
+
+
+func in_owner_territory(owner: int, x: int, y: int) -> bool:
+	return owner_territory(owner).has(map.idx(x, y))
+
+
+func is_territory_border_node_for(owner: int, x: int, y: int) -> bool:
+	var area := owner_territory(owner)
+	if area.is_empty() or not map.in_bounds(x, y) or not in_owner_territory(owner, x, y):
 		return false
 	for dir in Grid.DIRS:
 		var n := map.neighbor(x, y, dir)
-		if n.x < 0 or not in_territory(n.x, n.y):
+		if n.x < 0 or not in_owner_territory(owner, n.x, n.y):
 			return true
 	return false
 
 
-func has_building_territory_margin(x: int, y: int) -> bool:
-	if territory.is_empty():
+func is_territory_border_node(x: int, y: int) -> bool:
+	return is_territory_border_node_for(0, x, y)
+
+
+func has_building_territory_margin_for(owner: int, x: int, y: int) -> bool:
+	var area := owner_territory(owner)
+	if area.is_empty():
 		return true
-	return in_territory(x, y) and not is_territory_border_node(x, y)
+	return in_owner_territory(owner, x, y) and not is_territory_border_node_for(owner, x, y)
+
+
+func has_building_territory_margin(x: int, y: int) -> bool:
+	return has_building_territory_margin_for(0, x, y)
 
 
 ## Sichtbarkeit: deckt Knoten rund um eigene Gebäude/Flaggen/Straßen auf.
@@ -261,10 +281,11 @@ func effective_bq(x: int, y: int) -> int:
 #  Flaggen
 # --------------------------------------------------------------------------
 
-func can_place_flag(x: int, y: int) -> bool:
+func can_place_flag(x: int, y: int, owner := 0) -> bool:
 	if compute_bq(x, y) < BQ_FLAG:
 		return false
-	if not territory.is_empty() and not in_territory(x, y):
+	var area := owner_territory(owner)
+	if not area.is_empty() and not in_owner_territory(owner, x, y):
 		return false
 	if _occ(x, y) != OBJ_NONE:
 		return false
@@ -276,19 +297,30 @@ func can_place_flag(x: int, y: int) -> bool:
 	return true
 
 
-func place_flag(x: int, y: int) -> Flag:
+func place_flag(x: int, y: int, owner := 0) -> Flag:
 	# Flagge auf eine bestehende Straße setzen → Straße an dieser Stelle teilen.
 	if _occ(x, y) == OBJ_ROAD:
-		return _split_road_with_flag(x, y)
-	if not can_place_flag(x, y):
+		return _split_road_with_flag(x, y, owner)
+	if not can_place_flag(x, y, owner):
 		return null
-	return _add_flag(x, y)
+	return _add_flag(x, y, owner)
 
 
-func _add_flag(x: int, y: int) -> Flag:
+func ensure_flag(x: int, y: int, owner := 0) -> Flag:
+	var i := map.idx(x, y)
+	if flags.has(i):
+		flags[i].owner = owner
+		return flags[i]
+	if not map.in_bounds(x, y) or _occ(x, y) != OBJ_NONE:
+		return null
+	return _add_flag(x, y, owner)
+
+
+func _add_flag(x: int, y: int, owner := 0) -> Flag:
 	var f := Flag.new()
 	f.pos = Vector2i(x, y)
 	f.id = _next_flag_id
+	f.owner = owner
 	_next_flag_id += 1
 	var i := map.idx(x, y)
 	flags[i] = f
@@ -297,7 +329,7 @@ func _add_flag(x: int, y: int) -> Flag:
 
 
 ## Teilt die Straße, die durch (x,y) läuft, in zwei Straßen mit neuer Flagge.
-func _split_road_with_flag(x: int, y: int) -> Flag:
+func _split_road_with_flag(x: int, y: int, owner := 0) -> Flag:
 	var pos := Vector2i(x, y)
 	# Abstandsregel: nicht direkt neben eine andere Flagge.
 	for dir in Grid.DIRS:
@@ -314,18 +346,20 @@ func _split_road_with_flag(x: int, y: int) -> Flag:
 			break
 	if road == null:
 		return null
-	var f := _add_flag(x, y)  # setzt occupied[pos] = OBJ_FLAG
+	var f := _add_flag(x, y, owner)  # setzt occupied[pos] = OBJ_FLAG
 
 	var r1 := Road.new()
 	r1.nodes = road.nodes.slice(0, k + 1)
 	r1.a = road.a
 	r1.b = pos
+	r1.owner = road.owner
 	r1.traffic = road.traffic / 2
 	r1.level = road.level
 	var r2 := Road.new()
 	r2.nodes = road.nodes.slice(k)
 	r2.a = pos
 	r2.b = road.b
+	r2.owner = road.owner
 	r2.traffic = road.traffic / 2
 	r2.level = road.level
 
@@ -345,8 +379,8 @@ func flag_at(pos: Vector2i) -> Flag:
 #  Gebäude
 # --------------------------------------------------------------------------
 
-func can_place_building(x: int, y: int, size: int) -> bool:
-	if not has_building_territory_margin(x, y):
+func can_place_building(x: int, y: int, size: int, owner := 0) -> bool:
+	if not has_building_territory_margin_for(owner, x, y):
 		return false
 	if _occ(x, y) != OBJ_NONE:
 		return false
@@ -354,9 +388,9 @@ func can_place_building(x: int, y: int, size: int) -> bool:
 	var se := map.neighbor(x, y, Grid.SE)
 	if se.x < 0:
 		return false
-	if not has_building_territory_margin(se.x, se.y):
+	if not has_building_territory_margin_for(owner, se.x, se.y):
 		return false
-	if _occ(se.x, se.y) != OBJ_FLAG and not can_place_flag(se.x, se.y):
+	if _occ(se.x, se.y) != OBJ_FLAG and not can_place_flag(se.x, se.y, owner):
 		return false
 	if size == BQ_MINE:
 		if compute_bq(x, y) != BQ_MINE:
@@ -391,12 +425,16 @@ func actual_build_spot_bq(x: int, y: int) -> int:
 
 func place_building(x: int, y: int, size: int, is_hq := false,
 		def_id := "", influence := 0, under_construction := true, owner := 0) -> Building:
-	if not can_place_building(x, y, size):
+	if not can_place_building(x, y, size, owner):
 		return null
 	var se := map.neighbor(x, y, Grid.SE)
 	if _occ(se.x, se.y) != OBJ_FLAG:
 		# Beim HQ darf die Eingangsflagge auch ohne Territorium gesetzt werden.
-		place_flag(se.x, se.y)
+		ensure_flag(se.x, se.y, owner)
+	else:
+		var f := flag_at(se)
+		if f != null:
+			f.owner = owner
 	var b := Building.new()
 	b.pos = Vector2i(x, y)
 	b.size = size
@@ -490,10 +528,11 @@ func _adjacent_to_building(x: int, y: int) -> bool:
 	return road_margin_blocked(x, y)
 
 
-func can_place_road_flag(x: int, y: int) -> bool:
+func can_place_road_flag(x: int, y: int, owner := 0) -> bool:
 	if not map.in_bounds(x, y) or _occ(x, y) != OBJ_ROAD:
 		return false
-	if not territory.is_empty() and not in_territory(x, y):
+	var area := owner_territory(owner)
+	if not area.is_empty() and not in_owner_territory(owner, x, y):
 		return false
 	for dir in Grid.DIRS:
 		var n := map.neighbor(x, y, dir)
@@ -510,10 +549,12 @@ func can_place_road_flag(x: int, y: int) -> bool:
 ## Plant eine Straße von [param from] (muss eine Flagge sein) nach [param to].
 ## Liefert die Knotenfolge inkl. Endpunkten, oder leeres Array wenn unmöglich.
 ## [param fast] = true für schnelle Vorschau: gewichtetes A* (suboptimal, aber viel schneller).
-func plan_road(from: Vector2i, to: Vector2i, fast := false) -> Array[Vector2i]:
+func plan_road(from: Vector2i, to: Vector2i, fast := false, owner := -1) -> Array[Vector2i]:
 	var empty: Array[Vector2i] = []
-	if flag_at(from) == null:
+	var start_flag := flag_at(from)
+	if start_flag == null:
 		return empty
+	var road_owner := start_flag.owner if owner < 0 else owner
 	if from == to:
 		return empty
 	if not map.in_bounds(to.x, to.y) or not node_walkable(to.x, to.y):
@@ -552,6 +593,9 @@ func plan_road(from: Vector2i, to: Vector2i, fast := false) -> Array[Vector2i]:
 				# Zwischenknoten müssen begehbar UND frei sein.
 				if not node_walkable(n.x, n.y) or _occ(n.x, n.y) != OBJ_NONE:
 					continue
+				var area := owner_territory(road_owner)
+				if not area.is_empty() and not in_owner_territory(road_owner, n.x, n.y):
+					continue
 				# Straßen laufen nicht direkt an mittleren/großen Gebäuden entlang,
 				# sonst kreuzen sie sichtbar den Sprite-Fußabdruck.
 				if road_margin_blocked(n.x, n.y):
@@ -563,6 +607,10 @@ func plan_road(from: Vector2i, to: Vector2i, fast := false) -> Array[Vector2i]:
 				var occ := _occ(n.x, n.y)
 				if occ != OBJ_NONE and occ != OBJ_FLAG:
 					continue
+				var area := owner_territory(road_owner)
+				if occ == OBJ_NONE and not area.is_empty() \
+						and not in_owner_territory(road_owner, n.x, n.y):
+					continue
 			var tentative: float = g[cur_i] + 1.0
 			if tentative < float(g.get(ni, INF)):
 				came_from[ni] = cur_i
@@ -572,23 +620,30 @@ func plan_road(from: Vector2i, to: Vector2i, fast := false) -> Array[Vector2i]:
 	return empty
 
 
-func can_build_road(from: Vector2i, to: Vector2i) -> bool:
-	return not plan_road(from, to).is_empty()
+func can_build_road(from: Vector2i, to: Vector2i, owner := -1) -> bool:
+	return not plan_road(from, to, false, owner).is_empty()
 
 
 ## Baut die geplante Straße. Erzeugt am Ziel bei Bedarf eine Flagge.
-func build_road(from: Vector2i, to: Vector2i) -> Road:
-	var path := plan_road(from, to)
+func build_road(from: Vector2i, to: Vector2i, owner := -1) -> Road:
+	var start_flag := flag_at(from)
+	if start_flag == null:
+		return null
+	var road_owner := start_flag.owner if owner < 0 else owner
+	var path := plan_road(from, to, false, road_owner)
 	if path.is_empty():
 		return null
 	var end := path[path.size() - 1]
 	if flag_at(end) == null:
-		if place_flag(end.x, end.y) == null:
+		if place_flag(end.x, end.y, road_owner) == null:
 			return null
+	else:
+		flag_at(end).owner = road_owner
 	var r := Road.new()
 	r.nodes = path
 	r.a = from
 	r.b = end
+	r.owner = road_owner
 	# Zwischenknoten als Straße markieren (Endpunkte bleiben Flaggen).
 	for k in range(1, path.size() - 1):
 		occupied[map.idx(path[k].x, path[k].y)] = OBJ_ROAD

@@ -97,24 +97,13 @@ func _do_build_economy(eco: Economy, owner: int) -> void:
 	for k in area:
 		var x := int(k) % state.map.width
 		var y := int(k) / state.map.width
-		if state._occ(x, y) != WorldState.OBJ_NONE:
+		if not state.can_place_building(x, y, size, owner):
 			continue
-		var bq := state.effective_bq(x, y)
-		if bq < size or bq == WorldState.BQ_MINE:
+		var flag_pos := state.map.neighbor(x, y, Grid.SE)
+		if not _can_connect_to_network(state, owner, flag_pos):
 			continue
-		var nb := WorldState.Building.new()
-		nb.pos = Vector2i(x, y)
-		nb.size = size
-		nb.def_id = id
-		nb.influence = 0
-		nb.owner = owner
-		nb.under_construction = false
-		nb.flag_pos = state.map.neighbor(x, y, Grid.SE)
-		var bi := state.map.idx(x, y)
-		state.buildings[bi] = nb
-		state.occupied[bi] = WorldState.OBJ_BUILDING
-		eco.dirty = true
-		return
+		if _place_ai_building(eco, owner, Vector2i(x, y), size, id, 0, 0, 0, false) != null:
+			return
 
 
 func _do_expand(eco: Economy, owner: int) -> void:
@@ -140,32 +129,81 @@ func _do_expand(eco: Economy, owner: int) -> void:
 	for k in border:
 		var x := int(k) % state.map.width
 		var y := int(k) / state.map.width
-		if state._occ(x, y) != WorldState.OBJ_NONE:
-			continue
-		var bq := state.effective_bq(x, y)
-		if bq < WorldState.BQ_HUT or bq == WorldState.BQ_MINE:
+		if not state.can_place_building(x, y, WorldState.BQ_HUT, owner):
 			continue  # auf Bergen (BQ_MINE) keine Militärgebäude; Abstand beachtet
+		var flag_pos := state.map.neighbor(x, y, Grid.SE)
+		if not _can_connect_to_network(state, owner, flag_pos):
+			continue
 		var d := WorldState.hex_distance(Vector2i(x, y), target) if target.x >= 0 else 0
 		if d < best_d:
 			best_d = d
 			best = Vector2i(x, y)
 	if best.x < 0:
 		return
-	var nb := WorldState.Building.new()
-	nb.pos = best
-	nb.size = WorldState.BQ_HUT
-	nb.def_id = "guardhouse"
-	nb.influence = 5
-	nb.owner = owner
-	nb.under_construction = false
-	nb.garrison = 0
-	nb.capacity = 3
-	nb.flag_pos = state.map.neighbor(best.x, best.y, Grid.SE)
-	var bi := state.map.idx(best.x, best.y)
-	state.buildings[bi] = nb
-	state.occupied[bi] = WorldState.OBJ_BUILDING
+	_place_ai_building(eco, owner, best, WorldState.BQ_HUT, "guardhouse", 5, 0, 3, false)
+
+
+func _place_ai_building(eco: Economy, owner: int, pos: Vector2i, size: int,
+		def_id: String, influence: int, garrison: int, capacity: int,
+		is_hq: bool) -> WorldState.Building:
+	var state := eco.state
+	var nb := state.place_building(pos.x, pos.y, size, is_hq, def_id, influence, false, owner)
+	if nb == null:
+		return null
+	nb.garrison = garrison
+	nb.capacity = capacity
+	_connect_to_network(eco, nb)
 	state.recompute_territory()
-	eco.dirty = true
+	eco.resync()
+	return nb
+
+
+func _can_connect_to_network(state: WorldState, owner: int, flag_pos: Vector2i) -> bool:
+	var hq := _hq_flag_pos(state, owner)
+	if hq.x < 0:
+		return false
+	for fi in state.flags:
+		var f: WorldState.Flag = state.flags[fi]
+		if f.owner != owner or f.pos == flag_pos:
+			continue
+		if f.pos != hq and state.find_route(hq, f.pos).size() < 2:
+			continue
+		if not state.plan_road(f.pos, flag_pos, false, owner).is_empty():
+			return true
+	return false
+
+
+func _connect_to_network(eco: Economy, b: WorldState.Building) -> void:
+	if b.is_hq:
+		return
+	var state := eco.state
+	var hq := _hq_flag_pos(state, b.owner)
+	if hq.x < 0:
+		return
+	var best_from := Vector2i(-1, -1)
+	var best_len := 1 << 30
+	for fi in state.flags:
+		var f: WorldState.Flag = state.flags[fi]
+		if f.owner != b.owner or f.pos == b.flag_pos:
+			continue
+		if f.pos != hq and state.find_route(hq, f.pos).size() < 2:
+			continue
+		var path := state.plan_road(f.pos, b.flag_pos, false, b.owner)
+		if path.is_empty():
+			continue
+		if path.size() < best_len:
+			best_len = path.size()
+			best_from = f.pos
+	if best_from.x >= 0:
+		state.build_road(best_from, b.flag_pos, b.owner)
+
+
+func _hq_flag_pos(state: WorldState, owner: int) -> Vector2i:
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		if b.is_hq and b.owner == owner:
+			return b.flag_pos
+	return Vector2i(-1, -1)
 
 
 func _do_attack(eco: Economy, owner: int) -> void:

@@ -25,6 +25,7 @@ func _initialize() -> void:
 	_test_economy()
 	_test_military()
 	_test_combat()
+	_test_enemy_road_people()
 	_test_ai()
 	_test_ai_plugin()
 	_test_catapult()
@@ -256,6 +257,9 @@ func _test_ai() -> void:
 		eco.tick()
 	_check(eb.garrison > 0, "KI besetzt ihr Wachhaus (Garnison %d)" % eb.garrison)
 	_check(_count_enemy_military(state) > before, "KI expandiert (neue Militärgebäude)")
+	_check(_count_enemy_roads(state) > 0, "KI baut sichtbare Gegner-Straßen (%d)" % _count_enemy_roads(state))
+	_check(_count_active_enemy_carriers(eco) > 0,
+		"KI-Gegner hat aktive sichtbare Träger (%d)" % _count_active_enemy_carriers(eco))
 	# KI baut auch Wirtschaftsgebäude (Besitzer 1, ohne Einfluss).
 	var econ := 0
 	for i in state.buildings:
@@ -263,6 +267,35 @@ func _test_ai() -> void:
 		if b.owner == 1 and not b.is_hq and b.influence == 0:
 			econ += 1
 	_check(econ > 0, "KI baut Wirtschaftsgebäude (%d)" % econ)
+
+
+func _test_enemy_road_people() -> void:
+	var map := _flat_map(42, 42)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	eco.ai_enabled = false
+	var ehq := state.place_building(30, 30, WorldState.BQ_CASTLE, true, "hq", 9, false, 1)
+	_check(ehq != null, "Gegner-HQ platzierbar")
+	if ehq == null:
+		return
+	ehq.garrison = 6
+	ehq.capacity = 6
+	state.recompute_territory()
+	var hut := state.place_building(30, 24, WorldState.BQ_HUT, false, "woodcutter", 0, false, 1)
+	_check(hut != null, "Gegner-Wirtschaftsgebäude platzierbar")
+	if hut == null:
+		return
+	var road := state.build_road(ehq.flag_pos, hut.flag_pos, 1)
+	_check(road != null and road.owner == 1, "Gegnerstraße bekommt Besitzer 1")
+	eco.resync()
+	for t in 1000:
+		eco.tick()
+	var c: Economy.Carrier = eco.carriers.get(road, null)
+	_check(c != null and c.active and c.road.owner == 1,
+		"Gegnerstraße bekommt aktiven Gegner-Träger")
+	var bs: Economy.BState = eco.bstates.get(map.idx(hut.pos.x, hut.pos.y), null)
+	_check(bs != null and bs.bld.owner == 1, "Gegnergebäude bekommt Visual-State")
+	_check(bs != null and bs.staffed, "Gegnerarbeiter kommt sichtbar vom Gegner-HQ")
 
 
 func _raw(state: WorldState, pos: Vector2i, def: String, infl: int, owner: int,
@@ -283,6 +316,23 @@ func _count_enemy_military(state: WorldState) -> int:
 	for i in state.buildings:
 		var b: WorldState.Building = state.buildings[i]
 		if b.owner == 1 and b.influence > 0 and not b.is_hq:
+			n += 1
+	return n
+
+
+func _count_enemy_roads(state: WorldState) -> int:
+	var n := 0
+	for r in state.roads:
+		if r.owner == 1:
+			n += 1
+	return n
+
+
+func _count_active_enemy_carriers(eco: Economy) -> int:
+	var n := 0
+	for r in eco.carriers:
+		var c: Economy.Carrier = eco.carriers[r]
+		if c.active and c.road.owner == 1:
 			n += 1
 	return n
 

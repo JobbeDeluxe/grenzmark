@@ -141,7 +141,8 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Katapult (beschießt feindliche Militärgebäude auf Distanz)
 - [x] KI baut eigene Wirtschaftsgebäude (mehr Wirtschaft → schneller Soldaten)
 - [x] KI baut keine Militärgebäude auf Bergen (nur Minen erlaubt)
-- [ ] KI baut auch Straßen (Gebäude sichtbar vernetzen; aktuell ohne Wege)
+- [x] KI baut sichtbare eigene Straßen, Gegnerträger und einfache Gegnerarbeiter
+      (2026-06-09, Issue #22)
 - [ ] Soldaten-Ränge mit eigener Grafik/Aufstiegsstufen, mehr Waffenarten
 
 ### Stufe 5 — Spielfluss & Inhalt
