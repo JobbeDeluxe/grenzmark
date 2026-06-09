@@ -275,7 +275,7 @@ GitHub-Arbeitspakete:
       schon in der Vorschau (unit_renderer._draw_build_preview).
 - [x] **Hover-Bauhilfe (2026-06-09):** der Cursor zeigt am aktuellen Knoten
       sichtbar die zulässige Baugröße bzw. Straßen-Flagge statt nur einen Punkt;
-      Diamant/Punkt/Kurzlabel sind um eine Iconhöhe nach unten gesetzt.
+      Diamant/Punkt bleiben am echten Knoten, Icon/Kurzlabel sitzen tiefer.
 - [~] **Gebäude-Infofenster** (bei Auswahl): erste Version mit Gebäude-Bild,
       Status, Produktion an/aus, Abreißen, Angriff/Sprung. Offen: Produktivität
       in %, Eingangs-/Ausgangslager mit Waren-Icons, Garnison/Rang-Details,

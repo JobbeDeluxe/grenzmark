@@ -8,13 +8,13 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/5
 
-  Symptom: Das allgemeine Bauhilfe-Hovericon mit Diamant, Punkt und Kurzlabel
-  (z. B. "Burg") saß optisch zu hoch über dem Knoten.
+  Symptom: Das allgemeine Bauhilfe-Hovericon bzw. Kurzlabel (z. B. "Burg")
+  saß optisch zu hoch über dem Knoten.
 
   Fix: Die eigentliche Gebäude-Geistvorschau in `UnitRenderer._draw_build_preview()`
-  wurde auf die vorherige korrekte Position zurückgesetzt. Nur das allgemeine
-  Hover-Badge aus `_draw_hover()` / `_draw_hover_build_marker()` wird um eine
-  Iconhöhe nach unten verschoben.
+  wurde auf die vorherige korrekte Position zurückgesetzt. Diamant und grüner
+  Punkt bleiben als Auswahlanker exakt auf dem echten Hover-Knoten; nur Icon-/
+  Kurzlabel-Schicht aus `_draw_hover_build_marker()` wird nach unten verschoben.
 
 
 [2026-06-09] (BEHOBEN) Gegner baute keine sichtbaren Straßen und Menschen

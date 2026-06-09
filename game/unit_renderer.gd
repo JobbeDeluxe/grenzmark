@@ -395,17 +395,16 @@ func _draw_hover() -> void:
 	if not state.map.in_bounds(hover.x, hover.y):
 		return
 	var p := state.map.node_world(hover.x, hover.y)
-	var marker_p := p + Vector2(0.0, 22.0)
 	var road_flag := state.can_place_road_flag(hover.x, hover.y)
 	var build_bq := state.actual_build_spot_bq(hover.x, hover.y)
 	var shown_bq := build_bq if build_bq != WorldState.BQ_NOTHING else (WorldState.BQ_FLAG if road_flag else WorldState.BQ_NOTHING)
 	var shown_as_road_flag := road_flag and build_bq == WorldState.BQ_NOTHING
 	var d := PackedVector2Array([
-		marker_p + Vector2(0, -11), marker_p + Vector2(16, 0),
-		marker_p + Vector2(0, 11), marker_p + Vector2(-16, 0),
+		p + Vector2(0, -11), p + Vector2(16, 0),
+		p + Vector2(0, 11), p + Vector2(-16, 0),
 	])
 	draw_polyline(d + PackedVector2Array([d[0]]), Color(1, 1, 1, 0.88), 2.0)
-	_draw_hover_build_marker(marker_p, shown_bq, shown_as_road_flag)
+	_draw_hover_build_marker(p, shown_bq, shown_as_road_flag)
 	if state.map.in_bounds(road_start.x, road_start.y):
 		var sp := state.map.node_world(road_start.x, road_start.y)
 		draw_circle(sp, 7.0, Color(0.3, 0.6, 1.0, 0.85))
@@ -418,31 +417,32 @@ func _draw_hover_build_marker(p: Vector2, bq: int, road_flag := false) -> void:
 		return
 	var key := _bq_key(bq, road_flag)
 	var tex := GameTheme.build_spot_texture(key)
+	var icon_p := p + Vector2(0.0, 22.0)
 	if tex != null:
 		var sz := Vector2(22, 22)
-		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y - 8.0, sz.x, sz.y), false,
+		draw_texture_rect(tex, Rect2(icon_p.x - sz.x * 0.5, icon_p.y - sz.y - 8.0, sz.x, sz.y), false,
 			Color(1, 1, 1, 0.78))
 	else:
 		match bq:
 			WorldState.BQ_CASTLE:
-				draw_rect(Rect2(p.x - 10, p.y - 24, 20, 15), col, false, 2.0)
-				draw_rect(Rect2(p.x - 5, p.y - 31, 10, 8), col.lightened(0.15), false, 1.4)
+				draw_rect(Rect2(icon_p.x - 10, icon_p.y - 24, 20, 15), col, false, 2.0)
+				draw_rect(Rect2(icon_p.x - 5, icon_p.y - 31, 10, 8), col.lightened(0.15), false, 1.4)
 			WorldState.BQ_HOUSE:
-				draw_rect(Rect2(p.x - 8, p.y - 22, 16, 12), col, false, 1.8)
-				draw_line(p + Vector2(-8, -22), p + Vector2(0, -30), col, 1.5, true)
-				draw_line(p + Vector2(8, -22), p + Vector2(0, -30), col, 1.5, true)
+				draw_rect(Rect2(icon_p.x - 8, icon_p.y - 22, 16, 12), col, false, 1.8)
+				draw_line(icon_p + Vector2(-8, -22), icon_p + Vector2(0, -30), col, 1.5, true)
+				draw_line(icon_p + Vector2(8, -22), icon_p + Vector2(0, -30), col, 1.5, true)
 			WorldState.BQ_HUT:
-				draw_rect(Rect2(p.x - 6, p.y - 20, 12, 10), col, false, 1.7)
+				draw_rect(Rect2(icon_p.x - 6, icon_p.y - 20, 12, 10), col, false, 1.7)
 			WorldState.BQ_MINE:
 				draw_polyline(PackedVector2Array([
-					p + Vector2(-9, -10), p + Vector2(9, -10),
-					p + Vector2(0, -28), p + Vector2(-9, -10)
+					icon_p + Vector2(-9, -10), icon_p + Vector2(9, -10),
+					icon_p + Vector2(0, -28), icon_p + Vector2(-9, -10)
 				]), col, 1.8, true)
 			WorldState.BQ_FLAG:
-				draw_line(p + Vector2(0, -24), p + Vector2(0, -10), col, 1.5, true)
-				draw_rect(Rect2(p.x, p.y - 24, 9, 6), col)
+				draw_line(icon_p + Vector2(0, -24), icon_p + Vector2(0, -10), col, 1.5, true)
+				draw_rect(Rect2(icon_p.x, icon_p.y - 24, 9, 6), col)
 	var text := "Weg-F" if road_flag else _bq_short(bq)
-	var badge := Rect2(p.x + 11, p.y - 31, maxf(30.0, float(text.length()) * 6.2), 14)
+	var badge := Rect2(icon_p.x + 11, icon_p.y - 31, maxf(30.0, float(text.length()) * 6.2), 14)
 	draw_rect(badge, Color(0.05, 0.04, 0.03, 0.72))
 	draw_rect(badge, col, false, 1.0)
 	draw_string(_font, badge.position + Vector2(3, 10), text,
