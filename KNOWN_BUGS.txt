@@ -4,6 +4,27 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-09] (BEHOBEN) Straßen-Vorschau wich von der gebauten Straße ab
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/23
+
+  Symptom: Beim Ziehen einer Straße zeigte die Vorschau (Geist-Pfad) einen
+  anderen Verlauf als die danach tatsächlich gebaute Straße.
+
+  Ursache: Vorschau und Bau nutzten unterschiedliche A*-Varianten. Die Vorschau
+  rechnete mit gewichtetem A* (h_weight 3.5, `fast`-Modus) — schnell, aber
+  suboptimal —, der Bau dagegen mit optimalem A* (h_weight 1.0). Der `fast`-Modus
+  war nur ein Workaround für den eigentlichen Performance-Bug: das Open-Set wurde
+  mit linearem O(n²)-Pop (_pop_lowest) verwaltet, weshalb optimales A* zu langsam
+  für die Live-Vorschau war.
+
+  Behoben: Open-Set von plan_road() auf einen Binär-Min-Heap (Lazy-Deletion)
+  umgestellt → O(n log n). Damit ist optimales A* schnell genug, und Vorschau
+  wie Bau nutzen denselben Pfad — der `fast`-Parameter entfällt komplett.
+  ROAD_SEARCH_CAP bleibt als Sicherheitsnetz für unerreichbare Ziele. Neuer
+  Headless-Test _test_road_preview_matches_build sichert Vorschau == Bau ab.
+
+
 [2026-06-09] (BEHOBEN) Baufenster-Inhalt skalierte beim Resize nicht mit
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/5

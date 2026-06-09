@@ -43,6 +43,7 @@ func _initialize() -> void:
 	_test_material_after_road_removed()
 	_test_carrier_kept_on_split()
 	_test_road_avoids_building()
+	_test_road_preview_matches_build()
 	_test_saveload()
 	print("== Ergebnis: %d ok, %d fehlgeschlagen ==" % [_ok, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -854,6 +855,31 @@ func _test_road_avoids_building() -> void:
 	for k in range(1, path.size() - 1):
 		_check(not state._adjacent_to_building(path[k].x, path[k].y),
 			"Kein Straßen-Zwischenknoten direkt am Gebäude")
+
+
+## #23: Die Vorschau (plan_road) muss exakt den Pfad liefern, den der Bau
+## (build_road) verlegt — sonst „springt" die Straße beim Loslassen. Seit beide
+## dasselbe optimale A* (Heap) nutzen, müssen die Knotenfolgen identisch sein.
+func _test_road_preview_matches_build() -> void:
+	var targets := [Vector2i(20, 26), Vector2i(24, 24), Vector2i(16, 25), Vector2i(25, 17)]
+	var checked := 0
+	for t in targets:
+		var map := _flat_map(40, 40)
+		var state := WorldState.new(map)
+		state.place_building(20, 20, WorldState.BQ_CASTLE, true, "hq", 9, false)
+		state.recompute_territory()
+		var hqflag: Vector2i = state.buildings[map.idx(20, 20)].flag_pos
+		var preview := state.plan_road(hqflag, t)
+		if preview.is_empty():
+			continue
+		var road := state.build_road(hqflag, t)
+		_check(road != null, "#23: Straße nach %s baubar" % t)
+		if road == null:
+			continue
+		_check(road.nodes == preview,
+			"#23: Vorschau == Bau nach %s (Vorschau %s, Bau %s)" % [t, preview, road.nodes])
+		checked += 1
+	_check(checked >= 2, "#23: mehrere Vorschau/Bau-Paare geprüft (%d)" % checked)
 
 
 func _flat_map(w: int, h: int) -> MapData:
