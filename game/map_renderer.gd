@@ -42,15 +42,95 @@ func _draw() -> void:
 	# Reihenfolge: Straßen zuerst (flach auf Boden), dann Objekte (Bäume davor), dann Gebäude.
 	_draw_roads()
 	_draw_entrance_paths()
-	_draw_objects()
-	_draw_buildings()
-	_draw_enemy_markers()
-	_draw_flags()
+	# Alle aufrechten Sprites (Bäume, Steine, Erz, Gebäude, Flaggen) in EINEM nach
+	# Fußpunkt (y) sortierten Durchgang zeichnen — so verdeckt korrekt immer das
+	# weiter vorne (größeres y) stehende Objekt das dahinterliegende. Vorher lagen
+	# Gebäude/Flaggen pauschal über allen Bäumen, weil sie danach gezeichnet wurden.
+	_draw_billboards()
 	_draw_border()
+	# Baum-Okkluder für die Bauplatz-Overlays (werden über allem gezeichnet, müssen
+	# aber von davorstehenden Bäumen verdeckt werden).
+	_build_tree_occ()
 	if show_build_spots:
 		_draw_build_spots()
 	if fog_enabled:
 		_draw_fog()
+
+
+## Sammelt alle aufrechten Sprites mit ihrem Fußpunkt-y und einer Zeichen-Callable,
+## sortiert hinten->vorne und zeichnet sie in dieser Reihenfolge.
+func _draw_billboards() -> void:
+	var items: Array = []
+	var map := state.map
+	for i in map.objects:
+		var x := int(i) % map.width
+		var y := int(i) / map.width
+		var p := map.node_world(x, y)
+		var oi := int(map.objects[i])
+		items.append({ y = p.y, fn = func(): _paint_object(p, oi, x, y) })
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		var bp := map.node_world(b.pos.x, b.pos.y) + GameTheme.building_offset(b.def_id)
+		var foot := map.node_world(b.pos.x, b.pos.y).y
+		items.append({ y = foot, fn = func(): _paint_building(bp, b) })
+		if b.owner == 1:
+			var fp := map.node_world(b.flag_pos.x, b.flag_pos.y)
+			items.append({ y = fp.y, fn = func(): _paint_enemy_flag(fp) })
+	for i in state.flags:
+		var f: WorldState.Flag = state.flags[i]
+		var p := map.node_world(f.pos.x, f.pos.y)
+		items.append({ y = p.y, fn = func(): _paint_own_flag(p, f) })
+	items.sort_custom(func(a, b): return a.y < b.y)
+	for it in items:
+		it.fn.call()
+
+
+var _tree_occ: Array = []
+
+
+## Liste aller Baum-Sprites (Fußpunkt + Textur + Maße), hinten->vorne sortiert.
+func _build_tree_occ() -> void:
+	_tree_occ.clear()
+	var map := state.map
+	for i in map.objects:
+		if int(map.objects[i]) != MapData.MO_TREE:
+			continue
+		var x := int(i) % map.width
+		var y := int(i) / map.width
+		var spr := GameTheme.tree_sprite(map.tree_type_name(map.tree_type_at(x, y)),
+			map.tree_stage_at(x, y))
+		if spr.tex == null:
+			continue
+		var sz: Vector2 = spr.size
+		_tree_occ.append({ base = map.node_world(x, y), tex = spr.tex, w = sz.x, h = sz.y })
+	_tree_occ.sort_custom(func(a, b): return a.base.y < b.base.y)
+
+
+## Bäume, die VOR dem Knoten [param p] stehen (größeres y = näher), beschnitten auf
+## die Box um das Symbol neu zeichnen — so verdeckt ein davorstehender Baum die
+## Flagge/den Marker, ohne (durch das Beschneiden) auf Nachbarbäume zu „überspillen".
+func _occlude_node(p: Vector2, halfw: float, top: float, bottom: float) -> void:
+	for o in _tree_occ:
+		if o.base.y <= p.y:
+			continue  # Baum steht hinter/neben dem Knoten → Symbol bleibt davor
+		var ox: float = o.base.x - o.w * 0.5
+		var oy: float = o.base.y - o.h
+		var ow: float = o.w
+		var oh: float = o.h
+		var ix0 := maxf(ox, p.x - halfw)
+		var iy0 := maxf(oy, top)
+		var ix1 := minf(ox + ow, p.x + halfw)
+		var iy1 := minf(oy + oh, bottom)
+		if ix1 <= ix0 or iy1 <= iy0:
+			continue
+		var tw := float(o.tex.get_width())
+		var th := float(o.tex.get_height())
+		var rx := (ix0 - ox) / ow * tw
+		var ry := (iy0 - oy) / oh * th
+		var rw := (ix1 - ix0) / ow * tw
+		var rh := (iy1 - iy0) / oh * th
+		draw_texture_rect_region(o.tex, Rect2(ix0, iy0, ix1 - ix0, iy1 - iy0),
+			Rect2(rx, ry, rw, rh))
 
 
 ## Bauplatz-Anzeige (Leertaste): Symbole je effektiver Bauqualität.
@@ -61,11 +141,13 @@ func _draw_build_spots() -> void:
 			var p := map.node_world(x, y)
 			if state.can_place_road_flag(x, y):
 				_draw_build_spot_road_flag(p)
+				_occlude_node(p, 14.0, p.y - 16.0, p.y + 8.0)
 				continue
 			var bq := state.actual_build_spot_bq(x, y)
 			if bq < WorldState.BQ_FLAG:
 				continue
 			_draw_build_spot_symbol(p, bq)
+			_occlude_node(p, 14.0, p.y - 16.0, p.y + 8.0)
 
 
 func _node_in_player_area(x: int, y: int) -> bool:
@@ -260,28 +342,24 @@ func _border_stones(owned: Dictionary, col: Color, owner: int) -> void:
 
 # --- Karten-Objekte ------------------------------------------------------
 
-func _draw_objects() -> void:
+func _paint_object(p: Vector2, oi: int, x: int, y: int) -> void:
 	var map := state.map
-	for i in map.objects:
-		var x := int(i) % map.width
-		var y := int(i) / map.width
-		var p := map.node_world(x, y)
-		if int(map.objects[i]) == MapData.MO_TREE:
-			_draw_tree_object(p, map.tree_stage_at(x, y), map.tree_type_at(x, y))
-			continue
-		if int(map.objects[i]) == MapData.MO_STONE:
-			_draw_stone_object(p, map.stone_stage_at(x, y))
-			continue
-		var oname: String = ["tree", "stone", "ore"][int(map.objects[i])]
-		var tex := GameTheme.object_texture(oname)
-		if tex != null:
-			var sz := GameTheme.object_draw_size(oname)
-			draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
-			continue
-		match map.objects[i]:
-			MapData.MO_TREE: _paint_tree(p, MapData.TREE_BIG)
-			MapData.MO_STONE: _paint_stone(p)
-			MapData.MO_ORE: _paint_ore(p, map.ore_kind_at(x, y))
+	if oi == MapData.MO_TREE:
+		_draw_tree_object(p, map.tree_stage_at(x, y), map.tree_type_at(x, y))
+		return
+	if oi == MapData.MO_STONE:
+		_draw_stone_object(p, map.stone_stage_at(x, y))
+		return
+	var oname: String = ["tree", "stone", "ore"][oi]
+	var tex := GameTheme.object_texture(oname)
+	if tex != null:
+		var sz := GameTheme.object_draw_size(oname)
+		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
+		return
+	match oi:
+		MapData.MO_TREE: _paint_tree(p, MapData.TREE_BIG)
+		MapData.MO_STONE: _paint_stone(p)
+		MapData.MO_ORE: _paint_ore(p, map.ore_kind_at(x, y))
 
 
 func _draw_tree_object(p: Vector2, stage: int, typ := MapData.TREE_OAK) -> void:
@@ -404,44 +482,36 @@ func _draw_entrance_paths() -> void:
 
 # --- Gebäude (scharfe Platzhalter-Grafik oder Textur) --------------------
 
-func _draw_buildings() -> void:
-	for i in state.buildings:
-		var b: WorldState.Building = state.buildings[i]
-		var p := state.map.node_world(b.pos.x, b.pos.y) + GameTheme.building_offset(b.def_id)
-		# Baustelle: nur das Gerüst (das wachsende Gebäude zeichnet der UnitRenderer).
-		if b.under_construction:
-			_paint_site(p, b)
-			continue
-		var tex := GameTheme.building_texture(b.def_id, b.owner)
-		if tex != null:
-			var sz := _dims(b.size, b.def_id).x * GameTheme.texture_scale()
-			if b.is_hq:
-				sz *= GameTheme.hq_scale()  # Hauptquartier sticht heraus
-			draw_texture_rect(tex, Rect2(p.x - sz * 0.5, p.y - sz, sz, sz), false)
-			continue
+func _paint_building(p: Vector2, b: WorldState.Building) -> void:
+	# Baustelle: nur das Gerüst (das wachsende Gebäude zeichnet der UnitRenderer).
+	if b.under_construction:
+		_paint_site(p, b)
+		return
+	var tex := GameTheme.building_texture(b.def_id, b.owner)
+	if tex != null:
+		var sz := _dims(b.size, b.def_id).x * GameTheme.texture_scale()
 		if b.is_hq:
-			_paint_hq(p)
-		elif b.size == WorldState.BQ_MINE:
-			_paint_mine(p)
-		elif String(BuildingCatalog.get_def(b.def_id).get("category", "")) == "militaer":
-			_paint_tower(p, b)
-		else:
-			_paint_house(p, b)
+			sz *= GameTheme.hq_scale()  # Hauptquartier sticht heraus
+		draw_texture_rect(tex, Rect2(p.x - sz * 0.5, p.y - sz, sz, sz), false)
+		return
+	if b.is_hq:
+		_paint_hq(p)
+	elif b.size == WorldState.BQ_MINE:
+		_paint_mine(p)
+	elif String(BuildingCatalog.get_def(b.def_id).get("category", "")) == "militaer":
+		_paint_tower(p, b)
+	else:
+		_paint_house(p, b)
 
 
-## Flagge jedes Gegner-Gebäudes an der korrekten Flaggenposition (SE-Nachbar).
-func _draw_enemy_markers() -> void:
-	for i in state.buildings:
-		var b: WorldState.Building = state.buildings[i]
-		if b.owner != 1:
-			continue
-		var fp := state.map.node_world(b.flag_pos.x, b.flag_pos.y)
-		var tex := GameTheme.flag_texture(1)
-		if tex != null:
-			var sz := GameTheme.flag_draw_size()
-			draw_texture_rect(tex, Rect2(fp.x - sz.x * 0.5, fp.y - sz.y, sz.x, sz.y), false)
-		else:
-			_paint_flag(fp + Vector2(0, -16), GameTheme.flag_color(1))
+## Flagge eines Gegner-Gebäudes an der korrekten Flaggenposition (SE-Nachbar).
+func _paint_enemy_flag(fp: Vector2) -> void:
+	var tex := GameTheme.flag_texture(1)
+	if tex != null:
+		var sz := GameTheme.flag_draw_size()
+		draw_texture_rect(tex, Rect2(fp.x - sz.x * 0.5, fp.y - sz.y, sz.x, sz.y), false)
+	else:
+		_paint_flag(fp + Vector2(0, -16), GameTheme.flag_color(1))
 
 
 func _dims(size: int, def_id := "") -> Vector2:
@@ -535,17 +605,14 @@ func _paint_flag(top: Vector2, col: Color) -> void:
 	draw_rect(Rect2(top.x, top.y, 8, 5), col)
 
 
-func _draw_flags() -> void:
-	# Flaggen IMMER exakt auf ihrem Knoten zeichnen — sonst passen Bild und
-	# Mausklick/Picking nicht mehr zusammen (Straßen ließen sich nicht verbinden).
-	for i in state.flags:
-		var f: WorldState.Flag = state.flags[i]
-		var p := state.map.node_world(f.pos.x, f.pos.y)
-		var owner := 1 if state.enemy_territory.has(state.map.idx(f.pos.x, f.pos.y)) else 0
-		var tex := GameTheme.flag_texture(owner)
-		if tex != null:
-			var sz := GameTheme.flag_draw_size()
-			# Pfahl-Basis liegt auf dem Knoten; Textur geht nach oben.
-			draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
-		else:
-			_paint_flag(p + Vector2(0, -16), GameTheme.flag_color(owner))
+## Flaggen IMMER exakt auf ihrem Knoten zeichnen — sonst passen Bild und
+## Mausklick/Picking nicht mehr zusammen (Straßen ließen sich nicht verbinden).
+func _paint_own_flag(p: Vector2, f: WorldState.Flag) -> void:
+	var owner := 1 if state.enemy_territory.has(state.map.idx(f.pos.x, f.pos.y)) else 0
+	var tex := GameTheme.flag_texture(owner)
+	if tex != null:
+		var sz := GameTheme.flag_draw_size()
+		# Pfahl-Basis liegt auf dem Knoten; Textur geht nach oben.
+		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
+	else:
+		_paint_flag(p + Vector2(0, -16), GameTheme.flag_color(owner))

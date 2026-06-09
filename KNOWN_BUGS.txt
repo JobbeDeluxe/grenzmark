@@ -4,7 +4,38 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
-[2026-06-08] (OFFEN) Ressourcen-Icons oben viel zu groß
+[2026-06-09] (BEHOBEN 2026-06-09) Sprites überlagern Bäume falsch
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/11
+
+  Symptom: Läuft ein Träger HINTER einem Baum durch, „springt" der Baum plötzlich
+  über alles — auch über andere Bäume, die eigentlich davor stehen. Gleiches Problem
+  bei Flaggen und Bauplatz-Markern: sie lagen immer oben auf den Bäumen.
+
+  Ursache: Einheiten werden auf einer dynamischen Ebene ÜBER der ganzen statischen
+  Karte gezeichnet. Damit eine Einheit „hinter" einem Baum verschwindet, zeichnete
+  UnitRenderer._occlude() den davorstehenden Baum erneut über die Einheit — aber in
+  VOLLER Sprite-Größe. Die Neuzeichnung landet ganz oben und überdeckte auch
+  benachbarte Bäume. Flaggen/Bauplätze wiederum werden in MapRenderer NACH den Bäumen
+  gezeichnet und lagen deshalb immer obenauf.
+
+  Fix (2026-06-09, 2. Iteration — echte Y-Sortierung):
+   - MapRenderer._draw_billboards(): Bäume, Steine, Erz, GEBÄUDE und Flaggen werden
+     jetzt in EINEM nach Fußpunkt-y sortierten Durchgang gezeichnet. Damit verdeckt
+     immer das weiter vorne stehende Objekt das dahinterliegende — Gebäude/Flaggen
+     liegen nicht mehr pauschal über allen Bäumen. (Ersetzt die alten getrennten
+     _draw_objects/_draw_buildings/_draw_flags/_draw_enemy_markers.)
+   - UnitRenderer (dynamische Ebene, liegt über der statischen): _occlude_box() als
+     gemeinsamer Helfer; davorstehende Bäume/Gebäude werden beschnitten neu über
+     EINHEITEN, BAUSTELLEN (wachsendes Gebäude) und WAREN an Flaggen gezeichnet.
+     Beschneiden auf die Sprite-Box verhindert „Überspillen" auf Nachbarbäume;
+     Okkluder hinten->vorne nach base.y sortiert.
+   - MapRenderer._occlude_node(): bleibt für die Bauplatz-Overlays (Leertaste), die
+     bewusst über allem liegen, aber von davorstehenden Bäumen verdeckt werden.
+     -> Bitte im Spiel prüfen: Gebäude (auch im Bau), Flaggen, Waren, Bauplätze an Bäumen.
+
+
+[2026-06-08] (BEHOBEN 2026-06-09) Ressourcen-Icons oben viel zu groß
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/3
 
@@ -12,14 +43,33 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
   deutlich zu groß. Gewünscht ist ungefähr ein Zehntel der aktuellen Wirkung:
   sehr kleine, dezente Status-Icons statt dominanter UI-Kacheln.
 
+  Eigentliche Ursache (2026-06-09): die Waren-PNGs sind 64x64; ein TextureRect hat
+  in Godot 4 per Default expand_mode = EXPAND_KEEP_SIZE, d. h. die Mindestgröße = die
+  Texturgröße. Das kleine custom_minimum_size (good_icon_size) wurde dadurch
+  IGNORIERT — die Icons blieben so groß wie die Quelltextur. Reine ui.json-
+  Verkleinerung hatte deshalb fast keine Wirkung.
+  Fix: icon.expand_mode = EXPAND_IGNORE_SIZE in world.gd _build_stock_cells, damit
+  custom_minimum_size greift. Zusätzlich Werte in assets/ui.json reduziert
+  (good_icon_size 12->9, good_cell_width 38->24, good_cell_height 18->13,
+  top_bar_height 46->34) und Zähler-Schrift 9->8. -> Bitte prüfen; dann Issue #3 schließen.
 
-[2026-06-08] (OFFEN) Karte verschieben geht nicht mehr
+
+[2026-06-08] (BEHOBEN 2026-06-09) Karte verschieben geht nicht mehr
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/4
 
   Seit dem UI-Umbau lässt sich die Karte nicht mehr wie gewohnt verschieben.
   Verdacht: ein neues Control/Panel fängt Maus-Input ab oder liegt zu großflächig
   über der Spielwelt. Kamera-Drag mit rechter/mittlerer Maustaste prüfen.
+
+  Ursache bestätigt: `_ui_root` ist ein bildschirmfüllender Control (PRESET_FULL_RECT).
+  Godots Control hat per Default mouse_filter = STOP und schluckte damit ALLE
+  Maus-Events über dem ganzen Viewport, bevor sie _unhandled_input (Kamera-Pan in
+  camera_controller.gd) erreichen.
+  Fix: `_ui_root.mouse_filter = MOUSE_FILTER_IGNORE` (world.gd _build_ui). Die echten
+  Panels (PanelContainer) behalten ihren eigenen STOP-Filter und fangen ihre Klicks
+  weiter ab. Zusätzlich _status_label auf MOUSE_FILTER_IGNORE.
+  -> Bitte im Spiel prüfen (Rechts-/Mitteltaste ziehen); danach Issue #4 schließen.
 
 
 [2026-06-08] (BEHOBEN) Neue Baum-PNGs oben abgeschnitten

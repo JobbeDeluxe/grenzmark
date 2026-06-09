@@ -293,6 +293,11 @@ func _build_ui() -> void:
 
 	_ui_root = Control.new()
 	_ui_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Wichtig: der bildschirmfuellende Wurzel-Control darf KEINE Maus-Events
+	# schlucken, sonst erreicht das Kamera-Schwenken (rechte/mittlere Taste)
+	# und Welt-Klicks nie _unhandled_input. Die echten Panels (PanelContainer)
+	# behalten ihren eigenen STOP-Filter und fangen ihre Klicks weiterhin ab.
+	_ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_ui_root)
 
 	# Oben: kompakte Statuszeile + kleine Waren-Iconleiste.
@@ -453,6 +458,7 @@ func _build_ui() -> void:
 	_status_label.offset_right = 180
 	_status_label.offset_bottom = 40
 	_status_label.add_theme_color_override("font_color", Color(1, 0.95, 0.4))
+	_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui_root.add_child(_status_label)
 
 
@@ -480,13 +486,17 @@ func _build_stock_cells(parent: GridContainer) -> void:
 		cell.tooltip_text = Goods.name_of(g)
 		parent.add_child(cell)
 		var icon := TextureRect.new()
-		icon.custom_minimum_size = Vector2(UISkin.layout_num("good_icon_size", 18),
-			UISkin.layout_num("good_icon_size", 18))
+		var icon_px := UISkin.layout_num("good_icon_size", 18)
+		icon.custom_minimum_size = Vector2(icon_px, icon_px)
+		# WICHTIG: ohne EXPAND_IGNORE_SIZE erzwingt die 64x64-Quelltextur ihre
+		# eigene Mindestgroesse und macht die Icons riesig — custom_minimum_size
+		# wuerde ignoriert.
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon.texture = UISkin.good_texture(g)
 		cell.add_child(icon)
 		var label := Label.new()
-		UISkin.apply_label(label, false, 9)
+		UISkin.apply_label(label, false, 13)
 		label.text = "0"
 		cell.add_child(label)
 		_stock_counts[g] = label

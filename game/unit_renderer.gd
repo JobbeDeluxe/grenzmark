@@ -139,19 +139,45 @@ func _collect_occluders() -> void:
 			continue
 		var sz2: Vector2 = spr.size
 		_occluders.append({ base = map.node_world(x, y), tex = spr.tex, w = sz2.x, h = sz2.y })
+	# Hinten -> vorne sortieren, damit beim Neuzeichnen ueberlappende Okkluder
+	# (z. B. zwei dicht stehende Baeume) ihre korrekte Tiefenreihenfolge behalten.
+	_occluders.sort_custom(func(a, b): return a.base.y < b.base.y)
 
 
 ## Verdeckt die Einheit an [param p], indem davorliegende Okkluder erneut über sie
 ## gezeichnet werden (opake Pixel verdecken, transparente lassen sie durchscheinen).
 func _occlude(p: Vector2) -> void:
+	# Bounding-Box der Einheit (Sprite-Hoehe + getragene Ware darueber).
+	var us := GameTheme.unit_size()
+	_occlude_box(p.y, p.x - us * 0.7, p.y - us - 18.0, p.x + us * 0.7, p.y + 3.0)
+
+
+## Zeichnet alle Okkluder, die VOR der Bezugslinie [param ref_y] stehen (größeres y),
+## beschnitten auf das Rechteck [left,top]..[right,bottom] erneut darüber. Das Beschneiden
+## verhindert, dass z. B. ein Baum in voller Größe über benachbarte Sprites „überspillt".
+func _occlude_box(ref_y: float, left: float, top: float, right: float, bottom: float) -> void:
 	for o in _occluders:
-		if o.base.y <= p.y:
-			continue  # Okkluder steht hinter/neben der Einheit → Einheit bleibt davor
-		if p.y <= o.base.y - o.h:
-			continue  # Einheit komplett oberhalb des Sprites → keine Überlappung
-		if absf(p.x - o.base.x) > o.w * 0.5 + 2.0:
-			continue  # horizontal daneben
-		draw_texture_rect(o.tex, Rect2(o.base.x - o.w * 0.5, o.base.y - o.h, o.w, o.h), false)
+		if o.base.y <= ref_y:
+			continue  # Okkluder steht hinter/neben → Objekt bleibt davor
+		var ox: float = o.base.x - o.w * 0.5
+		var oy: float = o.base.y - o.h
+		var ow: float = o.w
+		var oh: float = o.h
+		var ix0 := maxf(ox, left)
+		var iy0 := maxf(oy, top)
+		var ix1 := minf(ox + ow, right)
+		var iy1 := minf(oy + oh, bottom)
+		if ix1 <= ix0 or iy1 <= iy0:
+			continue
+		# Nur den passenden Textur-Ausschnitt zeichnen, damit nichts ueberspillt.
+		var tw := float(o.tex.get_width())
+		var th := float(o.tex.get_height())
+		var rx := (ix0 - ox) / ow * tw
+		var ry := (iy0 - oy) / oh * th
+		var rw := (ix1 - ix0) / ow * tw
+		var rh := (iy1 - iy0) / oh * th
+		draw_texture_rect_region(o.tex, Rect2(ix0, iy0, ix1 - ix0, iy1 - iy0),
+			Rect2(rx, ry, rw, rh))
 
 
 ## Geist-Vorschau des gewählten Gebäudes am Mauszeiger (Stufe 8):
@@ -242,6 +268,11 @@ func _draw_construction() -> void:
 			if overall > 0.02:
 				_grow_finished(p, base, sz, fin, def_id, overall)
 
+		# Baustelle liegt auf der dynamischen Ebene über allem — davorstehende Bäume
+		# müssen sie verdecken (sonst überdeckt das wachsende Gebäude die Bäume).
+		var foot := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y).y
+		_occlude_box(foot, p.x - sz * 0.6, p.y - sz, p.x + sz * 0.6, p.y + 4.0)
+
 		# Fortschrittsbalken
 		var w := 22.0
 		var bar := Vector2(p.x - w * 0.5, p.y - 34)
@@ -282,7 +313,8 @@ func _draw_goods() -> void:
 			continue
 		var x := int(fi) % map.width
 		var y := int(fi) / map.width
-		var base := map.node_world(x, y) + Vector2(6, -2)
+		var node := map.node_world(x, y)
+		var base := node + Vector2(6, -2)
 		for k in mini(queue.size(), Economy.FLAG_CAP):
 			var good_type: int = (queue[k] as Economy.Good).type
 			var off := Vector2(9.0 * (k % 4), -9.0 * (k / 4))
@@ -291,6 +323,8 @@ func _draw_goods() -> void:
 				draw_texture_rect(tex, Rect2(base + off, Vector2(8, 8)), false)
 			else:
 				draw_rect(Rect2(base + off, Vector2(5, 5)), GameTheme.good_color(good_type))
+		# Waren liegen am Flaggenknoten — davorstehende Bäume müssen sie verdecken.
+		_occlude_box(node.y, node.x - 2.0, node.y - 40.0, node.x + 42.0, node.y + 4.0)
 
 
 func _draw_carriers() -> void:
