@@ -248,6 +248,9 @@ GitHub-Arbeitspakete:
 - [x] **S2-näheres Baufenster (2026-06-09):** Wege/Flagge/Abriss/Bauhilfe als
       Aktionszeile, darunter vier Gebäudekategorien nach Handbuch:
       Bergwerk, klein, mittel, groß.
+- [x] **Baufenster-Politur (2026-06-09):** Aktionszeile und Gebäudekategorien
+      nutzen kompakte Symbolbuttons; die Gebäudeauswahl ist ein S2-näheres
+      Iconraster mit Kurzlabels und Tooltips statt langer Textbuttons.
 - [x] **Bauplatz-Klicklogik:** Wenn die Bauplatzansicht per Leertaste sichtbar
       ist, setzt ein Klick auf Flaggen-/Straßenflaggen-Marker direkt die Flagge;
       Klick auf Hütte/Haus/Burg/Mine öffnet unten ein nach Bauplatzgröße
@@ -269,7 +272,8 @@ GitHub-Arbeitspakete:
       und schönere Fenster-Skins.
 - [x] **Cursor-Bauvorschau**: „Geist" des gewählten Gebäudes am Mauszeiger +
       BQ-Markierung am Knoten (grün=geht/rot=geht nicht), Eingangsflagge/-weg
-      schon in der Vorschau (unit_renderer._draw_build_preview).
+      schon in der Vorschau; Hover-Geist um eine Gebäudehöhe nach unten gesetzt,
+      damit er am Cursor nicht mehr zu hoch schwebt (unit_renderer._draw_build_preview).
 - [x] **Hover-Bauhilfe (2026-06-09):** der Cursor zeigt am aktuellen Knoten
       sichtbar die zulässige Baugröße bzw. Straßen-Flagge statt nur einen Punkt.
 - [~] **Gebäude-Infofenster** (bei Auswahl): erste Version mit Gebäude-Bild,

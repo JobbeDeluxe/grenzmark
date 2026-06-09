@@ -4,6 +4,18 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-09] (BEHOBEN) Gebäude-Hovervorschau schwebte zu hoch
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/5
+
+  Symptom: Der Geist des gewählten Gebäudes am Maus-Hover saß optisch zu hoch
+  über dem Knoten und wirkte nicht wie eine Bauvorschau an der geplanten Stelle.
+
+  Fix: `UnitRenderer._draw_build_preview()` verschiebt nur die Vorschau-Grafik
+  um eine berechnete Gebäudehöhe nach unten; BQ-Markierung und echte
+  Gebäudezeichnung bleiben unverändert.
+
+
 [2026-06-09] (BEHOBEN) Gegner baute keine sichtbaren Straßen und Menschen
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/22

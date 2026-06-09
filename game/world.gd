@@ -49,6 +49,7 @@ var _build_action_row: HBoxContainer
 var _build_group_row: HBoxContainer
 var _build_row: GridContainer
 var _build_caption: Label
+var _build_group_buttons := {}
 var _economy_panel: PanelContainer
 var _mainsel_panel: PanelContainer
 var _buildings_panel: PanelContainer
@@ -317,10 +318,10 @@ func _check_game_over() -> void:
 # --------------------------------------------------------------------------
 
 const BUILD_GROUPS := [
-	["Bergwerk", "mine"],
-	["Klein", "hut"],
-	["Mittel", "house"],
-	["Gross", "castle"],
+	["Bergwerk", "mine", "mine"],
+	["Klein", "hut", "hut"],
+	["Mittel", "house", "house"],
+	["Groß", "castle", "castle"],
 ]
 
 
@@ -412,21 +413,37 @@ func _build_ui() -> void:
 	UISkin.apply_label(_build_caption, true, 12)
 	build_box.add_child(_build_caption)
 	_build_action_row = HBoxContainer.new()
-	_build_action_row.add_theme_constant_override("separation", 4)
+	_build_action_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_build_action_row.add_theme_constant_override("separation", 5)
 	build_box.add_child(_build_action_row)
-	_tbutton(_build_action_row, "Flagge", _set_mode.bind(MODE_FLAG))
-	_tbutton(_build_action_row, "Strasse", _set_mode.bind(MODE_ROAD))
-	_tbutton(_build_action_row, "Abriss", _set_mode.bind(MODE_DELETE))
-	_tbutton(_build_action_row, "Bauhilfe", _toggle_build_spots)
+	_build_icon_button(_build_action_row, "", _set_mode.bind(MODE_FLAG), "Flagge setzen",
+		GameTheme.build_spot_texture("flag"), Vector2(42, 34))
+	_build_icon_button(_build_action_row, "", _set_mode.bind(MODE_ROAD), "Straße bauen",
+		GameTheme.build_spot_texture("road_flag"), Vector2(42, 34))
+	_build_icon_button(_build_action_row, "X", _set_mode.bind(MODE_DELETE), "Abriss",
+		null, Vector2(42, 34))
+	_build_icon_button(_build_action_row, "?", _toggle_build_spots, "Bauhilfe ein/aus",
+		null, Vector2(42, 34))
 	_build_group_row = HBoxContainer.new()
-	_build_group_row.add_theme_constant_override("separation", 4)
+	_build_group_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_build_group_row.add_theme_constant_override("separation", 5)
 	build_box.add_child(_build_group_row)
+	_build_group_buttons.clear()
 	for c in BUILD_GROUPS:
-		_tbutton(_build_group_row, c[0], _show_category.bind(c[1]))
+		var cat_btn := _build_icon_button(_build_group_row, String(c[0]), _show_category.bind(c[1]),
+			_group_label(c[1]), GameTheme.build_spot_texture(String(c[2])), Vector2(88, 44))
+		cat_btn.toggle_mode = true
+		_build_group_buttons[c[1]] = cat_btn
+	var build_scroll := ScrollContainer.new()
+	build_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	build_scroll.custom_minimum_size = Vector2(maxf(build_w - 20.0, 120.0), 112.0 * UISkin.ui_scale())
+	build_box.add_child(build_scroll)
 	_build_row = GridContainer.new()
-	_build_row.columns = 5
-	_build_row.add_theme_constant_override("separation", 4)
-	build_box.add_child(_build_row)
+	_build_row.columns = 4
+	_build_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_build_row.add_theme_constant_override("h_separation", 5)
+	_build_row.add_theme_constant_override("v_separation", 5)
+	build_scroll.add_child(_build_row)
 	_show_category(ui_category)
 
 	_economy_panel = _floating_panel(Vector2(0, 1), Vector2(edge + 304, -bottom_h - 250 - edge * 2.0),
@@ -1230,27 +1247,26 @@ func _show_category(cat: String) -> void:
 	ui_category = cat
 	if _build_row == null:
 		return
+	for group in _build_group_buttons:
+		var group_btn: Button = _build_group_buttons[group]
+		group_btn.button_pressed = String(group) == cat
 	for ch in _build_row.get_children():
 		ch.queue_free()
 	if _build_caption != null:
 		if build_window_spot.x >= 0:
-			_build_caption.text = "Haus bauen (%d,%d): bis %s - %s" % [
+			_build_caption.text = "Bauen (%d,%d): bis %s - %s" % [
 				build_window_spot.x, build_window_spot.y, _bq_name(build_filter_bq), _group_label(cat)]
 		else:
-			_build_caption.text = "Haus bauen - %s" % _group_label(cat)
+			_build_caption.text = "Bauen - %s" % _group_label(cat)
 	for id in BuildingCatalog.menu_order():
-		var def := BuildingCatalog.get_def(id)
 		if _building_in_group(id, cat) and _building_allowed_by_filter(id):
 			var cb := _build_from_spot.bind(id) if build_window_spot.x >= 0 else _select_building.bind(id)
-			var btn := _tbutton(_build_row, String(def.get("name", id)), cb)
-			btn.tooltip_text = _building_tooltip(id)
 			var tex := GameTheme.building_texture(id)
-			if tex != null:
-				btn.icon = tex
-				btn.expand_icon = true
+			_build_icon_button(_build_row, GameTheme.building_label(id), cb,
+				_building_tooltip(id), tex, Vector2(92, 46))
 	if _build_row.get_child_count() == 0:
 		var empty := Label.new()
-		empty.text = "Keine passenden Gebaeude in dieser Kategorie."
+		empty.text = "Keine passenden Gebäude in dieser Kategorie."
 		UISkin.apply_label(empty, true, 12)
 		_build_row.add_child(empty)
 
@@ -1258,9 +1274,9 @@ func _show_category(cat: String) -> void:
 func _group_label(group: String) -> String:
 	match group:
 		"mine": return "Bergwerke"
-		"hut": return "Kleine Haeuser"
-		"house": return "Mittlere Haeuser"
-		"castle": return "Grosse Haeuser"
+		"hut": return "Kleine Häuser"
+		"house": return "Mittlere Häuser"
+		"castle": return "Große Häuser"
 	return group
 
 
@@ -1337,6 +1353,21 @@ func _tbutton(row: Container, text: String, cb: Callable) -> Button:
 	btn.text = text
 	UISkin.apply_button(btn)
 	btn.pressed.connect(cb)
+	row.add_child(btn)
+	return btn
+
+
+func _build_icon_button(row: Container, text: String, cb: Callable, tooltip := "",
+		icon: Texture2D = null, min_size := Vector2(64, 38)) -> Button:
+	var btn := Button.new()
+	btn.text = text
+	btn.tooltip_text = tooltip
+	UISkin.apply_button(btn)
+	btn.custom_minimum_size = min_size * UISkin.ui_scale()
+	btn.pressed.connect(cb)
+	if icon != null:
+		btn.icon = icon
+		btn.expand_icon = true
 	row.add_child(btn)
 	return btn
 

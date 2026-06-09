@@ -206,10 +206,14 @@ func _draw_build_preview() -> void:
 	var tex := GameTheme.building_texture(build_preview_id)
 	if tex != null:
 		var sz := _bld_dims(size, build_preview_id).x * GameTheme.texture_scale()
-		draw_texture_rect(tex, Rect2(p.x - sz * 0.5, p.y - sz, sz, sz), false, tint)
+		var tex_p := p + Vector2(0.0, sz)
+		draw_texture_rect(tex, Rect2(tex_p.x - sz * 0.5, tex_p.y - sz, sz, sz), false, tint)
+		p = tex_p
 	else:
 		var base := _bld_dims(size, build_preview_id)
-		draw_rect(Rect2(p.x - base.x * 0.5, p.y - base.y, base.x, base.y), tint)
+		var box_p := p + Vector2(0.0, base.y)
+		draw_rect(Rect2(box_p.x - base.x * 0.5, box_p.y - base.y, base.x, base.y), tint)
+		p = box_p
 	# Eingangsflagge am SE-Nachbarn + kurzer Eingangsweg (wie im fertigen Bau).
 	var fl := state.map.neighbor(hover.x, hover.y, Grid.SE)
 	if state.map.in_bounds(fl.x, fl.y):
