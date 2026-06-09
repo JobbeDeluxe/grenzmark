@@ -4,6 +4,24 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-09] (OFFEN) Karten-Generator erzeugt lange zackige Terrain-Kanten
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/20
+
+  Symptom: An Wasser-/Sand-/Berggrenzen entstehen teils mehrere schmale
+  Dreiecks-Zacken hintereinander. Im Screenshot vom 2026-06-09 sind solche
+  Zacken rot markiert; sie wirken nicht wie mit dem S2-Karteneditor malbar.
+
+  Recherche: Das S2-Gold-Handbuch beschreibt den Karteneditor als Arbeit auf
+  einem Sechseck-Untergrund. Die Pinselbreiten bearbeiten 1, 7, 19 bzw.
+  37 Knotenpunkte; jeweils sechs Dreiecke ergeben ein Sechseck und dadurch
+  homogene Flächen. Lange 1-Dreieck-Ketten passen nicht zu diesem Prinzip.
+
+  Zusätzlich offen: Höhen sauberer respektieren, Granit/Steine als natürliche
+  Pakete verteilen, Erz nicht als dauerhaft sichtbares Kartenobjekt zeichnen,
+  sondern unterirdisch führen und später über Geologen/Debug sichtbar machen.
+
+
 [2026-06-09] (BEHOBEN) Gebäude konnten direkt auf der Grenze gebaut werden
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/18

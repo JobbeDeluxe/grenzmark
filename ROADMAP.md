@@ -57,11 +57,15 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Mini-Map
 - [x] Fenster-Skalierung (Stretch canvas_items) — UI skaliert mit
 - [ ] Höhen-Picking exakt (aktuell ignoriert Höhe leicht)
-- [ ] Bessere Karten-Generierung (Inseln, Flüsse, Berg-Adern mit Erzen)
+- [ ] Bessere Karten-Generierung (Inseln, Flüsse, Berg-Adern mit Erzen).
+      Wichtig: S2-artige Hex-Pinsel/Brush-Stamps statt langer Dreiecks-Zacken,
+      Höhen-/Terrain-Glättung, Granit/Steine als Pakete, unterirdische Erze.
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/20)
 - [x] Test-Teich im Startgebiet (kleiner See nahe HQ), damit Fischerhütte ohne
       Kartenglück getestet werden kann.
 - [x] Nebel des Krieges + Sicht umschaltbar (Taste F); Karte wird um eigene
-      Gebäude/Flaggen/Straßen aufgedeckt (recompute_visibility)
+      Gebäude/Flaggen/Straßen aufgedeckt (recompute_visibility). Zusätzlich
+      im Hauptmenü als Startoption einstellbar.
 - [x] Bauplatz-Anzeige (Leertaste): zeigt nur tatsächlich im eigenen Gebiet
       baubare Plätze; austauschbare PNG-Symbole für Baugrößen, Flaggen,
       und Straßen-Flaggen
@@ -357,6 +361,7 @@ Arbeitsliste, bis das Spiel „vollständig" ist (Ton/Musik kommt ganz zuletzt).
       Produktion stoppen, Abriss, Militärbesatzung, Prioritäten und Warnungen.
 - [ ] Geologe, Späher/Pionier, Planierer und Aussichtsturm/Spähturm fehlen als
       Spezialisten für Erkundung, Bergbau-Info, Gebietsausbau und Höhenarbeit.
+      (Geologe/Späher/Nebel-Verzahnung: https://github.com/JobbeDeluxe/grenzmark/issues/21)
 - [ ] Militär ist spielbar, aber noch vereinfacht: Rangstufen/Grafiken,
       wählbare Angreiferzahl, Schilde/mehr Waffen und Belagerungsdetails fehlen.
 - [ ] Wasser/See-Spiel fehlt komplett: Hafen, Werft, Boote/Schiffe, Expedition
@@ -378,8 +383,10 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [x] Jägerhütte (→ Fleisch)
 - [x] Schweinefarm (Getreide + Wasser → Schwein) + Schlachterei (Schwein → Fleisch)
 - [x] Werkzeugmacher (Bretter + Eisen → Werkzeug)
-- [x] 4 Erzsorten (Kohle/Eisen/Gold/Granit) als Adern + Granitmine; jede Mine
-      baut nur ihr passendes Mineral ab (Erz farblich unterscheidbar)
+- [~] 4 Erzsorten (Kohle/Eisen/Gold/Granit) als Adern + Granitmine; jede Mine
+      baut nur ihr passendes Mineral ab. Offen: Erz im Normalspiel unterirdisch
+      statt sichtbar führen; Sichtbarkeit später über Geologen/Debug.
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/20)
 - [ ] Lagerhaus / Vorratshaus (zweites Lager) — braucht Mehr-Lager-System
 - [ ] Eselzüchter (→ Esel) — braucht Esel-auf-Straßen-System
 - [ ] Waffenschmiede mit Schwert UND Schild (statt nur Schwert)
@@ -397,7 +404,9 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 
 **Karte & Erkundung (hoch):**
 - [ ] Geologen: erkunden Berge & decken die Erzsorte auf (Schilder), bevor Minen lohnen
-- [x] Nebel des Krieges / Sichtbarkeit nur im erkundeten Gebiet (Taste F)
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/21)
+- [x] Nebel des Krieges / Sichtbarkeit nur im erkundeten Gebiet (Taste F);
+      auch im Hauptmenü als Startoption einstellbar.
 - [ ] Erdarbeiter (Planierer) ebnen Bauland; Höhe beeinflusst Bau stärker
 - [ ] Fisch als endlicher Kartenbestand statt unendliche Wasserquelle:
       Wasser-/Küstenknoten bekommen Fischvorrat, Fischer verbraucht ihn, UI zeigt
@@ -426,6 +435,7 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 **Neu beim Original-Abgleich aufgefallen (offen):**
 - [ ] Spähturm/Aussichtsturm: deckt Umgebung im Nebel auf (passt zu Stufe 1 Nebel)
 - [ ] Spezial-Einheiten ohne Gebäude: Geologe, Späher, Pionier (Geologe siehe oben)
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/21)
 - [ ] Eroberte Gebäude brennen kurz / Übergangsanimation
 - [ ] Gebäude-Abriss gibt einen Teil der Baustoffe zurück
 - [ ] Träger-Stau sichtbar (volle Flagge blockiert), Vorfahrtsregeln an Kreuzungen
