@@ -44,6 +44,7 @@ func _initialize() -> void:
 	_test_carrier_kept_on_split()
 	_test_road_avoids_building()
 	_test_road_preview_matches_build()
+	_test_territory_stickiness()
 	_test_saveload()
 	print("== Ergebnis: %d ok, %d fehlgeschlagen ==" % [_ok, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -880,6 +881,34 @@ func _test_road_preview_matches_build() -> void:
 			"#23: Vorschau == Bau nach %s (Vorschau %s, Bau %s)" % [t, preview, road.nodes])
 		checked += 1
 	_check(checked >= 2, "#23: mehrere Vorschau/Bau-Paare geprüft (%d)" % checked)
+
+
+## #15: Etabliertes Gebiet ist „klebrig". Ein näher gebauter Gegnerturm darf
+## bestehendes Spielergebiet NICHT klauen — Land wechselt erst, wenn der haltende
+## Spieler-Bau es nicht mehr deckt (gefallen/erobert).
+func _test_territory_stickiness() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	state.place_building(12, 12, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	state.recompute_territory()
+	var node := Vector2i(15, 15)
+	var ki := map.idx(node.x, node.y)
+	_check(state.in_territory(node.x, node.y), "#15: Knoten zunächst im Spielergebiet")
+	# Gegner baut einen Wachturm NÄHER an den Knoten (mit Garnison).
+	_raw(state, Vector2i(16, 16), "guardhouse", 6, 1, 3, 3, false)
+	state.recompute_territory()
+	_check(state.in_territory(node.x, node.y),
+		"#15: etablierter Knoten bleibt trotz näherem Gegnerturm beim Spieler")
+	_check(not state.enemy_territory.has(ki),
+		"#15: Gegner beansprucht etablierten Spielerknoten nicht")
+	# Verliert der Spieler die Deckung (Halter entfernt), geht der vom Gegner
+	# gedeckte Knoten an den Gegner über.
+	state.buildings.erase(map.idx(12, 12))
+	state.recompute_territory()
+	_check(state.enemy_territory.has(ki),
+		"#15: nach Verlust des Halters geht der gedeckte Knoten an den Gegner")
+	_check(not state.in_territory(node.x, node.y),
+		"#15: Knoten ist dann nicht mehr Spielergebiet")
 
 
 func _flat_map(w: int, h: int) -> MapData:

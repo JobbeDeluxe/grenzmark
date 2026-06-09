@@ -4,6 +4,26 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-09] (TEILWEISE BEHOBEN) Gegner „klaute" Gebiet durch näher gebaute Türme
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/15
+
+  Symptom: Ein näher gebauter Gegner-Wachturm beanspruchte sofort bereits
+  etabliertes Spielergebiet (inkl. der dort stehenden Häuser/Flaggen).
+
+  Ursache: recompute_territory() vergab jeden Knoten an das NÄCHSTE Einfluss-
+  Gebäude (reine Distanz), unabhängig vom bisherigen Halter.
+
+  Behoben (Kern): Territorium ist jetzt „klebrig". Bei Überschneidung zweier
+  Besitzer behält der bisherige Halter den Knoten, solange eines seiner
+  Militärgebäude ihn noch deckt. Land wechselt erst, wenn der Halter fällt
+  (Garnison <= 0 / erobert) — wie in S2. Neuer Test _test_territory_stickiness.
+
+  Noch OFFEN (laut Issue „später"): Militärbau zu nah an/in Feindgebiet
+  verbieten; Straßen durch Feindland verbieten; Häuser/Straßen, die in verlorenes
+  Feindgebiet geraten, niederbrennen statt im eigenen Besitz zu lassen.
+
+
 [2026-06-09] (BEHOBEN) Straßen-Vorschau wich von der gebauten Straße ab
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/23

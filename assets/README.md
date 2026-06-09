@@ -24,7 +24,7 @@ Typ Ordner, Dateiname und empfohlene Größe.
 | `assets/roads/`     | `road.png`, optional `<terrain>.png`, `road_cobble.png` | Straßen-Textur, längs gekachelt | ~192×48 |
 | `assets/construction/` | `site.png` (Bauplatz), `stage1.png` (Holzbau-Stufe) + optional `<def_id>_site.png` / `<def_id>_stage1.png` | Bauplatz & Baustufe 1 | ~64×64 |
 | `assets/buildings/` | `<def_id>.png` | Gebäude-Sprite = **fertiger Bau / Baustufe 2** (Boden = untere Kante) | ~64×64 |
-| `assets/objects/`   | `tree_<typ>.png`, `tree_<typ>_seed.png`, `tree_<typ>_small.png`, `stone.png`, `stone_stage2.png`, `stone_stage3.png`, `ore.png` | Karten-Objekte, Baumtypen & Stein-Stufen | frei; Bäume werden per Zielhöhe skaliert |
+| `assets/objects/`   | `tree_<typ>.png`, `tree_<typ>_seed.png`, `tree_<typ>_small.png`, `field_seed.png`, `field_young.png`, `field_growing.png`, `field_ripe.png`, `stone.png`, `stone_stage2.png`, `stone_stage3.png`, `ore.png` | Karten-Objekte, Baumtypen, Kornfeld- & Stein-Stufen | frei; Bäume werden per Zielhöhe skaliert |
 | `assets/goods/`     | `<nummer>.png` | Waren-Symbol | ~16×16 |
 | `assets/units/`     | `carrier.png`, `worker.png`, `soldier.png`, `builder.png` (+ `_<spieler>` Varianten) | Lauf-Sprite-Sheet (4×6) | Zelle ~32×32 |
 | `assets/ui/`        | `main_menu_background.png`, `flag_<spieler>.png`, `build_spots/*.png` | Hauptmenü, Spielflaggen & Bauhilfe-Symbole | 16:9 / ~64×64 |
@@ -131,6 +131,25 @@ Steine haben **3 Abbau-Stufen**:
 - `stone_stage2.png`: mittlerer Stein, liefert noch 2 Arbeitsgänge
 - `stone.png`: kleiner Stein, liefert den letzten Arbeitsgang und verschwindet
 
+Kornfelder (geplant für den Bauernhof) sollen als eigene austauschbare PNGs in
+**4 sichtbaren Wachstumsphasen** vorbereitet werden:
+- `field_seed.png`: frisch gesätes Feld / dunkler Acker mit ersten Keimen
+- `field_young.png`: junges grünes Korn, niedrige Halme
+- `field_growing.png`: dichter, hoher grüner Bestand
+- `field_ripe.png`: goldenes reifes Korn, erntebereit
+- optional `field_cut.png`: abgeerntete Stoppeln, falls die Mechanik später eine
+  kurze Nach-Ernte-Phase statt sofortigem Entfernen nutzt
+
+Recherche-Stand für die Mechanik: Öffentliche S2/10th-Quellen nennen **1 Minute
+55 Sekunden** vom Säen bis zur vollen Reife. Bei 30 Hz sind das **3450 Ticks**.
+Mit 4 sichtbaren Phasen entspricht das als Startwert etwa **3 Übergängen à
+1150 Ticks** (`field_seed -> field_young -> field_growing -> field_ripe`).
+Die Werte sollen später in `assets/tuning.json` liegen, nicht hartcodiert sein.
+
+Feld-PNGs sollten flach am Boden liegen, kachel-/clusterfähig wirken und den
+Knoten nicht wie ein hohes Gebäude verdecken. Ideale Quellgröße: ca. 48×32 bis
+64×48 px mit Transparenz, leicht dimetrisch, Unterkante am Bodenkontakt.
+
 ### Bauplatz & 2-stufiger Baufortschritt (`assets/construction/`)
 Der Bau läuft in **zwei sichtbaren Stufen**:
 1. **Bauplatz** — solange noch nichts hochgezogen ist, zeigt das Spiel `site.png`
@@ -164,6 +183,8 @@ Wichtige Felder:
 - `work_wait_ticks_by_building`: Pause am Gebäude zwischen zwei Arbeitsgängen.
 - `tree_growth_stage_ticks`: `[Setzling→kleiner Baum, kleiner Baum→großer Baum]`.
   Erst der große Baum darf vom Holzfäller gefällt werden.
+- geplant: `field_growth_stage_ticks` für Kornfelder, z. B.
+  `[1150, 1150, 1150]` bei 30 Hz = 1:55 min vom Säen bis zur Ernte.
 - `road_upgrade_deliveries`: Anzahl Warenlieferungen über eine Straße bis zum
   sichtbaren Kopfsteinpflaster.
 
@@ -390,6 +411,15 @@ Pro Untergrund eigene Variante möglich (`mountain.png` = steiniger Pfad,
 **Karten-Objekte:**
 - `single pine tree`, `tiny pine sapling`, `small young pine tree`,
   `cluster of grey boulders`, `rocky ore vein with metallic specks`
+- Kornfeld-Phasen:
+  - `freshly sown small medieval wheat field patch, dark tilled soil with tiny green sprouts`
+  - `young green wheat field patch, short fresh wheat shoots`
+  - `dense growing wheat field patch, tall green stalks, not ripe yet`
+  - `ripe golden wheat field patch, harvest-ready grain heads`
+  - optional `cut wheat stubble field patch after harvest`
+
+Alle Feldphasen: `same camera angle, same footprint, transparent background,
+top-down dimetric 2.5D, no text, no border, no building, no farmer`.
 
 **Menschen / Animationen (Sprite-Sheets) — wird automatisch genutzt:**
 Ablage: `assets/units/<kind>.png` mit `kind` = `carrier`, `worker`, `soldier`,

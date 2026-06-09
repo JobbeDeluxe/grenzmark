@@ -54,6 +54,7 @@ var roads: Array[Road] = []
 var occupied: Dictionary = {}   # idx -> OBJ_*
 var territory: Dictionary = {}        # idx -> true (Spieler-Gebiet, Besitzer 0)
 var enemy_territory: Dictionary = {}  # idx -> true (Gegner-Gebiet, Besitzer 1)
+var territory_owner: Dictionary = {}  # idx -> Besitzer-ID; Snapshot für Stickiness
 var explored: Dictionary = {}         # idx -> true (vom Spieler aufgedeckt)
 # Straßenteilungen seit dem letzten resync: { old, r1, r2, k } — damit die Economy
 # den vorhandenen Träger auf seinem Teilstück WEITERführen kann (statt ihn zu
@@ -167,12 +168,19 @@ static func hex_distance(a: Vector2i, b: Vector2i) -> int:
 	return int((absi(aq - bq) + absi(ay - by) + absi(az - bz)) / 2)
 
 
-## Neu berechnen: jeder Knoten gehört dem Besitzer des NÄCHSTEN einflussreichen
-## Gebäudes (HQ oder besetztes Militärgebäude). Getrennt für Spieler/Gegner.
+## Neu berechnen: Gebiet wird durch HQ + besetzte Militärgebäude beansprucht.
+## Etabliertes Gebiet ist „klebrig" (S2): Bei Überschneidung zweier Besitzer
+## behält der BISHERIGE Halter den Knoten, solange eines seiner Militärgebäude
+## ihn noch deckt — ein bloß näher gebauter Gegnerturm „klaut" kein Gebiet mehr.
+## Land wechselt erst, wenn der Halter fällt (Garnison <= 0 / erobert) und ihn
+## damit nicht mehr deckt. Getrennt für Spieler (0) / Gegner (>0).
 func recompute_territory() -> void:
+	var prev_owner := territory_owner   # Snapshot vom letzten Stand (Stickiness)
 	territory.clear()
 	enemy_territory.clear()
-	var claim := {}  # idx -> { dist, owner }
+	territory_owner = {}
+	# Pass 1: pro Knoten je Besitzer die kleinste Distanz eines deckenden Gebäudes.
+	var claim := {}  # idx -> { owner -> min_dist }
 	for i in buildings:
 		var b: Building = buildings[i]
 		if b.influence <= 0 or b.under_construction:
@@ -191,11 +199,35 @@ func recompute_territory() -> void:
 				if d > r:
 					continue
 				var k := map.idx(x, y)
-				var cur = claim.get(k)
-				if cur == null or d < cur.dist:
-					claim[k] = { dist = d, owner = b.owner }
+				var owners = claim.get(k)
+				if owners == null:
+					owners = {}
+					claim[k] = owners
+				var cd = owners.get(b.owner)
+				if cd == null or d < cd:
+					owners[b.owner] = d
+	# Pass 2: Besitzer je Knoten bestimmen — Stickiness vor Distanz.
 	for k in claim:
-		if claim[k].owner == 0:
+		var owners: Dictionary = claim[k]
+		var winner: int
+		if owners.size() == 1:
+			winner = owners.keys()[0]
+		else:
+			# Umkämpft: bisheriger Halter gewinnt, sofern er den Knoten noch deckt.
+			var prev = prev_owner.get(k)
+			if prev != null and owners.has(prev):
+				winner = prev
+			else:
+				# Sonst der Nächste (Tiebreak: kleinere Besitzer-ID).
+				winner = -1
+				var best_d := 1 << 30
+				for o in owners:
+					var od: int = owners[o]
+					if od < best_d or (od == best_d and o < winner):
+						best_d = od
+						winner = o
+		territory_owner[k] = winner
+		if winner == 0:
 			territory[k] = true
 		else:
 			enemy_territory[k] = true
