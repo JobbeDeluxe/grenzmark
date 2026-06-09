@@ -7,6 +7,9 @@ const SAVE_PATH := "user://settlers_save.dat"
 const MENU_BACKGROUND_PATH := "res://assets/ui/main_menu_background.png"
 const UISkin := preload("res://game/ui_skin.gd")
 
+static var _open_settings_after_reload := false
+
+var _main_page: VBoxContainer
 var _settings_panel: PanelContainer
 
 
@@ -22,29 +25,39 @@ func _ready() -> void:
 
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.custom_minimum_size = Vector2(260, 260) * UISkin.ui_scale()
+	box.custom_minimum_size = Vector2(320, 330) * UISkin.ui_scale()
 	box.add_theme_constant_override("separation", roundi(14.0 * UISkin.ui_scale()))
 	center.add_child(box)
+
+	_main_page = VBoxContainer.new()
+	_main_page.alignment = BoxContainer.ALIGNMENT_CENTER
+	_main_page.add_theme_constant_override("separation", roundi(14.0 * UISkin.ui_scale()))
+	box.add_child(_main_page)
 
 	var title := Label.new()
 	title.text = "GRENZMARK"
 	UISkin.apply_label(title, false, 32)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(title)
+	_main_page.add_child(title)
 
 	var sub := Label.new()
 	sub.text = "klassischer Aufbau auf Knoten, Flaggen und Wegen"
 	UISkin.apply_label(sub, true, 13)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(sub)
+	_main_page.add_child(sub)
 
-	_button(box, "Neues Spiel", _on_new)
-	var load_btn := _button(box, "Spiel laden", _on_load)
+	_button(_main_page, "Neues Spiel", _on_new)
+	var load_btn := _button(_main_page, "Spiel laden", _on_load)
 	load_btn.disabled = not FileAccess.file_exists(SAVE_PATH)
-	_button(box, "Einstellungen", _toggle_settings)
+	_button(_main_page, "Einstellungen", _show_settings_page)
 	_build_settings_panel(box)
-	_button(box, "Design-Editor", _on_editor)
-	_button(box, "Beenden", _on_quit)
+	_button(_main_page, "Design-Editor", _on_editor)
+	_button(_main_page, "Beenden", _on_quit)
+	if _open_settings_after_reload:
+		_open_settings_after_reload = false
+		_show_settings_page()
+	else:
+		_show_main_page()
 
 
 func _add_background() -> void:
@@ -93,6 +106,7 @@ func _button(box: Container, text: String, cb: Callable) -> Button:
 func _build_settings_panel(box: Container) -> void:
 	_settings_panel = PanelContainer.new()
 	_settings_panel.visible = false
+	_settings_panel.custom_minimum_size = Vector2(300, 320) * UISkin.ui_scale()
 	_settings_panel.add_theme_stylebox_override("panel", UISkin.panel_style("panel"))
 	box.add_child(_settings_panel)
 
@@ -102,7 +116,8 @@ func _build_settings_panel(box: Container) -> void:
 
 	var title := Label.new()
 	title.text = "Einstellungen"
-	UISkin.apply_label(title, false, 15)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UISkin.apply_label(title, false, 20)
 	inner.add_child(title)
 
 	var info := Label.new()
@@ -132,10 +147,22 @@ func _build_settings_panel(box: Container) -> void:
 	var editor_btn := _button(inner, "Design-Editor", _on_editor)
 	editor_btn.custom_minimum_size = Vector2(160, 34) * UISkin.ui_scale()
 
+	var back := _button(inner, "Zurück", _show_main_page)
+	back.custom_minimum_size = Vector2(160, 34) * UISkin.ui_scale()
 
-func _toggle_settings() -> void:
+
+func _show_settings_page() -> void:
+	if _main_page != null:
+		_main_page.visible = false
 	if _settings_panel != null:
-		_settings_panel.visible = not _settings_panel.visible
+		_settings_panel.visible = true
+
+
+func _show_main_page() -> void:
+	if _settings_panel != null:
+		_settings_panel.visible = false
+	if _main_page != null:
+		_main_page.visible = true
 
 
 func _checkbox(box: Container, text: String, key: String, fallback: bool) -> CheckBox:
@@ -151,6 +178,7 @@ func _checkbox(box: Container, text: String, key: String, fallback: bool) -> Che
 
 func _on_ui_scale(name: String) -> void:
 	UISkin.set_ui_scale_name(name)
+	_open_settings_after_reload = true
 	get_tree().reload_current_scene()
 
 

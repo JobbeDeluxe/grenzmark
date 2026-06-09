@@ -74,9 +74,9 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
   Symptom: Die Leisten/Fenster wirkten zu groß, aber die UI-Skalierung war keine
   spielinterne Einstellung.
 
-  Fix: UI-Skalierung klein/mittel/groß über Systemfenster im Spiel und über
-  "Einstellungen" im Hauptmenü. Die Auswahl wird in `user://ui_settings.dat`
-  gespeichert und beim Start wieder geladen.
+  Fix: UI-Skalierung klein/mittel/groß über Systemfenster im Spiel und über eine
+  eigene "Einstellungen"-Seite im Hauptmenü. Die Auswahl wird in
+  `user://ui_settings.dat` gespeichert und beim Start wieder geladen.
 
 
 [2026-06-09] (OFFEN, WIEDER AUFGETRETEN 2026-06-09) Sprites/Flaggen/Einheiten falsch tiefen-sortiert

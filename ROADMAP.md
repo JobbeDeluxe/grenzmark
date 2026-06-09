@@ -498,8 +498,8 @@ ROADMAP.md • README.md • assets/README.md • ai/README.md
 - **K**: Gegner-KI an/aus  •  **J**: Gegner-KI wechseln
 - **F2/F3** Speichern/Laden  •  **F5** Neues Spiel
 - **Minikarte unten rechts**: Klick zentriert die Kamera
-- **Hauptmenü → Einstellungen**: UI-Größe klein/mittel/groß und Startoptionen
-  für Bauhilfe, Nebel und KI wählen
+- **Hauptmenü → Einstellungen**: eigene Einstellungsseite mit UI-Größe
+  klein/mittel/groß und Startoptionen für Bauhilfe, Nebel und KI
 - **Hauptmenü → Design-Editor**: Gebäudegrößen/Position/Eingang live einstellen
 
 ## Architektur-Notizen (für Wiedereinstieg)
