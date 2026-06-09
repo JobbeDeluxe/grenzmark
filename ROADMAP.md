@@ -60,7 +60,7 @@ Das Skelett, auf dem alles aufbaut.
 - [ ] Bessere Karten-Generierung (Inseln, Flüsse, Berg-Adern mit Erzen).
       Wichtig: S2-artige Hex-Pinsel/Brush-Stamps statt langer Dreiecks-Zacken,
       Höhen-/Terrain-Glättung, Granit/Steine als Pakete, unterirdische Erze.
-      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/20)
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/19)
 - [x] Test-Teich im Startgebiet (kleiner See nahe HQ), damit Fischerhütte ohne
       Kartenglück getestet werden kann.
 - [x] Nebel des Krieges + Sicht umschaltbar (Taste F); Karte wird um eigene
@@ -386,7 +386,7 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [~] 4 Erzsorten (Kohle/Eisen/Gold/Granit) als Adern + Granitmine; jede Mine
       baut nur ihr passendes Mineral ab. Offen: Erz im Normalspiel unterirdisch
       statt sichtbar führen; Sichtbarkeit später über Geologen/Debug.
-      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/20)
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/19)
 - [ ] Lagerhaus / Vorratshaus (zweites Lager) — braucht Mehr-Lager-System
 - [ ] Eselzüchter (→ Esel) — braucht Esel-auf-Straßen-System
 - [ ] Waffenschmiede mit Schwert UND Schild (statt nur Schwert)

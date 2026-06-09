@@ -6,7 +6,7 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
 
 [2026-06-09] (OFFEN) Karten-Generator erzeugt lange zackige Terrain-Kanten
 ------------------------------------------------------------------------
-  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/20
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/19
 
   Symptom: An Wasser-/Sand-/Berggrenzen entstehen teils mehrere schmale
   Dreiecks-Zacken hintereinander. Im Screenshot vom 2026-06-09 sind solche
