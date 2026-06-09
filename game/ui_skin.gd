@@ -26,7 +26,12 @@ static func color(key: String, fallback: Color) -> Color:
 	return fallback
 
 
-static func panel_style(key := "panel") -> StyleBoxFlat:
+## Fenster-/Panel-Hintergrund. Liegt unter assets/ui/skin/ eine passende 9-Patch-PNG
+## (per ui.json "skin" aktiviert), wird sie genutzt — sonst die flache Fallback-Box.
+static func panel_style(key := "panel") -> StyleBox:
+	var tex := _texture_box(key)
+	if tex != null:
+		return tex
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = color(key, Color(0.10, 0.08, 0.06, 0.88))
 	sb.border_color = color("accent", Color(0.82, 0.62, 0.24, 1.0)).darkened(0.28)
@@ -42,7 +47,11 @@ static func panel_style(key := "panel") -> StyleBoxFlat:
 	return sb
 
 
-static func button_style(key := "button") -> StyleBoxFlat:
+## Button-Hintergrund je Zustand; 9-Patch-PNG wenn vorhanden, sonst flache Box.
+static func button_style(key := "button") -> StyleBox:
+	var tex := _texture_box(key)
+	if tex != null:
+		return tex
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = color(key, Color(0.25, 0.17, 0.10, 1.0))
 	sb.border_color = color("accent", Color(0.82, 0.62, 0.24, 1.0)).darkened(0.35)
@@ -53,6 +62,48 @@ static func button_style(key := "button") -> StyleBoxFlat:
 	sb.corner_radius_bottom_right = 3
 	sb.content_margin_left = 6
 	sb.content_margin_right = 6
+	return sb
+
+
+# --- Austauschbarer 9-Patch-Skin (assets/ui/skin/*.png, per ui.json steuerbar) -----
+
+static func _skin() -> Dictionary:
+	return cfg().get("skin", {})
+
+
+## Lädt die Skin-Textur für einen Schlüssel (panel, button, button_hover, …), wenn der
+## Skin aktiviert ist und die Datei existiert. Sonst null → Fallback greift.
+static func _skin_texture(key: String) -> Texture2D:
+	var sk := _skin()
+	if not bool(sk.get("enabled", false)):
+		return null
+	var fname := String(sk.get(key, ""))
+	if fname == "":
+		return null
+	var dir := String(sk.get("dir", "res://assets/ui/skin/"))
+	var path := dir.path_join(fname)
+	if ResourceLoader.exists(path):
+		return load(path)
+	return null
+
+
+## Baut aus der Skin-Textur eine 9-Patch-StyleBoxTexture (Ränder/Content aus ui.json).
+static func _texture_box(key: String) -> StyleBoxTexture:
+	var tex := _skin_texture(key)
+	if tex == null:
+		return null
+	var sk := _skin()
+	var sb := StyleBoxTexture.new()
+	sb.texture = tex
+	sb.texture_margin_left = float(sk.get("patch_margin_left", 8))
+	sb.texture_margin_top = float(sk.get("patch_margin_top", 8))
+	sb.texture_margin_right = float(sk.get("patch_margin_right", 8))
+	sb.texture_margin_bottom = float(sk.get("patch_margin_bottom", 8))
+	var cm := float(sk.get("content_margin", 6))
+	sb.content_margin_left = cm
+	sb.content_margin_right = cm
+	sb.content_margin_top = cm
+	sb.content_margin_bottom = cm
 	return sb
 
 

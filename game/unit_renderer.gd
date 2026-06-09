@@ -139,6 +139,17 @@ func _collect_occluders() -> void:
 			continue
 		var sz2: Vector2 = spr.size
 		_occluders.append({ base = map.node_world(x, y), tex = spr.tex, w = sz2.x, h = sz2.y })
+	# Flaggen sind ebenfalls Okkluder: ein Arbeiter/Träger HINTER einer (Gebäude-)Flagge
+	# muss von ihr verdeckt werden — sonst „läuft" er über die Flagge.
+	var flag_sz := GameTheme.flag_draw_size()
+	for i in state.flags:
+		var f: WorldState.Flag = state.flags[i]
+		var fowner := 1 if state.enemy_territory.has(map.idx(f.pos.x, f.pos.y)) else 0
+		var ftex := GameTheme.flag_texture(fowner)
+		if ftex == null:
+			continue
+		_occluders.append({ base = map.node_world(f.pos.x, f.pos.y), tex = ftex,
+			w = flag_sz.x, h = flag_sz.y })
 	# Hinten -> vorne sortieren, damit beim Neuzeichnen ueberlappende Okkluder
 	# (z. B. zwei dicht stehende Baeume) ihre korrekte Tiefenreihenfolge behalten.
 	_occluders.sort_custom(func(a, b): return a.base.y < b.base.y)

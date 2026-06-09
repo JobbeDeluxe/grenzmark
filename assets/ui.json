@@ -26,5 +26,22 @@
     "font_muted": "#c6a982ff",
     "accent": "#e6bd55ff",
     "bad": "#d45b45ff"
+  },
+  "_skin_hint": "Eigene Optik: PNGs nach assets/ui/skin/ legen, 'enabled' auf true. Jede Datei ist eine 9-Patch-Grafik (Ecken bleiben, Mitte wird gedehnt) — patch_margin_* gibt die Eckbreite in Pixeln an. Fehlt eine Datei, wird automatisch der flache Farb-Fallback genutzt.",
+  "skin": {
+    "enabled": true,
+    "dir": "res://assets/ui/skin/",
+    "panel": "panel.png",
+    "panel_dark": "panel_dark.png",
+    "panel_header": "panel_header.png",
+    "button": "button.png",
+    "button_hover": "button_hover.png",
+    "button_pressed": "button_pressed.png",
+    "button_disabled": "button_disabled.png",
+    "patch_margin_left": 8,
+    "patch_margin_top": 8,
+    "patch_margin_right": 8,
+    "patch_margin_bottom": 8,
+    "content_margin": 6
   }
 }

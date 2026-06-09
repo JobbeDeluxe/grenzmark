@@ -39,12 +39,21 @@ var _selection_panel: PanelContainer
 var _sel_label: Label
 var _sel_title_label: Label
 var _sel_icon: TextureRect
+var _sel_btn_stop: Button
+var _sel_btn_goto: Button
+var _sel_btn_demolish: Button
+var _sel_btn_attack: Button
 var _status_label: Label
 var _build_panel: PanelContainer
 var _build_group_row: HBoxContainer
 var _build_row: GridContainer
 var _build_caption: Label
 var _economy_panel: PanelContainer
+var _mainsel_panel: PanelContainer
+var _buildings_panel: PanelContainer
+var _buildings_label: Label
+var _stats_panel: PanelContainer
+var _stats_label: Label
 var _settings_panel: PanelContainer
 var _settings_body: Label
 var _minimap_panel: PanelContainer
@@ -332,36 +341,43 @@ func _build_ui() -> void:
 	top_row.add_child(stock_grid)
 	_build_stock_cells(stock_grid)
 
-	# Rechts: Auswahlfenster nur anzeigen, wenn wirklich etwas ausgewaehlt ist.
-	var side := _floating_panel(Vector2(1, 0), Vector2(-right_w - edge, edge + top_h + 8),
+	# Rechts: Auswahlfenster (Gebäudefenster) — Chrome mit Titel/Schließen/Drag.
+	_selection_panel = _floating_panel(Vector2(1, 0), Vector2(-right_w - edge, edge + top_h + 8),
 		Vector2(-edge, edge + top_h + 236))
-	_selection_panel = side
 	_selection_panel.visible = false
-	var side_box := VBoxContainer.new()
-	side_box.add_theme_constant_override("separation", 8)
-	side.add_child(side_box)
+	var side_box := _add_window_chrome(_selection_panel, "Gebaeude", _clear_selection)
 	var sel_head := HBoxContainer.new()
 	sel_head.add_theme_constant_override("separation", 8)
+	sel_head.mouse_filter = Control.MOUSE_FILTER_PASS
 	side_box.add_child(sel_head)
 	_sel_icon = TextureRect.new()
 	_sel_icon.custom_minimum_size = Vector2(52, 52)
+	# Ohne EXPAND_IGNORE_SIZE erzwingt das große Gebäude-PNG seine eigene Mindestgröße
+	# und sprengt das Auswahlfenster (läuft über Rand/hinter die Minikarte).
+	_sel_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_sel_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_sel_icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_sel_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	sel_head.add_child(_sel_icon)
 	_sel_title_label = Label.new()
 	_sel_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_sel_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_sel_title_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	UISkin.apply_label(_sel_title_label, false, 15)
 	sel_head.add_child(_sel_title_label)
 	_sel_label = Label.new()
 	_sel_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_sel_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_sel_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	UISkin.apply_label(_sel_label, true, 12)
 	side_box.add_child(_sel_label)
 	var sel_actions := HBoxContainer.new()
 	sel_actions.add_theme_constant_override("separation", 4)
 	side_box.add_child(sel_actions)
-	_tbutton(sel_actions, "Stop", _toggle_selected_production)
-	_tbutton(sel_actions, "Abriss", _delete_selected)
+	_sel_btn_stop = _tbutton(sel_actions, "Stop", _toggle_selected_production)
+	_sel_btn_goto = _tbutton(sel_actions, "Zum Geb.", _selection_goto)
+	_sel_btn_demolish = _tbutton(sel_actions, "Abriss", _delete_selected)
+	_sel_btn_attack = _tbutton(sel_actions, "Angreifen", _attack_selected)
 
 	_minimap_panel = _floating_panel(Vector2(1, 1), Vector2(-mini_size - edge, -mini_size - edge),
 		Vector2(-edge, -edge))
@@ -387,7 +403,7 @@ func _build_ui() -> void:
 	main_buttons.add_theme_constant_override("separation", 4)
 	bar.add_child(main_buttons)
 	_tbutton(main_buttons, "Bauen", _toggle_build_panel)
-	_tbutton(main_buttons, "Wirtschaft", _toggle_economy_panel)
+	_tbutton(main_buttons, "Verwaltung", _toggle_mainsel)
 	_tbutton(main_buttons, "System", _toggle_settings)
 
 	_build_panel = _floating_panel(Vector2(0, 1), Vector2(edge, -bottom_h - build_h - edge * 2.0),
@@ -411,11 +427,47 @@ func _build_ui() -> void:
 	_economy_panel = _floating_panel(Vector2(0, 1), Vector2(edge + 304, -bottom_h - 250 - edge * 2.0),
 		Vector2(edge + 604, -bottom_h - edge * 2.0))
 	_economy_panel.visible = false
-	var economy_box := _add_window_chrome(_economy_panel, "Wirtschaft", _toggle_economy_panel)
+	var economy_box := _add_window_chrome(_economy_panel, "Inventur", _toggle_economy_panel)
 	_stock_label = Label.new()
 	_stock_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	UISkin.apply_label(_stock_label, true, 11)
+	_stock_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	economy_box.add_child(_stock_label)
+
+	# Hauptauswahl (S2-artig): öffnet die Verwaltungsfenster.
+	_mainsel_panel = _floating_panel(Vector2(0, 1), Vector2(edge, -bottom_h - 250 - edge * 2.0),
+		Vector2(edge + 200, -bottom_h - edge * 2.0))
+	_mainsel_panel.visible = false
+	var mainsel_box := _add_window_chrome(_mainsel_panel, "Verwaltung", _toggle_mainsel)
+	_tbutton(mainsel_box, "Inventur", _open_inventory)
+	_tbutton(mainsel_box, "Gebaeude", _open_buildings)
+	_tbutton(mainsel_box, "Statistik", _open_stats)
+	for stub in ["Verteilung", "Transport", "Werkzeuge", "Produktivitaet", "Militaer"]:
+		var sb := _tbutton(mainsel_box, stub, _noop)
+		sb.disabled = true
+		sb.tooltip_text = "Noch nicht implementiert"
+
+	# Gebäude-Übersicht (Anzahl je Typ).
+	_buildings_panel = _floating_panel(Vector2(0, 1), Vector2(edge + 224, -bottom_h - 300 - edge * 2.0),
+		Vector2(edge + 524, -bottom_h - edge * 2.0))
+	_buildings_panel.visible = false
+	var buildings_box := _add_window_chrome(_buildings_panel, "Gebaeude", _open_buildings)
+	_buildings_label = Label.new()
+	_buildings_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UISkin.apply_label(_buildings_label, true, 11)
+	_buildings_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	buildings_box.add_child(_buildings_label)
+
+	# Statistik (Kennzahlen).
+	_stats_panel = _floating_panel(Vector2(0, 1), Vector2(edge + 224, -bottom_h - 220 - edge * 2.0),
+		Vector2(edge + 484, -bottom_h - edge * 2.0))
+	_stats_panel.visible = false
+	var stats_box := _add_window_chrome(_stats_panel, "Statistik", _open_stats)
+	_stats_label = Label.new()
+	_stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UISkin.apply_label(_stats_label, true, 11)
+	_stats_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	stats_box.add_child(_stats_label)
 
 	_settings_panel = _floating_panel(Vector2(0.5, 0.5), Vector2(-260, -180), Vector2(260, 180))
 	_settings_panel.visible = false
@@ -423,6 +475,7 @@ func _build_ui() -> void:
 	_settings_body = Label.new()
 	_settings_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	UISkin.apply_label(_settings_body, true, 12)
+	_settings_body.mouse_filter = Control.MOUSE_FILTER_PASS
 	settings_box.add_child(_settings_body)
 	var settings_actions := HBoxContainer.new()
 	settings_actions.add_theme_constant_override("separation", 4)
@@ -477,35 +530,115 @@ func _floating_panel(anchor: Vector2, from: Vector2, to: Vector2) -> PanelContai
 	return panel
 
 
-## Gibt einem Fenster eine S2-artige Kopfzeile (Titel + Schließen) und liefert den
-## Inhalts-Container zurück, in den der Aufrufer seine Widgets hängt.
+## Gibt einem Fenster eine S2-artige Kopfzeile: Titel (Drag), Park- und Schließen-
+## Button, Rechtsklick-zum-Schließen. Liefert den Inhalts-Container zurück.
 func _add_window_chrome(panel: PanelContainer, title: String, on_close: Callable) -> VBoxContainer:
 	var outer := VBoxContainer.new()
 	outer.add_theme_constant_override("separation", 6)
+	outer.mouse_filter = Control.MOUSE_FILTER_PASS
 	panel.add_child(outer)
+
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 6)
+	# Kopfzeile ist Ziehfläche: Maus-Events hier bewegen das Fenster.
+	head.mouse_filter = Control.MOUSE_FILTER_STOP
+	var drag := {active = false, start_mouse = Vector2.ZERO, start = Vector2.ZERO}
+	head.gui_input.connect(func(ev): _window_header_input(panel, drag, ev))
 	outer.add_child(head)
+
 	var title_label := Label.new()
 	UISkin.apply_label(title_label, false, 14)
 	title_label.text = title
 	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	head.add_child(title_label)
-	var close := Button.new()
-	close.text = "X"
-	close.custom_minimum_size = Vector2(24, 22)
-	close.add_theme_font_size_override("font_size", 12)
-	close.add_theme_color_override("font_color", UISkin.color("font", Color.WHITE))
-	close.add_theme_stylebox_override("normal", UISkin.button_style("button"))
-	close.add_theme_stylebox_override("hover", UISkin.button_style("button_hover"))
-	close.add_theme_stylebox_override("pressed", UISkin.button_style("button_pressed"))
-	close.pressed.connect(on_close)
-	head.add_child(close)
+
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 6)
 	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	# Park/Einklappen (obere rechte Ecke): klappt das Fenster auf die Titelleiste ein
+	# (Rollup) — die Höhe schrumpft wirklich, nicht nur der Inhalt verschwindet.
+	var park := _chrome_button("_", func(): _toggle_park(panel, content, head))
+	park.tooltip_text = "Einklappen / Ausklappen"
+	head.add_child(park)
+	# Schließen (obere Ecke) — zusätzlich schließt Rechtsklick im Fenster.
+	var close := _chrome_button("X", on_close)
+	close.tooltip_text = "Schliessen (oder Rechtsklick im Fenster)"
+	head.add_child(close)
+
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.gui_input.connect(func(ev): _window_panel_input(on_close, ev))
+
 	outer.add_child(content)
+	panel.set_meta("title_label", title_label)
+	panel.set_meta("content", content)
+	panel.set_meta("head", head)
+	# Neu geöffnete Fenster starten IMMER ausgeklappt (Park-Zustand zurücksetzen).
+	panel.visibility_changed.connect(func():
+		if panel.visible:
+			_window_expand(panel))
 	return content
+
+
+## Klappt ein Fenster auf seine Titelleiste ein bzw. wieder aus (echtes Rollup).
+func _toggle_park(panel: PanelContainer, content: Control, head: Control) -> void:
+	if content.visible:
+		# Volle Höhe merken (robust gegen späteres Verschieben), dann auf Titel kürzen.
+		panel.set_meta("full_height", panel.offset_bottom - panel.offset_top)
+		content.visible = false
+		var hh := head.get_combined_minimum_size().y + 14.0
+		panel.offset_bottom = panel.offset_top + hh
+	else:
+		_window_expand(panel)
+
+
+## Setzt ein Fenster in den ausgeklappten Vollzustand zurück.
+func _window_expand(panel: PanelContainer) -> void:
+	if panel.has_meta("content"):
+		(panel.get_meta("content") as Control).visible = true
+	if panel.has_meta("full_height"):
+		panel.offset_bottom = panel.offset_top + float(panel.get_meta("full_height"))
+
+
+func _chrome_button(text: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(24, 22)
+	b.add_theme_font_size_override("font_size", 12)
+	b.add_theme_color_override("font_color", UISkin.color("font", Color.WHITE))
+	b.add_theme_stylebox_override("normal", UISkin.button_style("button"))
+	b.add_theme_stylebox_override("hover", UISkin.button_style("button_hover"))
+	b.add_theme_stylebox_override("pressed", UISkin.button_style("button_pressed"))
+	b.pressed.connect(cb)
+	return b
+
+
+## Drag des Fensters an der Titelleiste (Offsets in Pixeln, unabhängig vom Anker).
+func _window_header_input(panel: PanelContainer, drag: Dictionary, ev: InputEvent) -> void:
+	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+		if ev.pressed:
+			drag.active = true
+			drag.start_mouse = panel.get_global_mouse_position()
+			drag.start = Vector2(panel.offset_left, panel.offset_top)
+		else:
+			drag.active = false
+	elif ev is InputEventMouseMotion and drag.active:
+		var delta: Vector2 = panel.get_global_mouse_position() - (drag.start_mouse as Vector2)
+		var start: Vector2 = drag.start
+		var w := panel.offset_right - panel.offset_left
+		var h := panel.offset_bottom - panel.offset_top
+		panel.offset_left = start.x + delta.x
+		panel.offset_top = start.y + delta.y
+		panel.offset_right = panel.offset_left + w
+		panel.offset_bottom = panel.offset_top + h
+
+
+## Rechtsklick irgendwo im Fenster schließt es (wie im Original).
+func _window_panel_input(on_close: Callable, ev: InputEvent) -> void:
+	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_RIGHT and ev.pressed:
+		on_close.call()
 
 
 func _build_stock_cells(parent: GridContainer) -> void:
@@ -565,6 +698,94 @@ func _toggle_economy_panel() -> void:
 		_update_economy_panel()
 
 
+func _toggle_mainsel() -> void:
+	if _mainsel_panel == null:
+		return
+	var next := not _mainsel_panel.visible
+	_hide_management_panels()
+	_mainsel_panel.visible = next
+
+
+func _open_inventory() -> void:
+	_hide_management_panels()
+	_economy_panel.visible = true
+	_update_economy_panel()
+
+
+func _open_buildings() -> void:
+	var next := _buildings_panel == null or not _buildings_panel.visible
+	_hide_management_panels()
+	if _buildings_panel != null:
+		_buildings_panel.visible = next
+		if next:
+			_update_buildings_panel()
+
+
+func _open_stats() -> void:
+	var next := _stats_panel == null or not _stats_panel.visible
+	_hide_management_panels()
+	if _stats_panel != null:
+		_stats_panel.visible = next
+		if next:
+			_update_stats_panel()
+
+
+func _update_buildings_panel() -> void:
+	if _buildings_label == null:
+		return
+	var built := {}        # def_id -> Anzahl fertig
+	var building := {}     # def_id -> Anzahl im Bau
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		if b.owner != 0:
+			continue
+		if b.under_construction:
+			building[b.def_id] = int(building.get(b.def_id, 0)) + 1
+		else:
+			built[b.def_id] = int(built.get(b.def_id, 0)) + 1
+	var keys := {}
+	for k in built: keys[k] = true
+	for k in building: keys[k] = true
+	var names := keys.keys()
+	names.sort()
+	var lines := PackedStringArray()
+	lines.append("Gebaeude (fertig | im Bau):")
+	if names.is_empty():
+		lines.append("—")
+	for k in names:
+		var nm := String(BuildingCatalog.get_def(k).get("name", k))
+		lines.append("%s: %d | %d" % [nm, int(built.get(k, 0)), int(building.get(k, 0))])
+	_buildings_label.text = "\n".join(lines)
+
+
+func _update_stats_panel() -> void:
+	if _stats_label == null:
+		return
+	var own_b := 0
+	var in_build := 0
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		if b.owner != 0:
+			continue
+		own_b += 1
+		if b.under_construction:
+			in_build += 1
+	var active_carriers := 0
+	for r in economy.carriers:
+		var c: Economy.Carrier = economy.carriers[r]
+		if c.active:
+			active_carriers += 1
+	var lines := PackedStringArray()
+	lines.append("Statistik")
+	lines.append("Gebaeude: %d  (im Bau: %d)" % [own_b, in_build])
+	lines.append("Flaggen: %d" % state.flags.size())
+	lines.append("Wege: %d" % state.roads.size())
+	lines.append("Traeger (aktiv): %d" % active_carriers)
+	lines.append("Soldaten-Reserve: %d" % economy.soldiers)
+	lines.append("Land (Knoten): %d" % state.territory.size())
+	_stats_label.text = "\n".join(lines)
+
+
 func _toggle_settings() -> void:
 	if _settings_panel == null:
 		return
@@ -576,7 +797,8 @@ func _toggle_settings() -> void:
 
 
 func _hide_management_panels(except: Control = null) -> void:
-	for p in [_build_panel, _economy_panel, _settings_panel]:
+	for p in [_build_panel, _economy_panel, _settings_panel, _mainsel_panel,
+			_buildings_panel, _stats_panel]:
 		if p != null and p != except:
 			p.visible = false
 
@@ -623,7 +845,8 @@ func _escape_or_select() -> void:
 	if _flag_menu != null and _flag_menu.visible:
 		_close_flag_menu()
 		return
-	for p in [_build_panel, _economy_panel, _settings_panel]:
+	for p in [_build_panel, _economy_panel, _settings_panel, _mainsel_panel,
+			_buildings_panel, _stats_panel]:
 		if p != null and p.visible:
 			p.visible = false
 			return
@@ -715,6 +938,42 @@ func _delete_selected() -> void:
 		renderer.queue_redraw()
 		_flash("Gebaeude abgerissen.")
 		_update_selection_panel()
+
+
+func _clear_selection() -> void:
+	selected = null
+	_update_selection_panel()
+
+
+func _selection_goto() -> void:
+	if selected == null:
+		return
+	camera.position = map.node_world(selected.pos.x, selected.pos.y)
+	_flash("Zum Gebaeude gesprungen.")
+
+
+## Greift das ausgewählte Gegner-Militärgebäude an — wählt automatisch das eigene
+## Militärgebäude mit den meisten Soldaten in Reichweite (siehe Issue #16).
+func _attack_selected() -> void:
+	if selected == null or selected.owner != 1 or selected.influence <= 0:
+		return
+	var best: WorldState.Building = null
+	var best_g := 0
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		if b.owner != 0 or b.influence <= 0 or b.garrison <= 0:
+			continue
+		if WorldState.hex_distance(b.pos, selected.pos) > b.influence + selected.influence + 2:
+			continue
+		if b.garrison > best_g:
+			best_g = b.garrison
+			best = b
+	if best == null:
+		_flash("Kein eigenes Militaergebaeude mit Soldaten in Reichweite.")
+		return
+	var n := economy.send_attackers(best, selected)
+	_flash("Angriff mit %d Soldaten!" % n)
+	_update_selection_panel()
 
 
 func _show_category(cat: String) -> void:
@@ -946,10 +1205,14 @@ func _update_selection_panel() -> void:
 	if _selection_panel != null:
 		_selection_panel.visible = true
 	var d := BuildingCatalog.get_def(selected.def_id)
+	var bname := String(d.get("name", selected.def_id))
+	if selected.owner == 1:
+		bname += " (Gegner)"
+	# Titelleiste des Fensters zeigt den Gebäudenamen (wie im Original).
+	if _selection_panel != null and _selection_panel.has_meta("title_label"):
+		(_selection_panel.get_meta("title_label") as Label).text = bname
 	if _sel_title_label != null:
-		_sel_title_label.text = String(d.get("name", selected.def_id))
-		if selected.owner == 1:
-			_sel_title_label.text += " (Gegner)"
+		_sel_title_label.text = bname
 	if _sel_icon != null:
 		_sel_icon.texture = GameTheme.building_texture(selected.def_id, selected.owner)
 	var lines := economy.building_status(selected)
@@ -957,6 +1220,12 @@ func _update_selection_panel() -> void:
 		lines += "\nGarnison: %d/%d  Rangbonus: %d" % [
 			selected.garrison, selected.capacity, selected.promotions]
 	_sel_label.text = lines
+	# Aktionen kontextabhängig: eigene Gebäude verwalten, Gegner-Militär angreifen.
+	var own := selected.owner == 0
+	_sel_btn_stop.visible = own and not selected.is_hq
+	_sel_btn_demolish.visible = own and not selected.is_hq
+	_sel_btn_goto.visible = true
+	_sel_btn_attack.visible = (not own) and selected.influence > 0
 
 
 # --------------------------------------------------------------------------
@@ -1043,13 +1312,12 @@ func _handle_click() -> void:
 	match mode:
 		MODE_SELECT:
 			var clicked := state.building_at(hover)
-			if clicked != null and clicked.owner == 1 and selected != null \
-					and selected.owner == 0 and selected.influence > 0 and selected.garrison > 0:
-				_try_attack(selected, clicked)
-			elif clicked == null and state.flag_at(hover) != null \
+			if clicked == null and state.flag_at(hover) != null \
 					and not state.enemy_territory.has(map.idx(hover.x, hover.y)):
 				_open_flag_menu(hover)   # eigene Flagge angeklickt → Kontextmenü
 			else:
+				# Gebäude (eigen ODER Gegner) auswählen; Angriff läuft über das
+				# kontextabhängige Auswahlfenster (Issue #16).
 				selected = clicked
 				_close_flag_menu()
 		MODE_FLAG:
@@ -1094,15 +1362,6 @@ func _handle_build_spot_click() -> bool:
 	_show_category(ui_category)
 	_flash("Bauplatz gewaehlt: %s. Im Baufenster Gebaeude waehlen." % _bq_name(bq))
 	return true
-
-
-func _try_attack(src: WorldState.Building, tgt: WorldState.Building) -> void:
-	var d := WorldState.hex_distance(src.pos, tgt.pos)
-	if d > src.influence + tgt.influence + 2:
-		_flash("Ziel zu weit weg — näheres Militärgebäude nötig.")
-		return
-	var n := economy.send_attackers(src, tgt)
-	_flash("Angriff mit %d Soldaten!" % n)
 
 
 func _place_building_here() -> bool:

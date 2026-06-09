@@ -4,13 +4,19 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
-[2026-06-09] (BEHOBEN 2026-06-09) Sprites überlagern Bäume falsch
+[2026-06-09] (OFFEN, WIEDER AUFGETRETEN 2026-06-09) Sprites/Flaggen/Einheiten falsch tiefen-sortiert
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/11
 
   Symptom: Läuft ein Träger HINTER einem Baum durch, „springt" der Baum plötzlich
   über alles — auch über andere Bäume, die eigentlich davor stehen. Gleiches Problem
   bei Flaggen und Bauplatz-Markern: sie lagen immer oben auf den Bäumen.
+
+  Neu beobachtet (2026-06-09): Arbeiter wie z. B. der Holzfäller werden über die
+  Gebäudeflagge / Hausflagge gezeichnet. Vermutlich ist die Y-Sortierung zwischen
+  dynamischen Einheiten (`UnitRenderer`) und statischen Flaggen/Gebäuden noch nicht
+  vollständig einheitlich; der bisherige Fix deckt Bäume/Gebäude als Okkluder ab,
+  aber Flaggen bzw. Gebäude-Flaggen offenbar nicht zuverlässig.
 
   Ursache: Einheiten werden auf einer dynamischen Ebene ÜBER der ganzen statischen
   Karte gezeichnet. Damit eine Einheit „hinter" einem Baum verschwindet, zeichnete
@@ -32,7 +38,16 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
      Okkluder hinten->vorne nach base.y sortiert.
    - MapRenderer._occlude_node(): bleibt für die Bauplatz-Overlays (Leertaste), die
      bewusst über allem liegen, aber von davorstehenden Bäumen verdeckt werden.
-     -> Bitte im Spiel prüfen: Gebäude (auch im Bau), Flaggen, Waren, Bauplätze an Bäumen.
+
+  Fix (2026-06-09, 3. Iteration — Flaggen als Okkluder):
+   - UnitRenderer._collect_occluders() nimmt jetzt zusätzlich zu Bäumen/Gebäuden
+     auch ALLE Flaggen (state.flags) als Okkluder auf. Dadurch wird ein Arbeiter/
+     Träger, der HINTER einer (Gebäude-/Haus-)Flagge steht, korrekt von ihr verdeckt
+     statt über sie gezeichnet. Okkluder werden nach resync (economy.dirty) neu
+     gesammelt, neue Flaggen also automatisch erfasst.
+     -> Bitte erneut im Spiel prüfen: Arbeiter/Träger vor, auf und hinter
+        Gebäudeflaggen; außerdem Gebäude (auch im Bau), Flaggen, Waren und
+        Bauplätze an Bäumen.
 
 
 [2026-06-08] (BEHOBEN 2026-06-09) Ressourcen-Icons oben viel zu groß
