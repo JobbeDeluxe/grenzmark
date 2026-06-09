@@ -572,6 +572,21 @@ func _add_window_chrome(panel: PanelContainer, title: String, on_close: Callable
 	panel.gui_input.connect(func(ev): _window_panel_input(on_close, ev))
 
 	outer.add_child(content)
+
+	# Größengriff unten rechts: zieht offset_right/offset_bottom (Fenster skalieren).
+	var grip_row := HBoxContainer.new()
+	grip_row.alignment = BoxContainer.ALIGNMENT_END
+	grip_row.mouse_filter = Control.MOUSE_FILTER_PASS
+	outer.add_child(grip_row)
+	var grip := ColorRect.new()
+	grip.color = UISkin.color("accent", Color(0.9, 0.74, 0.33)).darkened(0.1)
+	grip.custom_minimum_size = Vector2(14, 14)
+	grip.mouse_filter = Control.MOUSE_FILTER_STOP
+	grip.tooltip_text = "Groesse ziehen"
+	var rs := {active = false, start_mouse = Vector2.ZERO, w = 0.0, h = 0.0}
+	grip.gui_input.connect(func(ev): _window_resize_input(panel, rs, ev))
+	grip_row.add_child(grip)
+
 	panel.set_meta("title_label", title_label)
 	panel.set_meta("content", content)
 	panel.set_meta("head", head)
@@ -639,6 +654,27 @@ func _window_header_input(panel: PanelContainer, drag: Dictionary, ev: InputEven
 func _window_panel_input(on_close: Callable, ev: InputEvent) -> void:
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_RIGHT and ev.pressed:
 		on_close.call()
+
+
+## Skaliert das Fenster über den Griff unten rechts (Breite/Höhe per Maus ziehen).
+func _window_resize_input(panel: PanelContainer, rs: Dictionary, ev: InputEvent) -> void:
+	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+		if ev.pressed:
+			rs.active = true
+			rs.start_mouse = panel.get_global_mouse_position()
+			rs.w = panel.offset_right - panel.offset_left
+			rs.h = panel.offset_bottom - panel.offset_top
+		else:
+			rs.active = false
+	elif ev is InputEventMouseMotion and rs.active:
+		var delta: Vector2 = panel.get_global_mouse_position() - (rs.start_mouse as Vector2)
+		var nw: float = maxf(140.0, float(rs.w) + delta.x)
+		var nh: float = maxf(70.0, float(rs.h) + delta.y)
+		panel.offset_right = panel.offset_left + nw
+		panel.offset_bottom = panel.offset_top + nh
+		# Volle Höhe nachführen, damit Ein-/Ausklappen die neue Größe behält.
+		if panel.has_meta("full_height"):
+			panel.set_meta("full_height", nh)
 
 
 func _build_stock_cells(parent: GridContainer) -> void:
