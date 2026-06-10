@@ -168,5 +168,25 @@ func _check_placement_and_cancel() -> bool:
 		return false
 	print("Smoketest: Militaerfenster Muenzen-Toggle ok")
 
+	# Inventur-Fenster oeffnen (Waren-Icons + Berufe werden befuellt).
+	_world.call("_open_inventory")
+	var inv = _world.get("_economy_panel")
+	if inv == null or not inv.visible:
+		print("Smoketest FEHLER: Inventur-Fenster nicht sichtbar")
+		quit(1)
+		return false
+	_world.call("_update_economy_panel")
+
+	# Optionale obere Warenleiste umschalten.
+	var bar = _world.get("_top_bar")
+	var before_vis: bool = bar != null and bar.visible
+	_world.call("_toggle_resource_bar")
+	if bar != null and bar.visible == before_vis:
+		print("Smoketest FEHLER: Warenleisten-Toggle aendert Sichtbarkeit nicht")
+		quit(1)
+		return false
+	_world.call("_toggle_resource_bar")  # zuruecksetzen
+	print("Smoketest: Inventur + Warenleisten-Toggle ok")
+
 	print("Smoketest: Einzelplatzierung + Rechtsklick-Abbruch ok")
 	return true

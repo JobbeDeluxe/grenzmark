@@ -318,7 +318,15 @@ GitHub-Arbeitspakete:
       an/aus, Abreißen, Angriff/Sprung; seit 2026-06-10 zusätzlich Produktivität
       in %, Eingangs-/Ausgangswaren als Soll/Ist-Icons, Warnzustände,
       Garnison/Rang als Icons und Militär-„Münzen an/aus". Offen: Priorität.
-- [ ] **Ressourcen-/Lagerleiste oben**: Waren als **Icons mit Zahl** statt Textliste.
+- [x] **Ressourcen-/Lagerleiste oben (2026-06-10):** Im Original gibt es keine
+      dauerhafte Leiste — sie ist jetzt **standardmäßig aus** und nur über die
+      Einstellungen (Button „Warenleiste" bzw. Hauptmenü-Checkbox
+      `show_resource_bar`) einblendbar. Die alte Debug-HUD oben links
+      (Modus/Knoten-Info) ist **entfernt**; Aktions-Rückmeldungen laufen über eine
+      kurz eingeblendete Toast-Zeile.
+- [x] **Inventur-Fenster S2-näher (2026-06-10):** HQ-Lager als Waren-**Icon+Zahl**-
+      Raster (gedimmt bei 0) plus **Bevölkerung/Berufe**-Liste (aus `hq_people`)
+      und Soldaten-Reserve, statt der bisherigen Textliste.
 - [ ] **Minikarte** in gerahmtem Panel; Umschalter für Overlays (Gebiet, Bauplätze, Nebel).
 - [ ] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion) und
       **Einstellungs-Fenster** (Verteilung, Werkzeug-/Militär-Prioritäten).
@@ -528,7 +536,10 @@ ROADMAP.md • README.md • assets/README.md • ai/README.md
 
 ## Steuerung (Stand aktuell)
 - **Rechte/mittlere Maustaste ziehen**: Karte schwenken  •  **Mausrad**: Zoom
-- **Untere Hauptleiste**: **Bauen**, **Wirtschaft**, **System** als Fensterzugriffe
+- **Obere Warenleiste**: standardmäßig **aus** (im Original nicht vorhanden);
+  über **System → Warenleiste** bzw. die Hauptmenü-Checkbox einblendbar. Die alte
+  Debug-Anzeige oben links ist entfernt; kurze Rückmeldungen erscheinen als Toast.
+- **Untere Hauptleiste**: **Bauen**, **Verwaltung**, **System** als Fensterzugriffe
   (Tasten **1** Flagge, **2** Straße, **9** Abriss, **0/Esc** Auswahl/Fenster zu)
 - **Linksklick**: ausführen / im Auswahl-Modus Gebäude-Fenster öffnen
   (mehrere bleiben parallel offen), Gegnerangriff über das Gebäudefenster.

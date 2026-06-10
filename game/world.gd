@@ -31,10 +31,12 @@ var road_start := Vector2i(-1, -1)
 var _tick_accum := 0.0
 var sim_speed := 1.0
 var paused := false
-var _mode_label: Label
-var _info_label: Label
-var _stock_label: Label
-var _stock_counts: Dictionary = {}
+var _top_bar: PanelContainer        # optionale Warenleiste oben (Default aus)
+var _toast_label: Label             # kurze Aktions-Rückmeldung (blendet aus)
+var _toast_t := 0.0                 # Restzeit der Toast-Anzeige in Sekunden
+var _stock_counts: Dictionary = {}  # good -> Label (Warenleiste oben)
+var _inv_goods: Dictionary = {}     # good -> Label (Inventur-Fenster)
+var _inv_people: Dictionary = {}    # job -> Label (Inventur-Fenster)
 var _selection_panel: PanelContainer
 var _sel_label: Label
 var _sel_title_label: Label
@@ -372,6 +374,10 @@ func _process(delta: float) -> void:
 	if not _stock_counts.is_empty():
 		_update_stock()
 	_update_building_windows()
+	if _toast_t > 0.0:
+		_toast_t -= delta
+		if _toast_t <= 0.0 and _toast_label != null:
+			_toast_label.visible = false
 	_check_game_over()
 
 
@@ -427,37 +433,41 @@ func _build_ui() -> void:
 	_ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_ui_root)
 
-	# Oben: kompakte Statuszeile + kleine Waren-Iconleiste.
-	var top := PanelContainer.new()
-	top.add_theme_stylebox_override("panel", UISkin.panel_style("panel"))
-	top.anchor_left = 0.0
-	top.anchor_top = 0.0
-	top.anchor_right = 1.0
-	top.anchor_bottom = 0.0
-	top.offset_left = edge
-	top.offset_top = edge
-	top.offset_right = -edge
-	top.offset_bottom = edge + top_h
-	_ui_root.add_child(top)
-	var top_row := HBoxContainer.new()
-	top_row.add_theme_constant_override("separation", 8)
-	top.add_child(top_row)
-	var top_text := VBoxContainer.new()
-	top_text.custom_minimum_size = Vector2(320, top_h - 8)
-	top_row.add_child(top_text)
-	_mode_label = Label.new()
-	UISkin.apply_label(_mode_label, false, 11)
-	top_text.add_child(_mode_label)
-	_info_label = Label.new()
-	UISkin.apply_label(_info_label, true, 10)
-	top_text.add_child(_info_label)
+	# Oben: optionale Waren-Iconleiste. Im Original gibt es keine dauerhafte
+	# Leiste — sie erscheint nur, wenn in den Einstellungen aktiviert.
+	_top_bar = PanelContainer.new()
+	_top_bar.add_theme_stylebox_override("panel", UISkin.panel_style("panel"))
+	_top_bar.anchor_left = 0.0
+	_top_bar.anchor_top = 0.0
+	_top_bar.anchor_right = 1.0
+	_top_bar.anchor_bottom = 0.0
+	_top_bar.offset_left = edge
+	_top_bar.offset_top = edge
+	_top_bar.offset_right = -edge
+	_top_bar.offset_bottom = edge + top_h
+	_top_bar.visible = UISkin.option_bool("show_resource_bar", false)
+	_ui_root.add_child(_top_bar)
 	var stock_grid := GridContainer.new()
 	stock_grid.columns = Goods.COUNT
 	stock_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# Im Original gibt es keine dauerhafte Warenleiste — nur zeigen, wenn gewählt.
-	stock_grid.visible = UISkin.option_bool("show_resource_bar", false)
-	top_row.add_child(stock_grid)
+	_top_bar.add_child(stock_grid)
 	_build_stock_cells(stock_grid)
+
+	# Kurze Aktions-Rückmeldung (oben mittig), blendet nach wenigen Sekunden aus.
+	_toast_label = Label.new()
+	_toast_label.anchor_left = 0.5
+	_toast_label.anchor_right = 0.5
+	_toast_label.anchor_top = 0.0
+	_toast_label.anchor_bottom = 0.0
+	_toast_label.offset_left = -240
+	_toast_label.offset_right = 240
+	_toast_label.offset_top = edge + 4
+	_toast_label.offset_bottom = edge + 30
+	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toast_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UISkin.apply_label(_toast_label, false, 13)
+	_toast_label.visible = false
+	_ui_root.add_child(_toast_label)
 
 	# Gebäudefenster werden beim Anklicken dynamisch erzeugt und bleiben parallel offen.
 
@@ -532,15 +542,11 @@ func _build_ui() -> void:
 	_build_scroll.add_child(_build_row)
 	_show_category(ui_category)
 
-	_economy_panel = _floating_panel(Vector2(0, 1), Vector2(edge + 304, -bottom_h - 250 - edge * 2.0),
-		Vector2(edge + 604, -bottom_h - edge * 2.0))
+	_economy_panel = _floating_panel(Vector2(0, 1), Vector2(edge + 304, -bottom_h - 300 - edge * 2.0),
+		Vector2(edge + 632, -bottom_h - edge * 2.0))
 	_economy_panel.visible = false
-	var economy_box := _add_window_chrome(_economy_panel, "Inventur", _toggle_economy_panel)
-	_stock_label = Label.new()
-	_stock_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	UISkin.apply_label(_stock_label, true, 11)
-	_stock_label.mouse_filter = Control.MOUSE_FILTER_PASS
-	economy_box.add_child(_stock_label)
+	var economy_box := _add_window_chrome(_economy_panel, "Inventur (HQ-Lager)", _toggle_economy_panel)
+	_build_inventory_content(economy_box)
 
 	# Hauptauswahl (S2-artig): öffnet die Verwaltungsfenster.
 	_mainsel_panel = _floating_panel(Vector2(0, 1), Vector2(edge, -bottom_h - 250 - edge * 2.0),
@@ -591,6 +597,7 @@ func _build_ui() -> void:
 	_tbutton(settings_actions, "Bauplaetze", _toggle_build_spots)
 	_tbutton(settings_actions, "Nebel", _toggle_fog)
 	_tbutton(settings_actions, "KI", _toggle_ai)
+	_tbutton(settings_actions, "Warenleiste", _toggle_resource_bar)
 	_tbutton(settings_actions, "Pause", _toggle_pause)
 	var scale_actions := HBoxContainer.new()
 	scale_actions.add_theme_constant_override("separation", 4)
@@ -1090,10 +1097,11 @@ func _update_settings_text() -> void:
 		"Hotkeys: Space Bauplaetze, B Baufenster, S Optionen, I Waren, " + \
 		"M Minikarte, H HQ, F Nebel, Y UI aus/an.\n\n" + \
 		"UI-Groesse: %s\n\n" % UISkin.ui_scale_name() + \
-		"Startoptionen: Bauhilfe %s, Nebel %s, KI %s\n\n" % [
+		"Optionen: Bauhilfe %s, Nebel %s, KI %s, Warenleiste oben %s\n\n" % [
 			"AN" if UISkin.option_bool("start_build_spots", false) else "AUS",
 			"AN" if UISkin.option_bool("start_fog", false) else "AUS",
 			"AN" if UISkin.option_bool("start_ai", true) else "AUS",
+			"AN" if UISkin.option_bool("show_resource_bar", false) else "AUS",
 		] + \
 		"Anpassbar:\n" + \
 		"- assets/ui.json: UI-Farben, Randabstaende, Panel-/Button-Groessen\n" + \
@@ -1116,6 +1124,16 @@ func _toggle_fog() -> void:
 	UISkin.set_option_bool("start_fog", renderer.fog_enabled)
 	renderer.queue_redraw()
 	_flash("Nebel " + ("AN" if renderer.fog_enabled else "AUS"))
+
+
+## Optionale obere Warenleiste ein-/ausblenden (im Original nicht dauerhaft da).
+func _toggle_resource_bar() -> void:
+	var on := not UISkin.option_bool("show_resource_bar", false)
+	UISkin.set_option_bool("show_resource_bar", on)
+	if _top_bar != null:
+		_top_bar.visible = on
+	_flash("Warenleiste " + ("AN" if on else "AUS"))
+	_update_settings_text()
 
 
 func _toggle_ai() -> void:
@@ -1845,69 +1863,110 @@ func _build_from_spot(id: String) -> void:
 		_flash("Passt hier nicht mehr.")
 
 
+## Die frühere Debug-HUD (Modus/Knoten-Info oben links) ist entfernt — im Original
+## gibt es sie nicht. Bleibt als No-Op, damit bestehende Aufrufer gültig bleiben.
 func _update_labels() -> void:
-	if _mode_label == null:
-		return
-	var m := ""
-	match mode:
-		MODE_SELECT: m = "Auswahl"
-		MODE_FLAG:   m = "Flagge setzen"
-		MODE_ROAD:   m = "Straße: Flagge anklicken, dann Ziel"
-		MODE_BUILD:  m = "Bauen: " + String(BuildingCatalog.get_def(build_def_id).get("name", "?"))
-		MODE_DELETE: m = "Abriss"
-	var spd := "PAUSE" if paused else (str(sim_speed) + "x")
-	var ai_name := String(ai_list[ai_choice].name) if ai_choice < ai_list.size() else "?"
-	var ai := ("KI:%s" % ai_name) if economy.ai_enabled else "KI:AUS"
-	_mode_label.text = "%s  |  %s  |  %s  |  Space Bauhilfe  B/I/S Fenster" % [m, spd, ai]
-
-	var info := "Knoten: -"
-	if map.in_bounds(hover.x, hover.y):
-		var t := map.get_tri(hover, Grid.TRI_R)
-		var extra := ""
-		var b := state.building_at(hover)
-		if b != null:
-			extra = "  >> " + String(BuildingCatalog.get_def(b.def_id).get("name", "?"))
-			if b.under_construction:
-				extra += " (Bau...)"
-		elif state.has_object(hover.x, hover.y):
-			match map.map_object(hover.x, hover.y):
-				MapData.MO_TREE:
-					var stage := map.tree_stage_at(hover.x, hover.y)
-					var sname := "Setzling" if stage == MapData.TREE_SEED else ("kleiner Baum" if stage == MapData.TREE_SMALL else "Baum")
-					var tname := map.tree_type_name(map.tree_type_at(hover.x, hover.y))
-					extra = "  [%s %s]" % [sname, tname]
-				MapData.MO_STONE:
-					extra = "  [Stein Stufe %d]" % map.stone_stage_at(hover.x, hover.y)
-				MapData.MO_ORE: extra = "  [Erz]"
-		info = "(%d,%d) %s  BQ:%s%s" % [hover.x, hover.y, Terrain.name_of(t),
-			_bq_name(state.effective_bq(hover.x, hover.y)), extra]
-	_info_label.text = info
+	pass
 
 
 func _update_stock() -> void:
-	for g in Goods.COUNT:
-		var n: int = economy.hq_stock.get(g, 0)
-		if _stock_counts.has(g):
-			var l: Label = _stock_counts[g]
-			l.text = str(n)
-			l.modulate = Color(1, 1, 1, 1.0 if n > 0 else 0.35)
+	# Obere Leiste nur aktualisieren, wenn sie überhaupt sichtbar ist.
+	if _top_bar != null and _top_bar.visible:
+		for g in Goods.COUNT:
+			if _stock_counts.has(g):
+				var n: int = economy.hq_stock.get(g, 0)
+				var l: Label = _stock_counts[g]
+				l.text = str(n)
+				l.modulate = Color(1, 1, 1, 1.0 if n > 0 else 0.35)
 	if _economy_panel != null and _economy_panel.visible:
 		_update_economy_panel()
 
 
-func _update_economy_panel() -> void:
-	if _stock_label == null:
-		return
-	var lines := PackedStringArray()
-	lines.append("HQ-Lager:")
+## S2-Inventur: Waren als Icon+Zahl-Raster, darunter Bevölkerung/Berufe als
+## Liste. Wird einmal aufgebaut (`_build_inventory_content`), hier nur befüllt.
+func _build_inventory_content(parent: VBoxContainer) -> void:
+	_inv_goods.clear()
+	_inv_people.clear()
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, 240.0 * UISkin.ui_scale())
+	parent.add_child(scroll)
+	var body := VBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 4)
+	scroll.add_child(body)
+
+	var goods_cap := Label.new()
+	UISkin.apply_label(goods_cap, false, 12)
+	goods_cap.text = "Waren"
+	body.add_child(goods_cap)
+	var goods_grid := GridContainer.new()
+	goods_grid.columns = 6
+	goods_grid.add_theme_constant_override("h_separation", 4)
+	goods_grid.add_theme_constant_override("v_separation", 4)
+	body.add_child(goods_grid)
+	var icon_px := UISkin.layout_num("good_icon_size", 18)
 	for g in Goods.COUNT:
+		var cell := HBoxContainer.new()
+		cell.add_theme_constant_override("separation", 2)
+		cell.custom_minimum_size = Vector2(48, icon_px + 2)
+		cell.tooltip_text = Goods.name_of(g)
+		goods_grid.add_child(cell)
+		var ic := TextureRect.new()
+		ic.custom_minimum_size = Vector2(icon_px, icon_px)
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ic.texture = UISkin.good_texture(g)
+		cell.add_child(ic)
+		var lbl := Label.new()
+		UISkin.apply_label(lbl, false, 12)
+		lbl.text = "0"
+		cell.add_child(lbl)
+		_inv_goods[g] = lbl
+
+	var ppl_cap := Label.new()
+	UISkin.apply_label(ppl_cap, false, 12)
+	ppl_cap.text = "Bevölkerung & Berufe"
+	body.add_child(ppl_cap)
+	var ppl_grid := GridContainer.new()
+	ppl_grid.columns = 3
+	ppl_grid.add_theme_constant_override("h_separation", 6)
+	ppl_grid.add_theme_constant_override("v_separation", 2)
+	body.add_child(ppl_grid)
+	for j in Jobs.COUNT:
+		var pl := Label.new()
+		UISkin.apply_label(pl, true, 11)
+		pl.custom_minimum_size = Vector2(104, 0)
+		ppl_grid.add_child(pl)
+		_inv_people[j] = pl
+
+	var sep := HSeparator.new()
+	body.add_child(sep)
+	var soldiers := Label.new()
+	UISkin.apply_label(soldiers, false, 12)
+	soldiers.name = "SoldiersLine"
+	body.add_child(soldiers)
+	_economy_panel.set_meta("soldiers_label", soldiers)
+
+
+func _update_economy_panel() -> void:
+	if _inv_goods.is_empty():
+		return
+	for g in _inv_goods:
 		var n: int = economy.hq_stock.get(g, 0)
-		if n > 0:
-			lines.append("%s: %d" % [Goods.name_of(g), n])
-	lines.append("")
-	lines.append("Soldaten Reserve: %d" % economy.soldiers)
-	lines.append("Tempo: %s" % ("PAUSE" if paused else (str(sim_speed) + "x")))
-	_stock_label.text = "\n".join(lines)
+		var l: Label = _inv_goods[g]
+		l.text = str(n)
+		l.modulate = Color(1, 1, 1, 1.0 if n > 0 else 0.32)
+	for j in _inv_people:
+		var c: int = economy.hq_people.get(j, 0)
+		var pl: Label = _inv_people[j]
+		pl.text = "%s: %d" % [Jobs.name_of(j), c]
+		pl.modulate = Color(1, 1, 1, 1.0 if c > 0 else 0.3)
+	if _economy_panel != null and _economy_panel.has_meta("soldiers_label"):
+		(_economy_panel.get_meta("soldiers_label") as Label).text = \
+			"Soldaten-Reserve: %d" % economy.soldiers
 
 
 func _update_selection_panel() -> void:
@@ -2297,5 +2356,8 @@ func _load_game() -> void:
 
 
 func _flash(text: String) -> void:
-	if _info_label != null:
-		_info_label.text = text
+	if _toast_label == null:
+		return
+	_toast_label.text = text
+	_toast_label.visible = true
+	_toast_t = 3.0
