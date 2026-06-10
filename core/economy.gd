@@ -139,6 +139,7 @@ var flag_goods: Dictionary = {}      # flag idx -> Array[Good]
 var hq_flag := -1
 var hq_idx := -1
 var hq_stock: Dictionary = {}        # good -> Anzahl
+var hq_people: Dictionary = {}       # job -> Anzahl (Träger + Spezialisten im Lager; S2-Modell)
 var hq_outbox: Array = []             # Waren, die der HQ-Träger noch zur Flagge bringt
 var hq_house: HouseCarrier = null     # Tür↔Flagge-Träger des HQ
 var soldiers := 0                    # ausgebildete Soldaten im HQ (Reserve)
@@ -248,14 +249,17 @@ func resync() -> void:
 	dirty = true
 
 
+## Startbestand des HQ-Lagers. S2-Lagermodell (RTTR Inventory): ein Lager hält
+## WAREN und PERSONEN. Beides kommt aus [Tuning] (konfigurierbar über tuning.json).
 func _init_hq_stock() -> void:
-	hq_stock = {
-		Goods.BOARDS: 30, Goods.STONE: 30, Goods.WOOD: 12,
-		Goods.TOOLS: 12, Goods.BREAD: 8, Goods.FISH: 6, Goods.WATER: 6,
-		Goods.COAL: 6, Goods.GRAIN: 6, Goods.FLOUR: 4, Goods.IRON: 4,
-		Goods.SWORD: 3,
-	}
-	soldiers = 8  # Anfangsbesatzung, damit Militärgebäude sofort gehalten werden
+	hq_stock = Tuning.hq_start_goods()
+	hq_people = Tuning.hq_start_people()
+	soldiers = Tuning.hq_start_soldiers()  # Anfangsbesatzung, hält Militärgebäude sofort
+
+
+## Personenbestand eines Berufs im HQ-Lager (S2-Personalmodell, Issue #9).
+func hq_people_count(job: int) -> int:
+	return int(hq_people.get(job, 0))
 
 
 # --------------------------------------------------------------------------

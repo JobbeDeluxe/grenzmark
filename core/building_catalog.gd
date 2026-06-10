@@ -182,3 +182,30 @@ static func menu_order() -> Array:
 
 static func get_def(id: String) -> Dictionary:
 	return defs().get(id, {})
+
+
+## Beruf (Jobs.*), der dieses Gebäude betreibt, oder -1 (Lager/Militär haben keinen
+## Produktionsarbeiter). Grundlage für das S2-Personalmodell: ein Gebäude wird vom
+## passenden Spezialisten besetzt; fehlt er, rekrutiert das Lager ihn aus einem
+## Träger + dem Werkzeug aus [Jobs.tool_for]. Quelle: RTTR Gebäude→Beruf-Zuordnung.
+static func job_of(def_id: String) -> int:
+	match def_id:
+		"woodcutter": return Jobs.WOODCUTTER
+		"forester": return Jobs.FORESTER
+		"sawmill": return Jobs.CARPENTER
+		"quarry": return Jobs.STONEMASON
+		"well": return Jobs.HELPER          # Brunnen: einfacher Träger, kein Werkzeug
+		"farm": return Jobs.FARMER
+		"mill": return Jobs.MILLER
+		"bakery": return Jobs.BAKER
+		"fishery": return Jobs.FISHER
+		"hunter": return Jobs.HUNTER
+		"pigfarm": return Jobs.PIGBREEDER
+		"slaughterhouse": return Jobs.BUTCHER
+		"toolmaker": return Jobs.METALWORKER
+		"coalmine", "ironmine", "goldmine", "granitemine": return Jobs.MINER
+		"smelter": return Jobs.IRONFOUNDER
+		"mint": return Jobs.MINTER
+		"brewery": return Jobs.BREWER
+		"smithy": return Jobs.ARMORER
+	return -1

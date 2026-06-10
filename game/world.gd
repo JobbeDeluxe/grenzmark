@@ -453,6 +453,8 @@ func _build_ui() -> void:
 	var stock_grid := GridContainer.new()
 	stock_grid.columns = Goods.COUNT
 	stock_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Im Original gibt es keine dauerhafte Warenleiste — nur zeigen, wenn gewählt.
+	stock_grid.visible = UISkin.option_bool("show_resource_bar", false)
 	top_row.add_child(stock_grid)
 	_build_stock_cells(stock_grid)
 
@@ -2000,6 +2002,7 @@ func _save_game() -> void:
 		tree_growth = economy.tree_growth_state(),
 		buildings = [], flags = [], roads = [],
 		hq_stock = economy.hq_stock.duplicate(),
+		hq_people = economy.hq_people.duplicate(),
 		soldiers = economy.soldiers,
 	}
 	for i in state.buildings:
@@ -2099,6 +2102,9 @@ func _load_game() -> void:
 	economy = Economy.new(state)
 	economy._hq_inited = true
 	economy.hq_stock = data.hq_stock
+	# Personen-Inventar (S2-Lagermodell). Alt-Spielstände ohne Sektion bekommen die
+	# Standard-Startpersonen, damit das Lager nicht ohne Träger dasteht.
+	economy.hq_people = data.get("hq_people", Tuning.hq_start_people())
 	economy.soldiers = int(data.get("soldiers", 0))
 	var tree_growth = data.get("tree_growth", {})
 	if tree_growth is Dictionary:

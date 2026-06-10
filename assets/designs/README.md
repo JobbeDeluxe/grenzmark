@@ -38,3 +38,35 @@ Recherche-Stand für die Mechanik:
 
 Wichtig: Keine Original-Siedler-Dateien oder 1:1-Kopien verwenden. Die Bilder
 sollen neu generiert oder selbst erstellt sein und nur das Konzept nachbauen.
+
+## Werkzeug-Icons für Waren 19-30
+
+Seit dem S2-näheren Warenmodell sind die zwölf Werkzeuge eigene Waren. Die
+fertigen Spiel-Assets liegen unter `assets/goods/<nummer>.png`; in diesem Ordner
+können Quellbilder, Previews und Prompt-Ergebnisse gesammelt werden.
+
+Die aktuellen Platzhalter dürfen nicht beim generischen Werkzeug-Icon bleiben.
+Jedes Werkzeug braucht ein eigenes lesbares Motiv, damit Lager-/Inventarfenster
+und Warenleisten eindeutig bleiben:
+
+| Ziel-Datei | Bedeutung | Prompt-Kern |
+|---|---|---|
+| `assets/goods/19.png` | Zange | `blacksmith tongs` |
+| `assets/goods/20.png` | Hammer | `carpenter hammer` |
+| `assets/goods/21.png` | Axt | `woodcutter axe` |
+| `assets/goods/22.png` | Säge | `hand saw` |
+| `assets/goods/23.png` | Spitzhacke | `miner pickaxe` |
+| `assets/goods/24.png` | Schaufel | `small shovel` |
+| `assets/goods/25.png` | Schmelztiegel | `metal crucible` |
+| `assets/goods/26.png` | Angel | `fishing rod and line` |
+| `assets/goods/27.png` | Sense | `grain scythe` |
+| `assets/goods/28.png` | Beil | `butcher cleaver` |
+| `assets/goods/29.png` | Nudelholz | `baker rolling pin` |
+| `assets/goods/30.png` | Bogen | `wooden bow` |
+
+Gemeinsamer Stil:
+
+```text
+single medieval tool icon, flat readable 16x16 game icon, transparent background,
+warm hand-painted settler game style, clean silhouette, no text, no border
+```

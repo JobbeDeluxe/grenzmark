@@ -51,7 +51,6 @@ func _ready() -> void:
 	load_btn.disabled = not FileAccess.file_exists(SAVE_PATH)
 	_button(_main_page, "Einstellungen", _show_settings_page)
 	_build_settings_panel(box)
-	_button(_main_page, "Design-Editor", _on_editor)
 	_button(_main_page, "Beenden", _on_quit)
 	if _open_settings_after_reload:
 		_open_settings_after_reload = false
@@ -143,6 +142,8 @@ func _build_settings_panel(box: Container) -> void:
 	_checkbox(inner, "Bauhilfe beim Start zeigen", "start_build_spots", false)
 	_checkbox(inner, "Nebel des Krieges starten", "start_fog", false)
 	_checkbox(inner, "KI-Gegner aktiv", "start_ai", true)
+	# Im Original gibt es keine dauerhafte Warenleiste oben — daher abwählbar (Standard: aus).
+	_checkbox(inner, "Warenleiste oben anzeigen", "show_resource_bar", false)
 
 	var editor_btn := _button(inner, "Design-Editor", _on_editor)
 	editor_btn.custom_minimum_size = Vector2(160, 34) * UISkin.ui_scale()

@@ -37,5 +37,18 @@
     780,
     2220
   ],
-  "road_upgrade_deliveries": 24
+  "road_upgrade_deliveries": 24,
+  "_inventar_hinweis": "S2-Lagermodell: ein Lager (HQ) haelt Waren UND Personen. Schluessel = String-IDs aus Goods.KEYS bzw. Jobs.KEYS. Werkzeuge dienen der Rekrutierung: Traeger (helper) + Werkzeug -> Spezialist.",
+  "hq_start_goods": {
+    "boards": 30, "stone": 30, "wood": 12,
+    "bread": 8, "fish": 6, "water": 6, "coal": 6,
+    "grain": 6, "flour": 4, "iron": 4, "sword": 3,
+    "hammer": 4, "pickaxe": 4, "axe": 2, "saw": 2,
+    "shovel": 2, "scythe": 1, "rod_and_line": 1, "bow": 1,
+    "cleaver": 1, "rolling_pin": 1, "crucible": 1, "tongs": 1
+  },
+  "hq_start_people": {
+    "helper": 30
+  },
+  "hq_start_soldiers": 8
 }

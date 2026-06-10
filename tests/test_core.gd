@@ -21,6 +21,7 @@ func _initialize() -> void:
 	_test_ore_deposit_mining()
 	_test_catalog_complete()
 	_test_asset_files()
+	_test_inventory_model()
 	_test_visibility()
 	_test_bq_and_flags()
 	_test_building_spacing()
@@ -503,6 +504,58 @@ func _test_asset_files() -> void:
 			"Gebäude-Sprite vorhanden: %s" % id)
 
 
+## S2-Lagermodell: Waren (inkl. 12 Originalwerkzeuge) + Personen (Berufe) + die
+## Werkzeug->Beruf-Zuordnung, sowie das HQ-Startinventar aus dem Tuning.
+func _test_inventory_model() -> void:
+	# --- Waren: die 12 Einzelwerkzeuge sind vorhanden und konsistent ---
+	_check(Goods.COUNT == 31, "Goods.COUNT == 31 (19 Basis + 12 Werkzeuge)")
+	for g in Goods.COUNT:
+		_check(Goods.name_of(g) != "?", "Ware hat Namen: %d" % g)
+		_check(Goods.id_of(Goods.key_of(g)) == g, "Goods-KEY Roundtrip: %d" % g)
+	_check(Goods.is_tool_good(Goods.AXE) and Goods.is_tool_good(Goods.BOW), "Axt/Bogen sind Werkzeuge")
+	_check(not Goods.is_tool_good(Goods.WOOD) and not Goods.is_tool_good(Goods.TOOLS),
+		"Holz/altes TOOLS sind keine Einzelwerkzeuge")
+
+	# --- Berufe: Liste, Namen, KEY-Roundtrip, Soldaten ---
+	_check(Jobs.COUNT == 27, "Jobs.COUNT == 27")
+	for j in Jobs.COUNT:
+		_check(Jobs.name_of(j) != "?", "Beruf hat Namen: %d" % j)
+		_check(Jobs.id_of(Jobs.key_of(j)) == j, "Jobs-KEY Roundtrip: %d" % j)
+	_check(Jobs.is_soldier(Jobs.GENERAL) and not Jobs.is_soldier(Jobs.HELPER),
+		"Soldatenerkennung (General ja, Träger nein)")
+
+	# --- Werkzeug -> Beruf (RTTR JobConsts): Stichproben ---
+	_check(Jobs.tool_for(Jobs.WOODCUTTER) == Goods.AXE, "Holzfäller braucht Axt")
+	_check(Jobs.tool_for(Jobs.STONEMASON) == Goods.PICKAXE, "Steinmetz braucht Spitzhacke")
+	_check(Jobs.tool_for(Jobs.MINER) == Goods.PICKAXE, "Bergarbeiter braucht Spitzhacke")
+	_check(Jobs.tool_for(Jobs.BAKER) == Goods.ROLLING_PIN, "Bäcker braucht Nudelholz")
+	_check(Jobs.tool_for(Jobs.METALWORKER) == Goods.TONGS, "Werkzeugmacher braucht Zange")
+	_check(Jobs.tool_for(Jobs.HELPER) == -1, "Träger braucht kein Werkzeug")
+	_check(Jobs.tool_for(Jobs.MILLER) == -1, "Müller braucht kein Werkzeug")
+
+	# --- Gebäude -> Beruf ---
+	_check(BuildingCatalog.job_of("woodcutter") == Jobs.WOODCUTTER, "Holzfäller-Hütte -> Holzfäller")
+	_check(BuildingCatalog.job_of("smithy") == Jobs.ARMORER, "Schmiede -> Waffenschmied")
+	_check(BuildingCatalog.job_of("ironmine") == Jobs.MINER, "Eisenmine -> Bergarbeiter")
+	_check(BuildingCatalog.job_of("hq") == -1, "HQ hat keinen Produktionsberuf")
+	_check(BuildingCatalog.job_of("fortress") == -1, "Festung hat keinen Produktionsberuf")
+
+	# --- HQ-Startinventar hält Waren UND Personen ---
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	_check(eco.hq_stock.get(Goods.BOARDS, 0) > 0, "HQ startet mit Brettern")
+	_check(eco.hq_stock.get(Goods.HAMMER, 0) > 0, "HQ startet mit Werkzeug (Hammer) zur Rekrutierung")
+	_check(eco.hq_people_count(Jobs.HELPER) > 0, "HQ-Lager hält Träger (Personen)")
+	_check(eco.soldiers > 0, "HQ hat Soldaten-Reserve")
+
+	# --- Tuning liefert das Startinventar (Defaults bzw. JSON) ---
+	_check(Tuning.hq_start_goods().get(Goods.BOARDS, 0) > 0, "Tuning: Startwaren")
+	_check(Tuning.hq_start_people().get(Jobs.HELPER, 0) > 0, "Tuning: Startpersonen")
+
+
 func _test_visibility() -> void:
 	var map := _flat_map(40, 40)
 	var state := WorldState.new(map)
@@ -707,6 +760,8 @@ func _test_saveload() -> void:
 		heights = map.heights, terr_r = map.terr_r, terr_d = map.terr_d,
 		objects = map.objects.duplicate(),
 		buildings = [],
+		# Personen-Inventar (int-keyed) muss den Roundtrip überstehen.
+		hq_people = { Jobs.HELPER: 7, Jobs.MINER: 2 },
 	}
 	for i in state.buildings:
 		var b: WorldState.Building = state.buildings[i]
@@ -728,6 +783,9 @@ func _test_saveload() -> void:
 	_check(map2.map_object(5, 5) == MapData.MO_TREE, "Save/Load: Objekt erhalten")
 	_check(back.buildings.size() == 1, "Save/Load: Gebäude erhalten")
 	_check(Vector2i(back.buildings[0].pos) == Vector2i(8, 8), "Save/Load: Vector2i erhalten")
+	var people: Dictionary = back.get("hq_people", {})
+	_check(int(people.get(Jobs.HELPER, 0)) == 7 and int(people.get(Jobs.MINER, 0)) == 2,
+		"Save/Load: Personen-Inventar (Träger+Bergarbeiter) erhalten")
 
 
 ## Sumpf wird erzeugt und ist begehbar, aber NICHT bebaubar (wie in S2).

@@ -85,3 +85,55 @@ static func tree_growth_ticks(stage: int) -> int:
 ## Warenlieferungen über eine Straße bis zur sichtbaren Pflaster-Stufe.
 static func road_upgrade_deliveries() -> int:
 	return maxi(1, int(_num("road_upgrade_deliveries", 24)))
+
+
+# --------------------------------------------------------------------------
+#  Startinventar des HQ (Waren UND Personen) — S2-Lagermodell
+#  Ein Lager hält im Original sowohl Waren als auch Personen (RTTR Inventory =
+#  goods[] + people[]). Beides ist hier konfigurierbar; fehlt die JSON-Sektion,
+#  gelten die Standardwerte. JSON-Schlüssel sind die String-IDs aus
+#  Goods.KEYS bzw. Jobs.KEYS (z. B. "boards", "helper").
+# --------------------------------------------------------------------------
+
+## Startwaren des HQ als { Goods.* : Anzahl }. Override via tuning.json
+## "hq_start_goods". Enthält auch Werkzeuge für die Erst-Rekrutierung von
+## Spezialisten (Träger + Werkzeug -> Beruf).
+static func hq_start_goods() -> Dictionary:
+	return _resolve_inventory("hq_start_goods", Goods.KEYS, {
+		Goods.BOARDS: 30, Goods.STONE: 30, Goods.WOOD: 12,
+		Goods.BREAD: 8, Goods.FISH: 6, Goods.WATER: 6, Goods.COAL: 6,
+		Goods.GRAIN: 6, Goods.FLOUR: 4, Goods.IRON: 4, Goods.SWORD: 3,
+		Goods.HAMMER: 4, Goods.PICKAXE: 4, Goods.AXE: 2, Goods.SAW: 2,
+		Goods.SHOVEL: 2, Goods.SCYTHE: 1, Goods.ROD_AND_LINE: 1, Goods.BOW: 1,
+		Goods.CLEAVER: 1, Goods.ROLLING_PIN: 1, Goods.CRUCIBLE: 1, Goods.TONGS: 1,
+	})
+
+
+## Startpersonen des HQ als { Jobs.* : Anzahl }. Override via tuning.json
+## "hq_start_people". Träger (HELPER) sind der Pool für Wege UND die
+## Rekrutierung von Spezialisten.
+static func hq_start_people() -> Dictionary:
+	return _resolve_inventory("hq_start_people", Jobs.KEYS, {
+		Jobs.HELPER: 30,
+	})
+
+
+## Soldaten-Reserve im HQ beim Start (hält Militärgebäude sofort).
+static func hq_start_soldiers() -> int:
+	return int(_num("hq_start_soldiers", 8))
+
+
+## tuning.json[json_key] (String-ID -> Anzahl) zu { enum_id: Anzahl } auflösen.
+## Fehlt/leer/kein Dictionary -> Kopie der Standardwerte. Unbekannte IDs werden
+## ignoriert (vorwärtskompatibel).
+static func _resolve_inventory(json_key: String, keys: Array, defaults: Dictionary) -> Dictionary:
+	var raw = _cfg_dict().get(json_key)
+	if not (raw is Dictionary) or (raw as Dictionary).is_empty():
+		return defaults.duplicate()
+	var out := {}
+	for k in raw:
+		var id := int(keys.find(String(k)))
+		var v = raw[k]
+		if id >= 0 and (v is int or v is float):
+			out[id] = int(v)
+	return out

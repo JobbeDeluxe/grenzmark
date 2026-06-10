@@ -30,6 +30,18 @@ Typ Ordner, Dateiname und empfohlene Größe.
 | `assets/ui/`        | `main_menu_background.png`, `flag_<spieler>.png`, `build_spots/*.png` | Hauptmenü, Spielflaggen & Bauhilfe-Symbole | 16:9 / ~64×64 |
 | `assets/`           | `ui.json` | UI-Skin/Layouts: Farben, Randabstände, Panel-/Buttongrößen | Text/JSON |
 
+### Waren- und Werkzeug-Icons (`assets/goods/`)
+Jede Ware bekommt ein eigenes PNG nach Enum-Nummer aus `core/goods.gd`:
+`assets/goods/<nummer>.png`. Das ist bewusst austauschbar; eigene Designs werden
+einfach unter demselben Dateinamen abgelegt und nach dem Godot-Import genutzt.
+
+Wichtig für die S2-Werkzeuge: die zwölf Einzelwerkzeuge dürfen nicht dauerhaft das
+alte allgemeine `Werkzeug`-Icon wiederverwenden. Die aktuell angehängten IDs
+`19` bis `30` brauchen jeweils ein eigenes, klar unterscheidbares Design:
+Zange, Hammer, Axt, Säge, Spitzhacke, Schaufel, Schmelztiegel, Angel, Sense,
+Beil, Nudelholz und Bogen. Temporäre Kopien des alten Werkzeug-PNGs sind nur
+Platzhalter, bis die endgültigen Icons gezeichnet sind.
+
 ### UI-Skin & Bedienoberfläche (`assets/ui.json`)
 Die In-Game-UI hat eine eigene kleine Skin-Schicht (`game/ui_skin.gd`). Erste
 Werte liegen in `assets/ui.json`:
@@ -243,7 +255,7 @@ Die Größen sind **nicht fest im Code**, sondern in `assets/design.json` einste
 
 Werte ändern → Godot neu starten. Fehlt die Datei, gelten die Standardwerte.
 
-### Bequemer: der Design-Editor (Hauptmenü → „Design-Editor")
+### Bequemer: der Design-Editor (Hauptmenü → „Einstellungen" → „Design-Editor")
 Statt die JSON von Hand zu editieren, gibt es ein **DEV-Menü mit Live-Vorschau**:
 - Links ein Gebäude wählen, in der Mitte siehst du es **mit Flagge und Eingangsweg**.
 - Rechts per Regler einstellen: **Breite, Höhe**, **Eingang X/Y** (wo der Weg
@@ -294,7 +306,9 @@ Waren ins Gebäude bringen.
 `<nummer>` der Waren (aus `core/goods.gd`):
 0 Holz · 1 Bretter · 2 Steine · 3 Getreide · 4 Mehl · 5 Wasser · 6 Brot ·
 7 Fisch · 8 Fleisch · 9 Kohle · 10 Eisenerz · 11 Eisen · 12 Golderz ·
-13 Münzen · 14 Bier · 15 Werkzeug · 16 Schwert · 17 Schild · 18 Schwein.
+13 Münzen · 14 Bier · 15 Werkzeug · 16 Schwert · 17 Schild · 18 Schwein ·
+19 Zange · 20 Hammer · 21 Axt · 22 Säge · 23 Spitzhacke · 24 Schaufel ·
+25 Schmelztiegel · 26 Angel · 27 Sense · 28 Beil · 29 Nudelholz · 30 Bogen.
 
 ## UI-Design (austauschbar & skalierbar) — TEILWEISE UMGESETZT (Stufe 8)
 
@@ -318,7 +332,12 @@ Button-Zustände sind noch der nächste Schritt.
 
 **Icons:** `assets/ui/icons/<name>.png`, quadratisch (z. B. 32×32, transparent).
 Benötigt u. a.: `select, flag, road, demolish, build, stop, stats, settings,
-play, pause, faster, slower`. Waren-Icons werden aus `assets/goods/` wiederverwendet.
+save, load, main_menu, quit, play, pause, faster, slower`. Waren-Icons werden aus
+`assets/goods/` wiederverwendet.
+
+Offener UI-Punkt: Wenn im Hauptmenü `Spiel laden` angeboten wird, braucht das
+laufende Spiel auch ein erreichbares System-/Spielmenü mit `Spiel speichern`,
+`Zurück zum Hauptmenü` und `Beenden` (z. B. über Esc und/oder die Hauptleiste).
 
 **Schrift:** `assets/ui/font.ttf` (optional). Sonst Standardschrift.
 
@@ -440,4 +459,10 @@ KI-Prompt dafür:
 > `single medieval resource icon, <NAME>, flat readable icon, transparent
 > background` — NAME z. B. `wooden log, wooden planks, stone block, sack of
 > grain, flour, loaf of bread, fish, coal lump, iron ore, iron bar, gold ore,
-> gold coins, beer mug, sword, shield, tools`.
+> gold coins, beer mug, sword, shield`.
+
+**Werkzeug-Icons (16×16, eigene Designs statt generischem Werkzeug):**
+> `single medieval tool icon, <NAME>, flat readable icon, transparent background`
+> — NAME: `blacksmith tongs, carpenter hammer, woodcutter axe, hand saw,
+> miner pickaxe, small shovel, metal crucible, fishing rod and line, grain scythe,
+> butcher cleaver, baker rolling pin, wooden bow`.

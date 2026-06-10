@@ -2,7 +2,7 @@ extends Control
 
 ## DEV/Design-Editor: Gebäude auswählen, Größe + Eingangspunkt (Tür/Weg-Ende)
 ## live einstellen und automatisch in assets/design.json speichern.
-## Erreichbar über das Hauptmenü ("Design-Editor").
+## Erreichbar über Hauptmenü -> Einstellungen -> Design-Editor.
 
 const DESIGN_PATH := "res://assets/design.json"
 
