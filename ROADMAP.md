@@ -270,6 +270,12 @@ GitHub-Arbeitspakete:
       auch Inhalt, Abstände, Scrollbereich und Rasterspalten; Bauhilfe-Klicks
       öffnen das gefilterte Baufenster nahe am angeklickten Marker, Menü/Hotkey
       weiterhin an der normalen Baufensterposition.
+- [x] **Baufenster S2-näher (2026-06-10):** Gebäude als reine Icon-Kacheln
+      (kein 2-Buchstaben-Kürzel mehr), hochformatig statt breit-flach (Sprites
+      nicht mehr gestaucht), größeres Panel (520×320) und höherer Scrollbereich.
+- [x] **Straßen-Kontextmenü (2026-06-10):** Klick auf eine eigene Straße öffnet
+      ein Menü „Straße entfernen / Flagge einfügen" (vorher war Straßen-Abriss nur
+      über den allgemeinen Abriss-Modus auffindbar).
 - [x] **Einstellungsfenster (erste Version):** Taste **S** / Button Optionen zeigt
       alle aktuell auslagerbaren Design-/Tuning-Dateien (`assets/ui.json`,
       `assets/design.json`, `assets/tuning.json`, Bauplatz-/Flaggen-/Spieler-PNGs)

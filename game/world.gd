@@ -62,6 +62,8 @@ var _settings_body: Label
 var _minimap_panel: PanelContainer
 var _flag_menu: PanelContainer
 var _flag_menu_pos := Vector2i(-1, -1)
+var _road_menu: PanelContainer
+var _road_menu_pos := Vector2i(-1, -1)
 var _building_windows := {}
 var _ui_root: Control
 var ui_category := "hut"
@@ -412,8 +414,8 @@ func _build_ui() -> void:
 	var right_w := UISkin.layout_num("right_panel_width", 286)
 	var bottom_h := UISkin.layout_num("bottom_bar_height", 138)
 	var mini_size := UISkin.layout_num("minimap_size", 188)
-	var build_w := UISkin.layout_num("build_panel_width", 850)
-	var build_h := UISkin.layout_num("build_panel_height", 170)
+	var build_w := UISkin.layout_num("build_panel_width", 520)
+	var build_h := UISkin.layout_num("build_panel_height", 320)
 
 	_ui_root = Control.new()
 	_ui_root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -517,7 +519,7 @@ func _build_ui() -> void:
 	_build_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_build_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_build_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_build_scroll.custom_minimum_size = Vector2(0, 112.0 * UISkin.ui_scale())
+	_build_scroll.custom_minimum_size = Vector2(0, 184.0 * UISkin.ui_scale())
 	build_box.add_child(_build_scroll)
 	_build_row = GridContainer.new()
 	_build_row.columns = 4
@@ -607,6 +609,13 @@ func _build_ui() -> void:
 	var scout := _tbutton(flag_box, "Spaeher", _noop)
 	scout.disabled = true
 	scout.tooltip_text = "Noch nicht implementiert"
+
+	# Straßen-Kontextmenü (S2-artig): erscheint an der angeklickten Straße.
+	_road_menu = _floating_panel(Vector2(0, 0), Vector2(0, 0), Vector2(180, 0))
+	_road_menu.visible = false
+	var road_box := _add_window_chrome(_road_menu, "Strasse", _close_road_menu)
+	_tbutton(road_box, "Strasse entfernen", _road_menu_remove)
+	_tbutton(road_box, "Flagge einfuegen", _road_menu_insert_flag)
 
 	# Sieg/Niederlage-Anzeige (zentriert)
 	_status_label = Label.new()
@@ -878,8 +887,8 @@ func _panel_size(panel: PanelContainer) -> Vector2:
 func _build_content_scale() -> float:
 	if _build_panel == null:
 		return 1.0
-	var base := Vector2(UISkin.layout_num("build_panel_width", 430),
-		UISkin.layout_num("build_panel_height", 245))
+	var base := Vector2(UISkin.layout_num("build_panel_width", 520),
+		UISkin.layout_num("build_panel_height", 320))
 	var size := _panel_size(_build_panel)
 	if base.x <= 0.0 or base.y <= 0.0:
 		return 1.0
@@ -890,7 +899,7 @@ func _build_columns_for_width(content_scale: float) -> int:
 	if _build_panel == null:
 		return 4
 	var usable := maxf(_panel_size(_build_panel).x - 32.0 * UISkin.ui_scale(), 120.0)
-	var cell := (92.0 * UISkin.ui_scale() * content_scale) + 6.0 * UISkin.ui_scale()
+	var cell := (80.0 * UISkin.ui_scale() * content_scale) + 6.0 * UISkin.ui_scale()
 	return clampi(int(floor(usable / maxf(cell, 1.0))), 2, 6)
 
 
@@ -905,7 +914,7 @@ func _refresh_build_panel_layout() -> void:
 		_build_group_row.add_theme_constant_override("separation", sep)
 	if _build_scroll != null:
 		_build_scroll.custom_minimum_size = Vector2(0,
-			maxf(96.0, 112.0 * UISkin.ui_scale() * content_scale))
+			maxf(160.0, 184.0 * UISkin.ui_scale() * content_scale))
 	_build_row.columns = _build_columns_for_width(content_scale)
 	_build_row.add_theme_constant_override("h_separation", sep)
 	_build_row.add_theme_constant_override("v_separation", sep)
@@ -1122,6 +1131,9 @@ func _escape_or_select() -> void:
 	if _flag_menu != null and _flag_menu.visible:
 		_close_flag_menu()
 		return
+	if _road_menu != null and _road_menu.visible:
+		_close_road_menu()
+		return
 	for p in [_build_panel, _economy_panel, _settings_panel, _mainsel_panel,
 			_buildings_panel, _stats_panel]:
 		if p != null and p.visible:
@@ -1181,6 +1193,65 @@ func _flag_menu_remove() -> void:
 		_flash("Flagge entfernt.")
 	else:
 		_flash("Flagge laesst sich nicht entfernen.")
+
+
+## Straße, die [param pos] als Zwischenknoten (keine Endflagge) enthält — oder null.
+func _road_at(pos: Vector2i) -> WorldState.Road:
+	for r in state.roads:
+		if pos != r.a and pos != r.b and r.nodes.has(pos):
+			return r
+	return null
+
+
+func _open_road_menu(roadpos: Vector2i) -> void:
+	_road_menu_pos = roadpos
+	selected = null
+	_close_flag_menu()
+	_hide_management_panels()
+	var world := map.node_world(roadpos.x, roadpos.y)
+	var screen := get_viewport().get_canvas_transform() * world
+	var vp := get_viewport().get_visible_rect().size
+	var w := 180.0
+	var h := 116.0
+	var x: float = clampf(screen.x + 10.0, 4.0, vp.x - w - 4.0)
+	var y: float = clampf(screen.y - h * 0.4, 4.0, vp.y - h - 4.0)
+	_road_menu.offset_left = x
+	_road_menu.offset_top = y
+	_road_menu.offset_right = x + w
+	_road_menu.offset_bottom = y + h
+	_road_menu.visible = true
+
+
+func _close_road_menu() -> void:
+	if _road_menu != null:
+		_road_menu.visible = false
+	_road_menu_pos = Vector2i(-1, -1)
+
+
+func _road_menu_remove() -> void:
+	var rp := _road_menu_pos
+	_close_road_menu()
+	if rp.x < 0:
+		return
+	if state.remove_at(rp):
+		economy.resync()
+		renderer.queue_redraw()
+		_flash("Strasse entfernt.")
+	else:
+		_flash("Strasse laesst sich nicht entfernen.")
+
+
+func _road_menu_insert_flag() -> void:
+	var rp := _road_menu_pos
+	_close_road_menu()
+	if rp.x < 0:
+		return
+	if state.place_flag(rp.x, rp.y) != null:
+		economy.resync()
+		renderer.queue_redraw()
+		_flash("Flagge in die Strasse eingefuegt.")
+	else:
+		_flash("Hier laesst sich keine Flagge einfuegen.")
 
 
 func _noop() -> void:
@@ -1447,8 +1518,12 @@ func _show_category(cat: String) -> void:
 		if _building_in_group(id, cat) and _building_allowed_by_filter(id):
 			var cb := _build_from_spot.bind(id) if build_window_spot.x >= 0 else _select_building.bind(id)
 			var tex := GameTheme.building_texture(id)
-			_build_icon_button(_build_row, GameTheme.building_label(id), cb,
-				_building_tooltip(id), tex, Vector2(92, 46), content_scale)
+			# S2-artige Icon-Kacheln: nur das Gebäude-Bild (hoch statt breit-flach,
+			# damit Sprites nicht gestaucht werden), Name im Tooltip. Nur ohne
+			# eigene Grafik fällt das Kürzel als Beschriftung zurück.
+			var label := "" if tex != null else GameTheme.building_label(id)
+			_build_icon_button(_build_row, label, cb,
+				_building_tooltip(id), tex, Vector2(80, 84), content_scale)
 	if _build_row.get_child_count() == 0:
 		var empty := Label.new()
 		empty.text = "Keine passenden Gebäude in dieser Kategorie."
@@ -1746,6 +1821,8 @@ func _set_mode(m: int) -> void:
 	build_window_spot = Vector2i(-1, -1)
 	if _flag_menu != null:
 		_flag_menu.visible = false
+	if _road_menu != null:
+		_road_menu.visible = false
 	if _build_panel != null:
 		_build_panel.visible = false
 	_show_category(ui_category)
@@ -1777,9 +1854,12 @@ func _handle_click() -> void:
 	match mode:
 		MODE_SELECT:
 			var clicked := state.building_at(hover)
+			var road := _road_at(hover) if clicked == null else null
 			if clicked == null and state.flag_at(hover) != null \
 					and not state.enemy_territory.has(map.idx(hover.x, hover.y)):
 				_open_flag_menu(hover)   # eigene Flagge angeklickt → Kontextmenü
+			elif road != null and road.owner == 0:
+				_open_road_menu(hover)   # eigene Straße angeklickt → Kontextmenü
 			else:
 				# Gebäude (eigen ODER Gegner) auswählen; Angriff läuft über das
 				# kontextabhängige Auswahlfenster (Issue #16).
@@ -1787,6 +1867,7 @@ func _handle_click() -> void:
 				if clicked != null:
 					_open_building_window(clicked)
 				_close_flag_menu()
+				_close_road_menu()
 		MODE_FLAG:
 			changed = state.place_flag(hover.x, hover.y) != null
 		MODE_BUILD:
