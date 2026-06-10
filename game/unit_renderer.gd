@@ -200,7 +200,8 @@ func _draw_build_preview() -> void:
 	if d.is_empty():
 		return
 	var size: int = d.get("size", WorldState.BQ_HUT)
-	var ok := state.can_place_building(hover.x, hover.y, size)
+	var ok := state.can_place_building(hover.x, hover.y, size, 0,
+		int(d.get("influence", 0)))
 	var p := state.map.node_world(hover.x, hover.y) + GameTheme.building_offset(build_preview_id)
 	var tint := Color(0.45, 1.0, 0.45, 0.55) if ok else Color(1.0, 0.4, 0.4, 0.55)
 	var tex := GameTheme.building_texture(build_preview_id)

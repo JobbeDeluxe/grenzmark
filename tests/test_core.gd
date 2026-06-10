@@ -47,7 +47,8 @@ func _initialize() -> void:
 	_test_carrier_kept_on_split()
 	_test_road_avoids_building()
 	_test_road_preview_matches_build()
-	_test_territory_stickiness()
+	_test_territory_closest_wins()
+	_test_military_min_distance()
 	_test_saveload()
 	print("== Ergebnis: %d ok, %d fehlgeschlagen ==" % [_ok, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -948,32 +949,57 @@ func _test_road_preview_matches_build() -> void:
 	_check(checked >= 2, "#23: mehrere Vorschau/Bau-Paare geprüft (%d)" % checked)
 
 
-## #15: Etabliertes Gebiet ist „klebrig". Ein näher gebauter Gegnerturm darf
-## bestehendes Spielergebiet NICHT klauen — Land wechselt erst, wenn der haltende
-## Spieler-Bau es nicht mehr deckt (gefallen/erobert).
-func _test_territory_stickiness() -> void:
+## #15: Landeinnahme nach S2 „closest building wins". Baut ein Gegner nahe der
+## Grenze, verliert man NUR den wirklich näheren Streifen — nicht den vollen
+## Gegner-Radius und nicht das eigene Kerngebiet.
+func _test_territory_closest_wins() -> void:
 	var map := _flat_map(40, 40)
 	var state := WorldState.new(map)
 	state.place_building(12, 12, WorldState.BQ_CASTLE, true, "hq", 9, false)
 	state.recompute_territory()
-	var node := Vector2i(15, 15)
-	var ki := map.idx(node.x, node.y)
-	_check(state.in_territory(node.x, node.y), "#15: Knoten zunächst im Spielergebiet")
-	# Gegner baut einen Wachturm NÄHER an den Knoten (mit Garnison).
-	_raw(state, Vector2i(16, 16), "guardhouse", 6, 1, 3, 3, false)
+	# Anfangs liegen beide Knoten im HQ-Radius und gehören dem Spieler.
+	_check(state.in_territory(16, 16), "#15: Grenzknoten zunächst beim Spieler")
+	_check(state.in_territory(14, 14), "#15: innerer Knoten zunächst beim Spieler")
+	# Gegner baut ein deckendes Militärgebäude nahe der Grenze (mit Garnison).
+	_raw(state, Vector2i(18, 18), "watchtower", 7, 1, 1, 6, false)
 	state.recompute_territory()
-	_check(state.in_territory(node.x, node.y),
-		"#15: etablierter Knoten bleibt trotz näherem Gegnerturm beim Spieler")
-	_check(not state.enemy_territory.has(ki),
-		"#15: Gegner beansprucht etablierten Spielerknoten nicht")
-	# Verliert der Spieler die Deckung (Halter entfernt), geht der vom Gegner
-	# gedeckte Knoten an den Gegner über.
-	state.buildings.erase(map.idx(12, 12))
+	# Der dem Gegnerbau NÄHERE Knoten wechselt — ein bisschen Grenze verloren.
+	_check(state.enemy_territory.has(map.idx(16, 16)),
+		"#15: der dem Gegner nähere Grenzknoten geht über")
+	_check(not state.in_territory(16, 16),
+		"#15: dieser Knoten ist nicht mehr Spielergebiet")
+	# Der dem HQ nähere Knoten bleibt beim Spieler — NICHT der volle Gegnerradius.
+	_check(state.in_territory(14, 14),
+		"#15: HQ-näherer Knoten bleibt Spieler (nur der Streifen geht verloren)")
+	# Das Kerngebiet am HQ wird nie geschluckt.
+	_check(state.in_territory(12, 13), "#15: HQ-Kerngebiet bleibt unangetastet")
+
+
+## #15: S2-Mindestabstand — ein Militärgebäude darf nicht zu dicht an einem
+## anderen Militärgebäude/HQ stehen (eigen ODER fremd); Wirtschaftsgebäude schon.
+func _test_military_min_distance() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	state.place_building(12, 12, WorldState.BQ_CASTLE, true, "hq", 9, false)
 	state.recompute_territory()
-	_check(state.enemy_territory.has(ki),
-		"#15: nach Verlust des Halters geht der gedeckte Knoten an den Gegner")
-	_check(not state.in_territory(node.x, node.y),
-		"#15: Knoten ist dann nicht mehr Spielergebiet")
+	# Dicht am HQ: Militärbau verboten, Wirtschaftsbau erlaubt (Regel ist militärspezifisch).
+	var near := Vector2i(12, 15)
+	_check(WorldState.hex_distance(Vector2i(12, 12), near) < WorldState.MILITARY_MIN_DIST,
+		"#15: Testknoten liegt innerhalb des Mindestabstands")
+	_check(not state.can_place_building(near.x, near.y, WorldState.BQ_HUT, 0, 5),
+		"#15: Militärgebäude zu nah am HQ wird verhindert")
+	_check(state.can_place_building(near.x, near.y, WorldState.BQ_HUT, 0, 0),
+		"#15: Wirtschaftsgebäude an gleicher Stelle bleibt erlaubt")
+	# Genug Abstand im eigenen Gebiet: Militärbau erlaubt.
+	var far := Vector2i(12, 18)
+	_check(state.can_place_building(far.x, far.y, WorldState.BQ_HUT, 0, 5),
+		"#15: Militärgebäude mit >= 5 Knoten Abstand ist erlaubt")
+	# Der Mindestabstand zählt auch gegenüber fremden Militärgebäuden.
+	_raw(state, Vector2i(20, 12), "guardhouse", 5, 1, 1, 3, false)
+	_check(not state.military_placement_clear(18, 12),
+		"#15: nahes Gegner-Militärgebäude blockiert den Militärbau (Abstand < 5)")
+	_check(state.military_placement_clear(30, 12),
+		"#15: weit weg vom nächsten Militärgebäude bleibt der Militärbau frei")
 
 
 func _terrain_spike_count(map: MapData) -> int:

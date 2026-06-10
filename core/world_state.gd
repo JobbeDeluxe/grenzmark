@@ -12,6 +12,12 @@ enum { ROAD_DIRT, ROAD_COBBLE }
 # Was auf einem Knoten liegt.
 enum { OBJ_NONE, OBJ_FLAG, OBJ_BUILDING, OBJ_ROAD }
 
+# S2-Regel: Militärgebäude (inkl. HQ) müssen mindestens so viele Knoten von
+# jedem anderen Militärgebäude/HQ entfernt sein — egal welchem Spieler. So kann
+# ein Gegner nicht direkt an ein etabliertes Militärgebäude bauen und dessen
+# Kerngebiet schlucken; Expansion Richtung Grenze bleibt aber erlaubt.
+const MILITARY_MIN_DIST := 5
+
 
 class Flag:
 	extends RefCounted
@@ -54,7 +60,7 @@ var roads: Array[Road] = []
 var occupied: Dictionary = {}   # idx -> OBJ_*
 var territory: Dictionary = {}        # idx -> true (Spieler-Gebiet, Besitzer 0)
 var enemy_territory: Dictionary = {}  # idx -> true (Gegner-Gebiet, Besitzer 1)
-var territory_owner: Dictionary = {}  # idx -> Besitzer-ID; Snapshot für Stickiness
+var territory_owner: Dictionary = {}  # idx -> Besitzer-ID (für Grenz-Gleichstand)
 var explored: Dictionary = {}         # idx -> true (vom Spieler aufgedeckt)
 # Straßenteilungen seit dem letzten resync: { old, r1, r2, k } — damit die Economy
 # den vorhandenen Träger auf seinem Teilstück WEITERführen kann (statt ihn zu
@@ -169,18 +175,18 @@ static func hex_distance(a: Vector2i, b: Vector2i) -> int:
 
 
 ## Neu berechnen: Gebiet wird durch HQ + besetzte Militärgebäude beansprucht.
-## Etabliertes Gebiet ist „klebrig" (S2): Bei Überschneidung zweier Besitzer
-## behält der BISHERIGE Halter den Knoten, solange eines seiner Militärgebäude
-## ihn noch deckt — ein bloß näher gebauter Gegnerturm „klaut" kein Gebiet mehr.
-## Land wechselt erst, wenn der Halter fällt (Garnison <= 0 / erobert) und ihn
-## damit nicht mehr deckt. Getrennt für Spieler (0) / Gegner (>0).
+## S2-Modell „closest building wins": Jeder Knoten gehört dem NÄCHSTGELEGENEN
+## deckenden Militärgebäude/HQ (per Hex-Distanz). Bei exakt gleicher Distanz
+## behält der bisherige Halter den Knoten (stabile Grenze, kein Flackern), sonst
+## gewinnt die kleinere Besitzer-ID. Damit verliert man beim Bau eines Gegners
+## an der Grenze nur den wirklich näheren Streifen — nicht den vollen Radius und
+## nicht das eigene Kerngebiet. Getrennt für Spieler (0) / Gegner (>0).
 func recompute_territory() -> void:
-	var prev_owner := territory_owner   # Snapshot vom letzten Stand (Stickiness)
+	var prev_owner := territory_owner   # Halter vor dieser Neuberechnung (Gleichstand)
 	territory.clear()
 	enemy_territory.clear()
 	territory_owner = {}
-	# Pass 1: pro Knoten je Besitzer die kleinste Distanz eines deckenden Gebäudes.
-	var claim := {}  # idx -> { owner -> min_dist }
+	var best_dist := {}  # idx -> kleinste Distanz eines deckenden Gebäudes
 	for i in buildings:
 		var b: Building = buildings[i]
 		if b.influence <= 0 or b.under_construction:
@@ -199,35 +205,21 @@ func recompute_territory() -> void:
 				if d > r:
 					continue
 				var k := map.idx(x, y)
-				var owners = claim.get(k)
-				if owners == null:
-					owners = {}
-					claim[k] = owners
-				var cd = owners.get(b.owner)
-				if cd == null or d < cd:
-					owners[b.owner] = d
-	# Pass 2: Besitzer je Knoten bestimmen — Stickiness vor Distanz.
-	for k in claim:
-		var owners: Dictionary = claim[k]
-		var winner: int
-		if owners.size() == 1:
-			winner = owners.keys()[0]
-		else:
-			# Umkämpft: bisheriger Halter gewinnt, sofern er den Knoten noch deckt.
-			var prev = prev_owner.get(k)
-			if prev != null and owners.has(prev):
-				winner = prev
-			else:
-				# Sonst der Nächste (Tiebreak: kleinere Besitzer-ID).
-				winner = -1
-				var best_d := 1 << 30
-				for o in owners:
-					var od: int = owners[o]
-					if od < best_d or (od == best_d and o < winner):
-						best_d = od
-						winner = o
-		territory_owner[k] = winner
-		if winner == 0:
+				var cur = best_dist.get(k)
+				if cur == null or d < cur:
+					best_dist[k] = d
+					territory_owner[k] = b.owner
+				elif d == cur:
+					# Gleichstand: bisheriger Halter behält, sonst kleinere ID.
+					var assigned: int = territory_owner[k]
+					if assigned != b.owner:
+						var prev = prev_owner.get(k)
+						if prev == b.owner:
+							territory_owner[k] = b.owner
+						elif prev != assigned and b.owner < assigned:
+							territory_owner[k] = b.owner
+	for k in territory_owner:
+		if territory_owner[k] == 0:
 			territory[k] = true
 		else:
 			enemy_territory[k] = true
@@ -411,10 +403,29 @@ func flag_at(pos: Vector2i) -> Flag:
 #  Gebäude
 # --------------------------------------------------------------------------
 
-func can_place_building(x: int, y: int, size: int, owner := 0) -> bool:
+## S2-Regel: ein Militärgebäude darf nicht zu dicht an einem anderen
+## Militärgebäude/HQ stehen — egal welchem Spieler es gehört. Das verhindert,
+## dass ein Gegner direkt an ein etabliertes Militärgebäude baut und dessen
+## Kerngebiet schluckt; Bauten in Richtung Grenze bleiben erlaubt.
+func military_placement_clear(x: int, y: int) -> bool:
+	var here := Vector2i(x, y)
+	for i in buildings:
+		var b: Building = buildings[i]
+		if not (b.is_hq or b.influence > 0):
+			continue
+		if hex_distance(here, b.pos) < MILITARY_MIN_DIST:
+			return false
+	return true
+
+
+func can_place_building(x: int, y: int, size: int, owner := 0, influence := 0) -> bool:
 	if not has_building_territory_margin_for(owner, x, y):
 		return false
 	if _occ(x, y) != OBJ_NONE:
+		return false
+	# Militärgebäude (influence > 0) brauchen S2-Mindestabstand zu jedem
+	# Militärgebäude/HQ; Wirtschaftsgebäude (influence 0) sind davon frei.
+	if influence > 0 and not military_placement_clear(x, y):
 		return false
 	# Eingangsflagge unten rechts muss frei oder schon eine Flagge sein.
 	var se := map.neighbor(x, y, Grid.SE)
@@ -457,7 +468,7 @@ func actual_build_spot_bq(x: int, y: int) -> int:
 
 func place_building(x: int, y: int, size: int, is_hq := false,
 		def_id := "", influence := 0, under_construction := true, owner := 0) -> Building:
-	if not can_place_building(x, y, size, owner):
+	if not can_place_building(x, y, size, owner, influence):
 		return null
 	var se := map.neighbor(x, y, Grid.SE)
 	if _occ(se.x, se.y) != OBJ_FLAG:

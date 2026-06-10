@@ -12,16 +12,32 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
   etabliertes Spielergebiet (inkl. der dort stehenden Häuser/Flaggen).
 
   Ursache: recompute_territory() vergab jeden Knoten an das NÄCHSTE Einfluss-
-  Gebäude (reine Distanz), unabhängig vom bisherigen Halter.
+  Gebäude (reine Distanz) — UND es gab keine S2-Abstandsregel, sodass ein
+  Gegner direkt neben ein etabliertes Militärgebäude bauen und mit großem
+  Radius das Kerngebiet überdecken konnte.
 
-  Behoben (Kern): Territorium ist jetzt „klebrig". Bei Überschneidung zweier
-  Besitzer behält der bisherige Halter den Knoten, solange eines seiner
-  Militärgebäude ihn noch deckt. Land wechselt erst, wenn der Halter fällt
-  (Garnison <= 0 / erobert) — wie in S2. Neuer Test _test_territory_stickiness.
+  Zwischenschritt (verworfen): Territorium wurde „klebrig" gemacht (bisheriger
+  Halter behält). Das widerspricht aber dem Original — dort verschiebt sich die
+  Grenze sehr wohl, nur nicht beliebig weit.
 
-  Noch OFFEN (laut Issue „später"): Militärbau zu nah an/in Feindgebiet
-  verbieten; Straßen durch Feindland verbieten; Häuser/Straßen, die in verlorenes
-  Feindgebiet geraten, niederbrennen statt im eigenen Besitz zu lassen.
+  Behoben (2026-06-10), recherchiert am Original (Die Siedler 2 / RTTR):
+  - Landeinnahme = „closest building wins" (RTTR TerritoryRegion::AdjustNode):
+    jeder Knoten gehört dem NÄCHSTGELEGENEN deckenden Militärgebäude/HQ; bei
+    exakt gleicher Distanz behält der bisherige Halter (stabile Grenze). Damit
+    verliert man beim Gegnerbau an der Grenze nur den wirklich näheren Streifen
+    bis zur Mittellinie — nicht den vollen Gegner-Radius und nicht den Kern.
+    Größere Gebäude haben größeren Radius (Wachhaus 5 < Wachturm 7 < HQ 9 <
+    Festung 10), nehmen also mehr Land — wie im Original.
+  - S2-Abstandsregel (Quelle: S2-Handbuch/Guides): ein Militärgebäude darf nicht
+    näher als MILITARY_MIN_DIST (5 Knoten) an einem anderen Militärgebäude/HQ
+    stehen — egal welchem Spieler. Kein pauschales Sperren; Expansion Richtung
+    Grenze bleibt erlaubt. Verhindert das Überbauen etablierter Gegner-Kerne.
+    Greift authoritativ in place_building() und gefiltert in KI/Bauvorschau.
+  Neue Tests: _test_territory_closest_wins, _test_military_min_distance.
+
+  Noch OFFEN (laut Issue „später"): Straßen durch Feindland verbieten;
+  Häuser/Straßen, die in verlorenes Feindgebiet geraten, niederbrennen statt im
+  eigenen Besitz zu lassen.
 
 
 [2026-06-09] (BEHOBEN) Straßen-Vorschau wich von der gebauten Straße ab

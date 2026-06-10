@@ -129,8 +129,8 @@ func _do_expand(eco: Economy, owner: int) -> void:
 	for k in border:
 		var x := int(k) % state.map.width
 		var y := int(k) / state.map.width
-		if not state.can_place_building(x, y, WorldState.BQ_HUT, owner):
-			continue  # auf Bergen (BQ_MINE) keine Militärgebäude; Abstand beachtet
+		if not state.can_place_building(x, y, WorldState.BQ_HUT, owner, 5):
+			continue  # Berge (BQ_MINE) + S2-Mindestabstand zu Militärgebäuden
 		var flag_pos := state.map.neighbor(x, y, Grid.SE)
 		if not _can_connect_to_network(state, owner, flag_pos):
 			continue
