@@ -21,6 +21,7 @@ const CARRIER_SPEED := 0.05    # Segmente pro Tick
 const FLAG_CAP := 8            # max. Waren, die auf einer Flagge warten
 const BUILD_TIME := 150        # Ticks Bau, sobald alle Materialien da sind
 const OUT_CAP := 4             # Ausgangspuffer eines Gebäudes
+const PROD_WINDOW := 1800      # rollendes Bewertungsfenster (Ticks) für die Produktivität %
 const RES_RADIUS := 6          # Suchradius für Baum/Stein/Pflanzplatz
 const ORE_RADIUS := 4          # Suchradius für Erz / Wasser
 const SOLDIER_TICKS := 120     # Ticks, um aus einem Schwert einen Soldaten zu machen
@@ -99,6 +100,9 @@ enum { H_IDLE, H_OUT, H_FETCH, H_IN, H_RETURN }
 # leer wartend → Hinweg → Aktion am Ziel → Rückweg → Pause am Gebäude.
 enum { WK_IDLE, WK_OUT, WK_WORK, WK_BACK, WK_WAIT }
 
+# Warum ein Produktionsgebäude gerade NICHT arbeitet (fürs Gebäudefenster).
+enum { IDLE_OK, IDLE_OUT_FULL, IDLE_NO_INPUTS, IDLE_NO_RESOURCE }
+
 
 class HouseCarrier:
 	extends RefCounted
@@ -129,6 +133,9 @@ class BState:
 	var staffed := false                   # Arbeiter ist vom HQ angekommen?
 	var worker_sent := false               # Arbeiter wurde schon angefordert?
 	var stopped := false                   # Produktion vom Spieler angehalten?
+	var prod_active := 0                   # aktive Arbeitsticks im Bewertungsfenster
+	var prod_total := 0                    # Gesamtticks im Bewertungsfenster
+	var idle_reason := IDLE_OK             # warum WK_IDLE nicht startet (Fensteranzeige)
 
 
 var state: WorldState
@@ -734,6 +741,7 @@ func _tick_building(bs: BState) -> void:
 			if not bs.worker_sent:
 				_dispatch_worker(bs)
 			return
+	_track_productivity(bs)
 	if bs.stopped:
 		# "Stop" blockiert nur den NÄCHSTEN Arbeitsgang, nicht den laufenden:
 		# Ein begonnener Zyklus (Hinweg/Aktion/Rückweg/Wartezeit) wird zu Ende
@@ -746,6 +754,20 @@ func _tick_building(bs: BState) -> void:
 	_request_inputs(bs)
 	_tick_work(bs)
 	_ship_outputs(bs)
+
+
+## Produktivität wie S2: Anteil aktiver Arbeitsticks in einem rollenden Fenster.
+## Bei vollem Fenster werden beide Zähler halbiert (exponentielles Vergessen) —
+## reine Ganzzahlen, damit die Simulation deterministisch bleibt.
+func _track_productivity(bs: BState) -> void:
+	if int(bs.def.get("output", -1)) == -1 and String(bs.def.get("resource", "")) != "plant_tree":
+		return  # Lager / Militär: keine Produktivität
+	bs.prod_total += 1
+	if bs.producing:
+		bs.prod_active += 1
+	if bs.prod_total >= PROD_WINDOW:
+		bs.prod_total >>= 1
+		bs.prod_active >>= 1
 
 
 ## Sichtbare, vereinfachte Gegner-Wirtschaft: Gegnergebäude mischen sich nicht in
@@ -979,19 +1001,24 @@ func _tick_work(bs: BState) -> void:
 	match bs.wphase:
 		WK_IDLE:
 			if bs.out_stock >= OUT_CAP:
+				bs.idle_reason = IDLE_OUT_FULL
 				return
 			if not _has_inputs(bs):
+				bs.idle_reason = IDLE_NO_INPUTS
 				return
 			if gather:
 				var tgt := _resource_target(bs)
 				if tgt.x < 0:
+					bs.idle_reason = IDLE_NO_RESOURCE
 					return  # nichts zu tun (kein fällbarer Baum / Pflanzplatz)
+				bs.idle_reason = IDLE_OK
 				bs.worker_target = tgt
 				_consume_inputs(bs)
 				bs.producing = true
 				_enter_wphase(bs, WK_OUT, _worker_walk_ticks(bs, tgt))
 			else:
 				# Stationäre Produktion (z. B. Sägewerk): kein Weg, nur Arbeitszeit.
+				bs.idle_reason = IDLE_OK
 				bs.worker_target = Vector2i(-1, -1)
 				_consume_inputs(bs)
 				bs.producing = true
@@ -1691,6 +1718,60 @@ func building_status(bld: WorldState.Building) -> String:
 	if int(bs.def.get("influence", 0)) > 0:
 		s += "  Garnison %d/%d  Rang +%d" % [bld.garrison, bld.capacity, bld.promotions]
 	return s
+
+
+## Strukturierte Daten fürs Gebäudefenster (read-only, UI rendert Icons daraus).
+## Liefert:
+##   status: String           — kurze Statuszeile
+##   warning: String          — Warnzustand ("" wenn keiner)
+##   productivity: int        — Auslastung in % (-1 = nicht zutreffend)
+##   construction: bool       — Baustelle?
+##   inputs: Array[Dictionary]— je {good, have, want}; bei Baustellen die Baustoffe
+##   output: Dictionary       — {good, stock, cap} oder {} ohne Ausgang
+func building_info(bld: WorldState.Building) -> Dictionary:
+	var info := {
+		status = building_status(bld), warning = "", productivity = -1,
+		construction = false, inputs = [], output = {},
+	}
+	var bs: BState = bstates.get(state.map.idx(bld.pos.x, bld.pos.y))
+	if bs == null or bld.owner != 0:
+		return info
+	if bs.is_construction:
+		info.construction = true
+		info.status = "Baustelle %d%%" % int(100.0 * bs.construct_progress / float(BUILD_TIME))
+		var cost: Dictionary = bs.def.get("cost", {})
+		for g in cost:
+			info.inputs.append({good = g,
+				have = mini(bs.delivered.get(g, 0), int(cost[g])), want = int(cost[g])})
+		if not bs.staffed:
+			info.warning = "Bauarbeiter kommt vom HQ ..."
+		return info
+	var inputs: Dictionary = bs.def.get("inputs", {})
+	for g in inputs:
+		var want := int(inputs[g]) * 2  # Sollbestand = doppelter Rezeptbedarf (Puffer)
+		info.inputs.append({good = g, have = mini(bs.delivered.get(g, 0), want), want = want})
+	var output: int = bs.def.get("output", -1)
+	if output != -1:
+		info.output = {good = output, stock = mini(bs.out_stock, OUT_CAP), cap = OUT_CAP}
+	var is_producer := output != -1 or String(bs.def.get("resource", "")) == "plant_tree"
+	if is_producer and bs.staffed:
+		info.productivity = 100 * bs.prod_active / maxi(bs.prod_total, 1)
+	# Kurzstatus statt der langen Textzeile: Waren stehen als Icons im Fenster,
+	# Garnison ergänzt das UI selbst — Doppelung vermeiden.
+	if int(bs.def.get("influence", 0)) > 0:
+		info.status = ""
+	elif is_producer and bs.staffed:
+		info.status = "Status: %s" % ("arbeitet" if bs.producing else "wartet")
+	if not bs.staffed:
+		info.warning = "Arbeiter kommt vom HQ ..."
+	elif bs.stopped:
+		info.warning = "Produktion gestoppt (Taste P)"
+	elif is_producer and bs.wphase == WK_IDLE:
+		match bs.idle_reason:
+			IDLE_OUT_FULL: info.warning = "Ausgang voll — Abtransport stockt"
+			IDLE_NO_INPUTS: info.warning = "Wartet auf Waren"
+			IDLE_NO_RESOURCE: info.warning = "Kein Rohstoff in Reichweite"
+	return info
 
 
 ## Hat dieses Gebäude gerade einen sichtbaren, herumlaufenden Arbeiter?

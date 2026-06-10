@@ -1318,7 +1318,13 @@ func _open_building_window(b: WorldState.Building) -> void:
 	var screen := get_viewport().get_canvas_transform() * world
 	var vp := get_viewport().get_visible_rect().size
 	var w := UISkin.layout_num("selection_panel_width", 260)
-	var h := UISkin.layout_num("selection_panel_height", 205)
+	# Soll/Ist-Warenzeilen und Produktivität brauchen zusätzliche Fensterhöhe.
+	var d := BuildingCatalog.get_def(b.def_id)
+	var goods_rows := maxi((d.get("inputs", {}) as Dictionary).size(),
+		(d.get("cost", {}) as Dictionary).size()) \
+		+ (1 if int(d.get("output", -1)) != -1 else 0)
+	var h := UISkin.layout_num("selection_panel_height", 205) + 20.0 \
+		+ float(goods_rows) * (UISkin.layout_num("good_icon_size", 18) + 6.0)
 	var cascade := float(_building_windows.size() % 5) * UISkin.layout_num("window_cascade", 22)
 	var x: float = clampf(screen.x + 16.0 + cascade, 4.0, vp.x - w - 4.0)
 	var y: float = clampf(screen.y - h * 0.55 + cascade, 4.0, vp.y - h - 4.0)
@@ -1349,6 +1355,17 @@ func _open_building_window(b: WorldState.Building) -> void:
 	UISkin.apply_label(info, true, 11)
 	content.add_child(info)
 
+	var prod := Label.new()
+	prod.mouse_filter = Control.MOUSE_FILTER_PASS
+	UISkin.apply_label(prod, false, 12)
+	prod.visible = false
+	content.add_child(prod)
+
+	var goods_box := VBoxContainer.new()
+	goods_box.add_theme_constant_override("separation", 2)
+	goods_box.mouse_filter = Control.MOUSE_FILTER_PASS
+	content.add_child(goods_box)
+
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 4)
 	content.add_child(actions)
@@ -1359,6 +1376,7 @@ func _open_building_window(b: WorldState.Building) -> void:
 
 	_building_windows[idx] = {
 		panel = panel, title = title, icon = icon, info = info,
+		prod = prod, goods_box = goods_box, goods_sig = "", goods_icons = [],
 		stop = stop, goto_btn = goto_btn, demolish = demolish, attack = attack,
 	}
 	_update_one_building_window(idx)
@@ -1406,10 +1424,25 @@ func _update_one_building_window(idx: int) -> void:
 		(panel.get_meta("title_label") as Label).text = title_text
 	title_label.text = title_text
 	icon.texture = GameTheme.building_texture(b.def_id, b.owner)
-	var lines := economy.building_status(b)
+	var data := economy.building_info(b)
+	var parts := PackedStringArray()
+	if String(data.status) != "":
+		parts.append(String(data.status))
 	if b.influence > 0:
-		lines += "\nGarnison: %d/%d  Rangbonus: %d" % [b.garrison, b.capacity, b.promotions]
-	info.text = lines
+		parts.append("Garnison: %d/%d  Rangbonus: %d" % [b.garrison, b.capacity, b.promotions])
+	if String(data.warning) != "":
+		parts.append("! %s" % data.warning)
+	info.text = "\n".join(parts)
+	var prod_label: Label = entry["prod"]
+	prod_label.visible = int(data.productivity) >= 0
+	if prod_label.visible:
+		prod_label.text = "Produktivität: %d %%" % int(data.productivity)
+	var rows := _window_goods_rows(data)
+	var sig := _window_goods_sig(rows)
+	if sig != String(entry.get("goods_sig", "")):
+		_rebuild_window_goods(entry, rows)
+		entry["goods_sig"] = sig
+	_color_window_goods(entry, data)
 	var own := b.owner == 0
 	stop.visible = own and not b.is_hq
 	demolish.visible = own and not b.is_hq
@@ -1425,6 +1458,77 @@ func _building_window_title(b: WorldState.Building) -> String:
 	if b.under_construction:
 		title += " (Bau)"
 	return title
+
+
+## Zeilenstruktur der Soll/Ist-Warenanzeige: erst alle Eingänge (bzw. Baustoffe
+## der Baustelle), dann der Ausgangspuffer.
+func _window_goods_rows(data: Dictionary) -> Array:
+	var rows := []
+	for inp in data.inputs:
+		rows.append({kind = "in", good = int(inp.good), want = int(inp.want)})
+	var out: Dictionary = data.output
+	if not out.is_empty():
+		rows.append({kind = "out", good = int(out.good), want = int(out.cap)})
+	return rows
+
+
+func _window_goods_sig(rows: Array) -> String:
+	var parts := PackedStringArray()
+	for r in rows:
+		parts.append("%s:%d:%d" % [r.kind, r.good, r.want])
+	return ";".join(parts)
+
+
+## Baut die Icon-Zeilen neu auf — nur wenn sich die Struktur ändert (z. B.
+## Baustelle wird fertig). Füllstände werden pro Frame nur umgefärbt.
+func _rebuild_window_goods(entry: Dictionary, rows: Array) -> void:
+	var box: VBoxContainer = entry["goods_box"]
+	for c in box.get_children():
+		box.remove_child(c)
+		c.queue_free()
+	var built := []
+	var icon_px := UISkin.layout_num("good_icon_size", 18)
+	for r in rows:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 2)
+		row.mouse_filter = Control.MOUSE_FILTER_PASS
+		row.tooltip_text = Goods.name_of(int(r.good)) \
+			+ (" (Ausgang)" if r.kind == "out" else " (Bedarf: hell = vorhanden)")
+		box.add_child(row)
+		var prefix := Label.new()
+		UISkin.apply_label(prefix, true, 11)
+		prefix.text = "→" if r.kind == "out" else ""
+		prefix.custom_minimum_size = Vector2(14, 0)
+		prefix.mouse_filter = Control.MOUSE_FILTER_PASS
+		row.add_child(prefix)
+		var icons := []
+		for k in int(r.want):
+			var ic := TextureRect.new()
+			ic.custom_minimum_size = Vector2(icon_px, icon_px)
+			ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			ic.texture = UISkin.good_texture(int(r.good))
+			ic.mouse_filter = Control.MOUSE_FILTER_PASS
+			row.add_child(ic)
+			icons.append(ic)
+		built.append(icons)
+	entry["goods_icons"] = built
+
+
+## Färbt die Soll/Ist-Icons wie im Original: hell = Ist-Bestand, gedimmt = Soll.
+func _color_window_goods(entry: Dictionary, data: Dictionary) -> void:
+	var built: Array = entry.get("goods_icons", [])
+	var fills := []
+	for inp in data.inputs:
+		fills.append(int(inp.have))
+	var out: Dictionary = data.output
+	if not out.is_empty():
+		fills.append(int(out.stock))
+	for i in mini(built.size(), fills.size()):
+		var icons: Array = built[i]
+		for k in icons.size():
+			(icons[k] as TextureRect).modulate = \
+				Color.WHITE if k < int(fills[i]) else Color(1, 1, 1, 0.28)
 
 
 func _toggle_production_window(idx: int) -> void:

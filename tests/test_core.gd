@@ -28,6 +28,7 @@ func _initialize() -> void:
 	_test_road_and_route()
 	_test_economy()
 	_test_stop_finishes_cycle()
+	_test_productivity_and_building_info()
 	_test_military()
 	_test_combat()
 	_test_enemy_road_people()
@@ -243,6 +244,82 @@ func _test_stop_finishes_cycle() -> void:
 			stayed_home = false
 			break
 	_check(stayed_home, "Stop-Test: gestoppter Arbeiter startet keinen neuen Gang")
+
+
+## Gebäudefenster-Unterbau (#5): Produktivität % im rollenden Fenster und
+## strukturierte building_info()-Daten mit Soll/Ist und Warnzuständen.
+func _test_productivity_and_building_info() -> void:
+	var map := _flat_map(24, 24)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_check(hq != null, "Prod-Test: HQ platzierbar")
+	if hq == null:
+		return
+	eco.resync()
+	var wc := state.place_building(10, 7, WorldState.BQ_HOUSE, false, "woodcutter", 0, false)
+	_check(wc != null, "Prod-Test: Holzfäller platzierbar")
+	if wc == null:
+		return
+	map.set_map_object(10, 6, MapData.MO_TREE)
+	map.set_tree_stage(10, 6, MapData.TREE_BIG)
+	eco.resync()
+	var bs = eco.bstates.get(map.idx(wc.pos.x, wc.pos.y))
+	_check(bs != null, "Prod-Test: BState vorhanden")
+	if bs == null:
+		return
+
+	# Arbeiten lassen: Produktivität muss > 0 werden und im Fenster auftauchen.
+	for t in 2000:
+		eco.tick()
+	_check(bs.prod_total > 0, "Prod-Test: Bewertungsfenster läuft mit")
+	_check(bs.prod_active > 0, "Prod-Test: aktive Arbeitsticks gezählt")
+	var info := eco.building_info(wc)
+	_check(int(info.productivity) > 0, "Prod-Test: building_info liefert Produktivität > 0")
+	_check(int(info.productivity) <= 100, "Prod-Test: Produktivität <= 100")
+	_check(not bool(info.construction), "Prod-Test: kein Baustellen-Flag am fertigen Gebäude")
+
+	# Alle Bäume weg -> Leerlaufgrund "kein Rohstoff" mit Warntext.
+	for yy in map.height:
+		for xx in map.width:
+			if map.map_object(xx, yy) == MapData.MO_TREE:
+				map.clear_map_object(xx, yy)
+	var saw_warning := false
+	for t in 4000:
+		eco.tick()
+		if bs.wphase == Economy.WK_IDLE and bs.idle_reason == Economy.IDLE_NO_RESOURCE:
+			saw_warning = true
+			break
+	_check(saw_warning, "Prod-Test: idle_reason 'kein Rohstoff' gesetzt")
+	info = eco.building_info(wc)
+	_check(String(info.warning) == "Kein Rohstoff in Reichweite",
+		"Prod-Test: Warnung 'Kein Rohstoff in Reichweite' im Fensterinfo")
+
+	# Sägewerk ohne Holzlieferung -> wartet auf Waren; Soll/Ist-Zeile vorhanden.
+	var saw := state.place_building(13, 10, WorldState.BQ_HOUSE, false, "sawmill", 0, false)
+	_check(saw != null, "Prod-Test: Sägewerk platzierbar")
+	if saw == null:
+		return
+	eco.hq_stock[Goods.WOOD] = 0  # HQ leer: es kann nichts geliefert werden
+	eco.resync()
+	var sbs = eco.bstates.get(map.idx(saw.pos.x, saw.pos.y))
+	var waits := false
+	for t in 3000:
+		eco.tick()
+		if sbs != null and sbs.staffed and sbs.wphase == Economy.WK_IDLE \
+				and sbs.idle_reason == Economy.IDLE_NO_INPUTS:
+			waits = true
+			break
+	_check(waits, "Prod-Test: Sägewerk meldet 'wartet auf Waren'")
+	var sinfo := eco.building_info(saw)
+	_check((sinfo.inputs as Array).size() == 1, "Prod-Test: Sägewerk hat eine Eingangszeile")
+	if (sinfo.inputs as Array).size() == 1:
+		var row: Dictionary = sinfo.inputs[0]
+		_check(int(row.good) == Goods.WOOD, "Prod-Test: Eingangszeile ist Holz")
+		_check(int(row.want) > 0 and int(row.have) <= int(row.want),
+			"Prod-Test: Soll/Ist-Werte plausibel")
+	_check((sinfo.output as Dictionary).get("good", -1) == Goods.BOARDS,
+		"Prod-Test: Ausgangszeile ist Bretter")
 
 
 func _test_military() -> void:

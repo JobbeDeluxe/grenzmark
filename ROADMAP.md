@@ -286,10 +286,15 @@ GitHub-Arbeitspakete:
       sind vor Spielstart anwählbar und werden persistent gespeichert.
 - [x] **Parallele Gebäudefenster (2026-06-09):** jedes angeklickte Gebäude öffnet
       sein eigenes Fenster; vorhandene Fenster werden fokussiert statt überschrieben.
-- [ ] **Nächster UI-Schnitt (Priorität 1):** Gebäude-Infofenster S2-näher machen:
-      Produktivität in %, Eingangs-/Ausgangswaren als Icons, Warnzustände,
-      Garnison/Rang und Prioritäten; danach die Warenleiste oben weiter
-      ikonisieren.
+- [~] **Nächster UI-Schnitt (Priorität 1):** Gebäude-Infofenster S2-näher machen.
+      Erledigt (2026-06-10): Produktivität in % (rollendes 60-s-Fenster in
+      `economy.gd`, deterministisch), Eingangs-/Ausgangswaren als Icon-Zeilen
+      mit Soll (gedimmt) / Ist (hell) wie im Original, Warnzustände
+      („Wartet auf Waren", „Kein Rohstoff in Reichweite", „Ausgang voll",
+      „Produktion gestoppt", „Arbeiter kommt"), Baustellen zeigen Baustoff-
+      Soll/Ist. Unterbau: `Economy.building_info()` liefert strukturierte
+      Fensterdaten (read-only). Offen: Prioritäten, Militär „Münzen an/aus",
+      danach die Warenleiste oben weiter ikonisieren.
 - [~] **Unterer Rand**: dauerhaft nur Hauptbuttons; Gebäude-/Wirtschafts-/
       Systemdetails liegen in Fenstern. Offen: richtige S2-artige Symbolbuttons
       und schönere Fenster-Skins.
@@ -299,10 +304,10 @@ GitHub-Arbeitspakete:
 - [x] **Hover-Bauhilfe (2026-06-09):** der Cursor zeigt am aktuellen Knoten
       sichtbar die zulässige Baugröße bzw. Straßen-Flagge statt nur einen Punkt;
       Diamant/Punkt bleiben am echten Knoten, Icon/Kurzlabel sitzen tiefer.
-- [~] **Gebäude-Infofenster** (bei Auswahl): erste Version mit Gebäude-Bild,
-      Status, Produktion an/aus, Abreißen, Angriff/Sprung. Offen: Produktivität
-      in %, Eingangs-/Ausgangslager mit Waren-Icons, Garnison/Rang-Details,
-      Priorität.
+- [~] **Gebäude-Infofenster** (bei Auswahl): Gebäude-Bild, Status, Produktion
+      an/aus, Abreißen, Angriff/Sprung; seit 2026-06-10 zusätzlich Produktivität
+      in %, Eingangs-/Ausgangswaren als Soll/Ist-Icons und Warnzustände.
+      Offen: Garnison/Rang als Icons statt Textzeile, Priorität, Münzen an/aus.
 - [ ] **Ressourcen-/Lagerleiste oben**: Waren als **Icons mit Zahl** statt Textliste.
 - [ ] **Minikarte** in gerahmtem Panel; Umschalter für Overlays (Gebiet, Bauplätze, Nebel).
 - [ ] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion) und
@@ -428,7 +433,8 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [ ] Produktion drosseln (Prozent), Eingangsmengen begrenzen
 - [ ] Direkte Gebäude→Gebäude-Lieferung (nicht alles über HQ)
 - [ ] Felder: Bauer pflügt/erntet Getreide-Felder (Acker als Map-Objekt)
-- [ ] Produktivitäts-Anzeige je Gebäude (% wie im Original)
+- [x] Produktivitäts-Anzeige je Gebäude (% wie im Original; rollendes Fenster,
+      sichtbar im Gebäudefenster)
 
 **Karte & Erkundung (hoch):**
 - [ ] Geologen: erkunden Berge & decken die Erzsorte auf (Schilder), bevor Minen lohnen
