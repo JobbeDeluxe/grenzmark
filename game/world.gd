@@ -121,6 +121,7 @@ func _wire_world() -> void:
 
 	camera = CameraController.new()
 	camera.zoom = Vector2(1.5, 1.5)
+	camera.right_click_tap.connect(_on_right_click_cancel)
 	add_child(camera)
 
 	_build_ui()
@@ -1129,6 +1130,11 @@ func _toggle_pause() -> void:
 	_update_labels()
 
 
+## Rechtsklick (ohne Schwenk) = universeller Abbrechen/Schließen wie in S2.
+func _on_right_click_cancel() -> void:
+	_escape_or_select()
+
+
 func _escape_or_select() -> void:
 	if _flag_menu != null and _flag_menu.visible:
 		_close_flag_menu()
@@ -1978,6 +1984,10 @@ func _handle_click() -> void:
 			changed = state.place_flag(hover.x, hover.y) != null
 		MODE_BUILD:
 			changed = _place_building_here()
+			if changed:
+				# Wie im Original: ein Gebäude pro Auswahl. Danach zurück in den
+				# Auswahlmodus, statt den Geist weiter am Cursor zu lassen.
+				_set_mode(MODE_SELECT)
 		MODE_ROAD:
 			changed = _handle_road_click()
 		MODE_DELETE:

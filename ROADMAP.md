@@ -301,6 +301,12 @@ GitHub-Arbeitspakete:
 - [x] **Cursor-Bauvorschau**: „Geist" des gewählten Gebäudes am Mauszeiger +
       BQ-Markierung am Knoten (grün=geht/rot=geht nicht), Eingangsflagge/-weg
       schon in der Vorschau (unit_renderer._draw_build_preview).
+- [x] **S2-Bediengefühl beim Bauen (2026-06-10):** Gebäude aus dem Baumenü wird
+      genau **einmal** gesetzt, danach zurück in den Auswahlmodus (vorher klebte
+      der Geist dauerhaft am Cursor). **Rechtsklick** ist jetzt universeller
+      Abbrechen/Schließen-Befehl (Bau-/Straßen-/Abrissmodus, Menüs); Rechtsklick
+      mit Bewegung schwenkt weiterhin die Kamera (`camera_controller.gd` trennt
+      Tap vs. Schwenk über `right_click_tap`).
 - [x] **Hover-Bauhilfe (2026-06-09):** der Cursor zeigt am aktuellen Knoten
       sichtbar die zulässige Baugröße bzw. Straßen-Flagge statt nur einen Punkt;
       Diamant/Punkt bleiben am echten Knoten, Icon/Kurzlabel sitzen tiefer.
@@ -521,7 +527,12 @@ ROADMAP.md • README.md • assets/README.md • ai/README.md
 - **Untere Hauptleiste**: **Bauen**, **Wirtschaft**, **System** als Fensterzugriffe
   (Tasten **1** Flagge, **2** Straße, **9** Abriss, **0/Esc** Auswahl/Fenster zu)
 - **Linksklick**: ausführen / im Auswahl-Modus Gebäude-Fenster öffnen
-  (mehrere bleiben parallel offen), Gegnerangriff über das Gebäudefenster
+  (mehrere bleiben parallel offen), Gegnerangriff über das Gebäudefenster.
+  Ein aus dem Baumenü gewähltes Gebäude wird wie im Original **einmal** gesetzt;
+  danach zurück in den Auswahlmodus (kein Dauer-Stempelmodus).
+- **Rechtsklick (ohne zu ziehen)**: universeller Abbrechen/Schließen wie in S2
+  (bricht Bau-/Straßen-/Abrissmodus ab, schließt Kontextmenüs/Fenster).
+  Rechtsklick mit Bewegung schwenkt weiterhin die Kamera.
 - **Leertaste**: Bauplätze einblenden; bei sichtbaren Markern öffnet Klick auf
   Hütte/Haus/Burg/Mine das passende Baufenster, Flaggenmarker setzen direkt Flaggen
 - **B**: Baufenster mit Aktionszeile + Kategorien Bergwerk/Klein/Mittel/Gross
