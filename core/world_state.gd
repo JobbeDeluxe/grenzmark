@@ -141,18 +141,27 @@ func has_building_territory_margin(x: int, y: int) -> bool:
 	return has_building_territory_margin_for(0, x, y)
 
 
+const REVEAL_BUILDING := 7   # Aufdeck-Radius eigener Gebäude
+const REVEAL_FLAG := 5       # Aufdeck-Radius einer Flagge
+const REVEAL_ROAD := 3       # Aufdeck-Radius je Straßenknoten
+
+
 ## Sichtbarkeit: deckt Knoten rund um eigene Gebäude/Flaggen/Straßen auf.
 ## Aufgedecktes bleibt aufgedeckt (wie in S2 die erkundete Karte).
+## WICHTIG: Das ist die VOLL-Neuberechnung über alle Strukturen — teuer und nur
+## beim Laden/Reset nötig. Im laufenden Spiel decken `place_building`, `_add_flag`
+## und `build_road` inkrementell auf (siehe dort), damit das Platzieren nicht bei
+## jedem Klick die ganze Karte neu scannt (Performance, Issue #30).
 func recompute_visibility() -> void:
 	for i in buildings:
 		var b: Building = buildings[i]
 		if b.owner == 0:
-			_reveal(b.pos, 7)
+			_reveal(b.pos, REVEAL_BUILDING)
 	for i in flags:
-		_reveal(flags[i].pos, 5)
+		_reveal(flags[i].pos, REVEAL_FLAG)
 	for r in roads:
 		for n in r.nodes:
-			_reveal(n, 3)
+			_reveal(n, REVEAL_ROAD)
 
 
 func _reveal(center: Vector2i, radius: int) -> void:
@@ -358,6 +367,7 @@ func _add_flag(x: int, y: int, owner := 0) -> Flag:
 	var i := map.idx(x, y)
 	flags[i] = f
 	occupied[i] = OBJ_FLAG
+	_reveal(Vector2i(x, y), REVEAL_FLAG)  # inkrementell aufdecken (Issue #30)
 	return f
 
 
@@ -500,6 +510,8 @@ func place_building(x: int, y: int, size: int, is_hq := false,
 	buildings[i] = b
 	occupied[i] = OBJ_BUILDING
 	reserve_building_extensions(b)
+	if owner == 0:
+		_reveal(b.pos, REVEAL_BUILDING)  # inkrementell aufdecken (Issue #30)
 	return b
 
 
@@ -727,6 +739,8 @@ func build_road(from: Vector2i, to: Vector2i, owner := -1) -> Road:
 	# Zwischenknoten als Straße markieren (Endpunkte bleiben Flaggen).
 	for k in range(1, path.size() - 1):
 		occupied[map.idx(path[k].x, path[k].y)] = OBJ_ROAD
+	for n in path:
+		_reveal(n, REVEAL_ROAD)  # inkrementell aufdecken (Issue #30)
 	roads.append(r)
 	return r
 

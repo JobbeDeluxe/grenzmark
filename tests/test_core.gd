@@ -642,6 +642,24 @@ func _test_visibility() -> void:
 	_check(state.explored.has(map.idx(10, 10)), "HQ-Umgebung aufgedeckt")
 	_check(not state.explored.has(map.idx(34, 34)), "Ferne Karte bleibt im Nebel")
 
+	# Inkrementelles Aufdecken (Issue #30): eine neu gesetzte Flagge deckt ihre
+	# Umgebung SOFORT auf — ohne dass resync() die ganze Karte neu scannen muss.
+	# Knoten suchen, der im Gebiet & baubar, aber noch NICHT aufgedeckt ist.
+	var spot := Vector2i(-1, -1)
+	for yy in range(2, map.height - 2):
+		for xx in range(2, map.width - 2):
+			var idx := map.idx(xx, yy)
+			if not state.explored.has(idx) and state.can_place_flag(xx, yy):
+				spot = Vector2i(xx, yy)
+				break
+		if spot.x >= 0:
+			break
+	_check(spot.x >= 0, "Visibility: unaufgedeckter Bauplatz im Gebiet gefunden")
+	if spot.x >= 0:
+		_check(state.place_flag(spot.x, spot.y) != null, "Visibility: Testflagge setzbar")
+		_check(state.explored.has(map.idx(spot.x, spot.y)),
+			"Neue Flagge deckt ihren Knoten inkrementell auf (ohne resync)")
+
 
 func _test_ore_types() -> void:
 	var map := _flat_map(20, 20)

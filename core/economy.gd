@@ -252,7 +252,9 @@ func resync() -> void:
 			flag_goods.erase(fi)
 
 	state.recompute_territory()
-	state.recompute_visibility()
+	# Sichtbarkeit NICHT mehr bei jedem resync voll neu berechnen (Issue #30):
+	# Aufgedecktes wächst nur und wird beim Platzieren inkrementell ergänzt
+	# (place_building/_add_flag/build_road). Voll-Neuberechnung nur beim Laden.
 	dirty = true
 
 

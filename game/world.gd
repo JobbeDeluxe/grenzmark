@@ -2351,6 +2351,9 @@ func _load_game() -> void:
 	_apply_ai()
 	_apply_start_options()
 	economy.resync()
+	# Geladene Gebäude/Straßen werden direkt erzeugt (umgehen das inkrementelle
+	# Aufdecken) — daher hier einmalig die Sichtbarkeit voll aufbauen (Issue #30).
+	state.recompute_visibility()
 	renderer.queue_redraw()
 	_flash("Geladen.")
 
