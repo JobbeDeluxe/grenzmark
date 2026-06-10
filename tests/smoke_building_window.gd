@@ -188,5 +188,24 @@ func _check_placement_and_cancel() -> bool:
 	_world.call("_toggle_resource_bar")  # zuruecksetzen
 	print("Smoketest: Inventur + Warenleisten-Toggle ok")
 
+	# HQ-Fenster zeigt Lager-Ansicht (Inventur-Button), KEINE Garnison (#10).
+	_world.call("_open_building_window", hq)
+	var windows = _world.get("_building_windows")
+	var hqidx: int = state.map.idx(hq.pos.x, hq.pos.y)
+	if not windows.has(hqidx):
+		print("Smoketest FEHLER: HQ-Fenster nicht offen")
+		quit(1)
+		return false
+	var hqentry = windows[hqidx]
+	if not hqentry["inventory"].visible:
+		print("Smoketest FEHLER: HQ-Fenster zeigt keinen Inventur-Button")
+		quit(1)
+		return false
+	if hqentry["mil_box"].visible:
+		print("Smoketest FEHLER: HQ-Fenster zeigt faelschlich Garnison")
+		quit(1)
+		return false
+	print("Smoketest: HQ-Lager-Ansicht ok")
+
 	print("Smoketest: Einzelplatzierung + Rechtsklick-Abbruch ok")
 	return true
