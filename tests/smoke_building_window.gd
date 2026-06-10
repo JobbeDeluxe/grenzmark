@@ -188,24 +188,25 @@ func _check_placement_and_cancel() -> bool:
 	_world.call("_toggle_resource_bar")  # zuruecksetzen
 	print("Smoketest: Inventur + Warenleisten-Toggle ok")
 
-	# HQ-Fenster zeigt Lager-Ansicht (Inventur-Button), KEINE Garnison (#10).
-	_world.call("_open_building_window", hq)
+	# Klick aufs eigene HQ öffnet DIREKT die Inventur (#10), kein Gebäudefenster.
+	var hqidx0: int = state.map.idx(hq.pos.x, hq.pos.y)
+	_world.call("_close_building_window", hqidx0)  # evtl. zuvor direkt geoeffnetes schliessen
+	_world.set("mode", _world.get("MODE_SELECT"))
+	var inv2 = _world.get("_economy_panel")
+	if inv2 != null:
+		inv2.visible = false
+	_world.set("hover", hq.pos)
+	_world.call("_handle_click")
+	if inv2 == null or not inv2.visible:
+		print("Smoketest FEHLER: HQ-Klick oeffnet die Inventur nicht direkt")
+		quit(1)
+		return false
 	var windows = _world.get("_building_windows")
-	var hqidx: int = state.map.idx(hq.pos.x, hq.pos.y)
-	if not windows.has(hqidx):
-		print("Smoketest FEHLER: HQ-Fenster nicht offen")
+	if windows.has(state.map.idx(hq.pos.x, hq.pos.y)):
+		print("Smoketest FEHLER: HQ-Klick oeffnet faelschlich ein Gebaeudefenster")
 		quit(1)
 		return false
-	var hqentry = windows[hqidx]
-	if not hqentry["inventory"].visible:
-		print("Smoketest FEHLER: HQ-Fenster zeigt keinen Inventur-Button")
-		quit(1)
-		return false
-	if hqentry["mil_box"].visible:
-		print("Smoketest FEHLER: HQ-Fenster zeigt faelschlich Garnison")
-		quit(1)
-		return false
-	print("Smoketest: HQ-Lager-Ansicht ok")
+	print("Smoketest: HQ-Klick oeffnet Inventur direkt ok")
 
 	print("Smoketest: Einzelplatzierung + Rechtsklick-Abbruch ok")
 	return true

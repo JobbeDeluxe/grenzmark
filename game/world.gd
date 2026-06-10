@@ -1402,7 +1402,6 @@ func _open_building_window(b: WorldState.Building) -> void:
 	content.add_child(actions)
 	var stop := _tbutton(actions, "Stop", _toggle_production_window.bind(idx))
 	var coins := _tbutton(actions, "Münzen", _toggle_coins_window.bind(idx))
-	var inventory := _tbutton(actions, "Inventur", _open_inventory)
 	var goto_btn := _tbutton(actions, "Zum Geb.", _goto_building_window.bind(idx))
 	var demolish := _tbutton(actions, "Abriss", _delete_building_window.bind(idx))
 	var attack := _tbutton(actions, "Angriff", _attack_building_window.bind(idx))
@@ -1411,7 +1410,7 @@ func _open_building_window(b: WorldState.Building) -> void:
 		panel = panel, title = title, icon = icon, info = info,
 		prod = prod, goods_box = goods_box, goods_sig = "", goods_icons = [],
 		mil_box = mil_box, mil_sig = "",
-		stop = stop, coins = coins, inventory = inventory,
+		stop = stop, coins = coins,
 		goto_btn = goto_btn, demolish = demolish, attack = attack,
 	}
 	_update_one_building_window(idx)
@@ -1453,7 +1452,6 @@ func _update_one_building_window(idx: int) -> void:
 	var info: Label = entry["info"]
 	var stop: Button = entry["stop"]
 	var coins: Button = entry["coins"]
-	var inventory: Button = entry["inventory"]
 	var goto_btn: Button = entry["goto_btn"]
 	var demolish: Button = entry["demolish"]
 	var attack: Button = entry["attack"]
@@ -1462,63 +1460,38 @@ func _update_one_building_window(idx: int) -> void:
 	title_label.text = title_text
 	icon.texture = GameTheme.building_texture(b.def_id, b.owner)
 	var own := b.owner == 0
-	# Das HQ ist primär das LAGER (wie im Original): Lager-Übersicht statt Garnison.
-	var is_storage := b.is_hq and own
 	var data := economy.building_info(b)
 	var parts := PackedStringArray()
-	if is_storage:
-		parts.append(_hq_storage_summary())
-	else:
-		if String(data.status) != "":
-			parts.append(String(data.status))
-		if String(data.warning) != "":
-			parts.append("! %s" % data.warning)
+	if String(data.status) != "":
+		parts.append(String(data.status))
+	if String(data.warning) != "":
+		parts.append("! %s" % data.warning)
 	info.text = "\n".join(parts)
 	var prod_label: Label = entry["prod"]
-	prod_label.visible = (not is_storage) and int(data.productivity) >= 0
+	prod_label.visible = int(data.productivity) >= 0
 	if prod_label.visible:
 		prod_label.text = "Produktivität: %d %%" % int(data.productivity)
-	# Beim HQ keine Eingangs-/Ausgangs-Warenzeilen (das übernimmt die Inventur).
-	var rows := [] if is_storage else _window_goods_rows(data)
+	var rows := _window_goods_rows(data)
 	var sig := _window_goods_sig(rows)
 	if sig != String(entry.get("goods_sig", "")):
 		_rebuild_window_goods(entry, rows)
 		entry["goods_sig"] = sig
-	if not is_storage:
-		_color_window_goods(entry, data)
+	_color_window_goods(entry, data)
 	_update_window_military(entry, b)
 	stop.visible = own and not b.is_hq
 	# "Münzen an/aus" nur für eigene Militärgebäude (fordern Gold zur Beförderung).
 	coins.visible = own and not b.is_hq and b.influence > 0
 	coins.text = "Münzen: an" if b.wants_coins else "Münzen: aus"
-	inventory.visible = is_storage   # nur am HQ: volles Inventur-Fenster öffnen
 	demolish.visible = own and not b.is_hq
 	goto_btn.visible = true
 	attack.visible = (not own) and b.influence > 0
-
-
-## Kurze Lager-Übersicht fürs HQ-Fenster (Details liefert das Inventur-Fenster).
-func _hq_storage_summary() -> String:
-	var goods_total := 0
-	var goods_kinds := 0
-	for g in economy.hq_stock:
-		var n: int = economy.hq_stock[g]
-		if n > 0:
-			goods_total += n
-			goods_kinds += 1
-	var people := 0
-	for j in economy.hq_people:
-		people += int(economy.hq_people[j])
-	return "Lager: %d Waren (%d Sorten)\nBevölkerung: %d  •  Soldaten-Reserve: %d" \
-		% [goods_total, goods_kinds, people, economy.soldiers]
 
 
 ## Garnison + Rang als Icons (statt Textzeile): gefüllte Spielerfarb-Plätze für
 ## besetzte Garnison, gedimmte für freie Kapazität, dahinter Münz-Icons je Rang.
 func _update_window_military(entry: Dictionary, b: WorldState.Building) -> void:
 	var mil_box: HBoxContainer = entry["mil_box"]
-	# Das HQ wird als Lager dargestellt, nicht als Militärgebäude → keine Garnison.
-	if b.influence <= 0 or (b.is_hq and b.owner == 0):
+	if b.influence <= 0:
 		mil_box.visible = false
 		return
 	mil_box.visible = true
@@ -2126,7 +2099,11 @@ func _handle_click() -> void:
 				# Gebäude (eigen ODER Gegner) auswählen; Angriff läuft über das
 				# kontextabhängige Auswahlfenster (Issue #16).
 				selected = clicked
-				if clicked != null:
+				if clicked != null and clicked.is_hq and clicked.owner == 0:
+					# Wie im Original: Klick aufs eigene HQ/Lager öffnet DIREKT die
+					# Inventur (Waren + Berufe), kein Zwischenfenster (#10).
+					_open_inventory()
+				elif clicked != null:
 					_open_building_window(clicked)
 				_close_flag_menu()
 				_close_road_menu()
