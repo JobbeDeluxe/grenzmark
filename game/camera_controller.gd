@@ -20,12 +20,25 @@ func _ready() -> void:
 	make_current()
 
 
+## Zeigt die Maus gerade auf ein UI-Panel? Dann darf das Mausrad NICHT die Karte
+## zoomen — sonst zoomt z. B. das Inventur-Fenster am Scroll-Ende die Karte
+## (ScrollContainer reicht das Rad am Limit durch). `_ui_root` ist IGNORE, echte
+## Panels sind STOP → über der Welt liefert das null, über Fenstern das Panel.
+func _pointer_over_ui() -> bool:
+	var vp := get_viewport()
+	return vp != null and vp.gui_get_hovered_control() != null
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
+			if _pointer_over_ui():
+				return
 			_zoom_by(ZOOM_STEP)
 			get_viewport().set_input_as_handled()
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
+			if _pointer_over_ui():
+				return
 			_zoom_by(1.0 / ZOOM_STEP)
 			get_viewport().set_input_as_handled()
 		elif event.button_index == MOUSE_BUTTON_RIGHT or event.button_index == MOUSE_BUTTON_MIDDLE:
