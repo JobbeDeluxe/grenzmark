@@ -1372,10 +1372,18 @@ func _open_building_window(b: WorldState.Building) -> void:
 	goods_box.mouse_filter = Control.MOUSE_FILTER_PASS
 	content.add_child(goods_box)
 
+	# Militärzeile: Garnison als Spielerfarb-Plätze, Rang als Münz-Icons.
+	var mil_box := HBoxContainer.new()
+	mil_box.add_theme_constant_override("separation", 3)
+	mil_box.mouse_filter = Control.MOUSE_FILTER_PASS
+	mil_box.visible = false
+	content.add_child(mil_box)
+
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 4)
 	content.add_child(actions)
 	var stop := _tbutton(actions, "Stop", _toggle_production_window.bind(idx))
+	var coins := _tbutton(actions, "Münzen", _toggle_coins_window.bind(idx))
 	var goto_btn := _tbutton(actions, "Zum Geb.", _goto_building_window.bind(idx))
 	var demolish := _tbutton(actions, "Abriss", _delete_building_window.bind(idx))
 	var attack := _tbutton(actions, "Angriff", _attack_building_window.bind(idx))
@@ -1383,7 +1391,8 @@ func _open_building_window(b: WorldState.Building) -> void:
 	_building_windows[idx] = {
 		panel = panel, title = title, icon = icon, info = info,
 		prod = prod, goods_box = goods_box, goods_sig = "", goods_icons = [],
-		stop = stop, goto_btn = goto_btn, demolish = demolish, attack = attack,
+		mil_box = mil_box, mil_sig = "",
+		stop = stop, coins = coins, goto_btn = goto_btn, demolish = demolish, attack = attack,
 	}
 	_update_one_building_window(idx)
 
@@ -1423,6 +1432,7 @@ func _update_one_building_window(idx: int) -> void:
 	var icon: TextureRect = entry["icon"]
 	var info: Label = entry["info"]
 	var stop: Button = entry["stop"]
+	var coins: Button = entry["coins"]
 	var goto_btn: Button = entry["goto_btn"]
 	var demolish: Button = entry["demolish"]
 	var attack: Button = entry["attack"]
@@ -1434,8 +1444,6 @@ func _update_one_building_window(idx: int) -> void:
 	var parts := PackedStringArray()
 	if String(data.status) != "":
 		parts.append(String(data.status))
-	if b.influence > 0:
-		parts.append("Garnison: %d/%d  Rangbonus: %d" % [b.garrison, b.capacity, b.promotions])
 	if String(data.warning) != "":
 		parts.append("! %s" % data.warning)
 	info.text = "\n".join(parts)
@@ -1449,11 +1457,54 @@ func _update_one_building_window(idx: int) -> void:
 		_rebuild_window_goods(entry, rows)
 		entry["goods_sig"] = sig
 	_color_window_goods(entry, data)
+	_update_window_military(entry, b)
 	var own := b.owner == 0
 	stop.visible = own and not b.is_hq
+	# "Münzen an/aus" nur für eigene Militärgebäude (fordern Gold zur Beförderung).
+	coins.visible = own and not b.is_hq and b.influence > 0
+	coins.text = "Münzen: an" if b.wants_coins else "Münzen: aus"
 	demolish.visible = own and not b.is_hq
 	goto_btn.visible = true
 	attack.visible = (not own) and b.influence > 0
+
+
+## Garnison + Rang als Icons (statt Textzeile): gefüllte Spielerfarb-Plätze für
+## besetzte Garnison, gedimmte für freie Kapazität, dahinter Münz-Icons je Rang.
+func _update_window_military(entry: Dictionary, b: WorldState.Building) -> void:
+	var mil_box: HBoxContainer = entry["mil_box"]
+	if b.influence <= 0:
+		mil_box.visible = false
+		return
+	mil_box.visible = true
+	var sig := "%d/%d/%d/%d" % [b.garrison, b.capacity, b.promotions, b.owner]
+	if sig == String(entry.get("mil_sig", "")):
+		return
+	entry["mil_sig"] = sig
+	for c in mil_box.get_children():
+		mil_box.remove_child(c)
+		c.queue_free()
+	var px := UISkin.layout_num("good_icon_size", 18)
+	var col := GameTheme.player_color(b.owner)
+	for i in maxi(b.capacity, b.garrison):
+		var slot := ColorRect.new()
+		slot.custom_minimum_size = Vector2(px * 0.7, px)
+		slot.color = col if i < b.garrison else Color(col.r, col.g, col.b, 0.22)
+		slot.tooltip_text = "Garnison %d/%d" % [b.garrison, b.capacity]
+		slot.mouse_filter = Control.MOUSE_FILTER_PASS
+		mil_box.add_child(slot)
+	if b.promotions > 0:
+		var gap := Control.new()
+		gap.custom_minimum_size = Vector2(px * 0.5, 0)
+		mil_box.add_child(gap)
+	for i in b.promotions:
+		var coin := TextureRect.new()
+		coin.custom_minimum_size = Vector2(px, px)
+		coin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		coin.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		coin.texture = UISkin.good_texture(Goods.COINS)
+		coin.tooltip_text = "Rangbonus (Rüstung): %d" % b.promotions
+		coin.mouse_filter = Control.MOUSE_FILTER_PASS
+		mil_box.add_child(coin)
 
 
 func _building_window_title(b: WorldState.Building) -> String:
@@ -1542,6 +1593,18 @@ func _toggle_production_window(idx: int) -> void:
 		return
 	selected = state.buildings[idx]
 	_toggle_selected_production()
+	_update_one_building_window(idx)
+
+
+## Münzanforderung eines Militärgebäudes an-/abschalten (S2: Goldmünzen an/aus).
+func _toggle_coins_window(idx: int) -> void:
+	if not state.buildings.has(idx):
+		return
+	var b: WorldState.Building = state.buildings[idx]
+	if b.owner != 0 or b.influence <= 0:
+		return
+	b.wants_coins = not b.wants_coins
+	_flash("Münzanforderung %s." % ("AN" if b.wants_coins else "AUS"))
 	_update_one_building_window(idx)
 
 
@@ -2125,6 +2188,7 @@ func _save_game() -> void:
 			pos = b.pos, size = b.size, flag = b.flag_pos, hq = b.is_hq,
 			def = b.def_id, infl = b.influence, build = b.under_construction,
 			gar = b.garrison, cap = b.capacity, owner = b.owner, promo = b.promotions,
+			coins = b.wants_coins,
 		})
 	for i in state.flags:
 		var f: WorldState.Flag = state.flags[i]
@@ -2195,6 +2259,7 @@ func _load_game() -> void:
 		bb.garrison = bd.get("gar", 0); bb.capacity = bd.get("cap", 0)
 		bb.owner = bd.get("owner", 0)
 		bb.promotions = bd.get("promo", 0)
+		bb.wants_coins = bool(bd.get("coins", true))
 		var i := map.idx(bb.pos.x, bb.pos.y)
 		state.buildings[i] = bb
 		state.occupied[i] = WorldState.OBJ_BUILDING

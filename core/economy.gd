@@ -381,6 +381,8 @@ func _tick_promotions() -> void:
 		var b: WorldState.Building = state.buildings[i]
 		if b.owner != 0 or b.is_hq or b.influence <= 0 or b.under_construction:
 			continue
+		if not b.wants_coins:
+			continue  # Spieler hat Münzanforderung für dieses Gebäude abgeschaltet
 		if b.garrison <= 0 or b.promotions >= b.garrison:
 			continue
 		if _next_hop(hq_flag, state.map.idx(b.flag_pos.x, b.flag_pos.y)) < 0:

@@ -293,8 +293,12 @@ GitHub-Arbeitspakete:
       („Wartet auf Waren", „Kein Rohstoff in Reichweite", „Ausgang voll",
       „Produktion gestoppt", „Arbeiter kommt"), Baustellen zeigen Baustoff-
       Soll/Ist. Unterbau: `Economy.building_info()` liefert strukturierte
-      Fensterdaten (read-only). Offen: Prioritäten, Militär „Münzen an/aus",
-      danach die Warenleiste oben weiter ikonisieren.
+      Fensterdaten (read-only).
+      Ergänzt (2026-06-10): Militärfenster zeigt **Garnison/Rang als Icons**
+      (Spielerfarb-Plätze für besetzte/freie Garnison, Münz-Icons je Rang) statt
+      Textzeile und hat einen **„Münzen an/aus"**-Schalter (`wants_coins` je
+      Gebäude, persistiert; `_tick_promotions` respektiert ihn). Offen:
+      Prioritäten, danach die Warenleiste oben weiter ikonisieren.
 - [~] **Unterer Rand**: dauerhaft nur Hauptbuttons; Gebäude-/Wirtschafts-/
       Systemdetails liegen in Fenstern. Offen: richtige S2-artige Symbolbuttons
       und schönere Fenster-Skins.
@@ -312,8 +316,8 @@ GitHub-Arbeitspakete:
       Diamant/Punkt bleiben am echten Knoten, Icon/Kurzlabel sitzen tiefer.
 - [~] **Gebäude-Infofenster** (bei Auswahl): Gebäude-Bild, Status, Produktion
       an/aus, Abreißen, Angriff/Sprung; seit 2026-06-10 zusätzlich Produktivität
-      in %, Eingangs-/Ausgangswaren als Soll/Ist-Icons und Warnzustände.
-      Offen: Garnison/Rang als Icons statt Textzeile, Priorität, Münzen an/aus.
+      in %, Eingangs-/Ausgangswaren als Soll/Ist-Icons, Warnzustände,
+      Garnison/Rang als Icons und Militär-„Münzen an/aus". Offen: Priorität.
 - [ ] **Ressourcen-/Lagerleiste oben**: Waren als **Icons mit Zahl** statt Textliste.
 - [ ] **Minikarte** in gerahmtem Panel; Umschalter für Overlays (Gebiet, Bauplätze, Nebel).
 - [ ] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion) und

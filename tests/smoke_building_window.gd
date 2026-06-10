@@ -130,5 +130,43 @@ func _check_placement_and_cancel() -> bool:
 		quit(1)
 		return false
 
+	# Militärgebäude + Münzen-Toggle im Fenster. Militärgebäude brauchen
+	# Mindestabstand zum HQ — daher direkt place_building versuchen, bis es klappt.
+	var gh = null
+	for r in range(5, 10):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var x: int = hq.pos.x + dx
+				var y: int = hq.pos.y + dy
+				if state.can_place_building(x, y, WorldState.BQ_HUT):
+					gh = state.place_building(x, y, WorldState.BQ_HUT,
+						false, "guardhouse", 5, false)
+					if gh != null:
+						break
+			if gh != null: break
+		if gh != null: break
+	if gh == null:
+		print("Smoketest FEHLER: kein Platz fuer Militaergebaeude gefunden")
+		quit(1)
+		return false
+	_world.get("economy").resync()
+	_world.call("_open_building_window", gh)
+	if not gh.wants_coins:
+		print("Smoketest FEHLER: Militaergebaeude startet ohne Muenzanforderung")
+		quit(1)
+		return false
+	var midx: int = state.map.idx(gh.pos.x, gh.pos.y)
+	_world.call("_toggle_coins_window", midx)
+	if gh.wants_coins:
+		print("Smoketest FEHLER: Muenzen-Toggle schaltet nicht ab")
+		quit(1)
+		return false
+	_world.call("_toggle_coins_window", midx)
+	if not gh.wants_coins:
+		print("Smoketest FEHLER: Muenzen-Toggle schaltet nicht wieder an")
+		quit(1)
+		return false
+	print("Smoketest: Militaerfenster Muenzen-Toggle ok")
+
 	print("Smoketest: Einzelplatzierung + Rechtsklick-Abbruch ok")
 	return true

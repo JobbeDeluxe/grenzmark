@@ -38,6 +38,7 @@ class Building:
 	var garrison := 0    # stationierte Soldaten
 	var capacity := 0    # max. Soldaten (Militärgebäude)
 	var promotions := 0  # Beförderungen durch Münzen (Verteidigungs-Rüstung)
+	var wants_coins := true  # fordert dieses Militärgebäude Gold zur Beförderung an? (S2)
 	var owner := 0       # 0 = Spieler, 1 = Gegner
 	var ext_nodes: Array[Vector2i] = []  # zusätzlich belegte Extension-Knoten (Burg/HQ)
 

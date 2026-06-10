@@ -752,6 +752,18 @@ func _test_promotion() -> void:
 		eco.tick()
 	_check(gh.promotions > 0, "Münzen befördern die Garnison (Rang +%d)" % gh.promotions)
 
+	# Münzanforderung abschalten (S2: Goldmünzen aus) -> keine weitere Beförderung,
+	# obwohl Münzen im HQ liegen.
+	gh.wants_coins = false
+	var promo_before := gh.promotions
+	eco.hq_stock[Goods.COINS] = 5
+	for t in 2500:
+		eco.tick()
+	_check(gh.promotions == promo_before,
+		"Münzen AUS: keine weitere Beförderung trotz Gold im HQ")
+	_check(eco.hq_stock.get(Goods.COINS, 0) == 5,
+		"Münzen AUS: HQ-Gold bleibt unangetastet")
+
 
 func _test_roadsplit() -> void:
 	var map := _flat_map(30, 30)
