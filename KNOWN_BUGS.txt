@@ -4,7 +4,28 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
-[2026-06-09] (TEILWEISE BEHOBEN) Gegner „klaute" Gebiet durch näher gebaute Türme
+[2026-06-10] (BEHOBEN) Gebäude-Footprint & Nachbarabstand entsprachen nicht S2
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/29
+
+  Symptom: Große Gebäude/HQ blockierten zu wenig Fläche, kleine Gebäude sperrten
+  die Nachbarschaft zu stark (neben JEDEM Gebäude — auch einer Hütte — ging nur
+  eine Flagge). Der Abstand war größenunabhängig.
+
+  Ursache: effective_bq() reduzierte größenunabhängig (d=1 -> nur Flagge,
+  d=2 -> Haus) und kannte keine Extension-Knoten großer Gebäude.
+
+  Behoben (recherchiert an RTTR BQCalculator):
+  - Reduktion jetzt kandidatengrößen-abhängig: Hütte/Haus dürfen direkt neben ein
+    Gebäude (nur der Flaggenabstand begrenzt noch). Nur eine BURG ist beschränkt:
+    kein Gebäude im Umkreis von 2 Knoten -> sinkt auf Haus.
+  - Burg/HQ haben Extension-Knoten oben-links (W/NW/NE): als Kandidat müssen sie
+    frei sein (sonst -> Haus), platziert werden sie belegt -> korrekter größerer
+    Footprint. Abriss/Laden geben sie wieder frei bzw. rekonstruieren sie.
+  Neue/erweiterte Tests in _test_building_spacing. 481 Kern-Tests grün.
+
+
+[2026-06-09] (BEHOBEN) Gegner „klaute" Gebiet durch näher gebaute Türme
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/15
 

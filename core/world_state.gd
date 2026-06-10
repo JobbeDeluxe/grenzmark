@@ -39,6 +39,7 @@ class Building:
 	var capacity := 0    # max. Soldaten (Militärgebäude)
 	var promotions := 0  # Beförderungen durch Münzen (Verteidigungs-Rüstung)
 	var owner := 0       # 0 = Spieler, 1 = Gegner
+	var ext_nodes: Array[Vector2i] = []  # zusätzlich belegte Extension-Knoten (Burg/HQ)
 
 
 class Road:
@@ -276,28 +277,35 @@ func compute_bq(x: int, y: int) -> int:
 	return BQ_FLAG
 
 
-## Effektive BauQualität: Terrain-Potenzial, durch belegte Knoten und benachbarte
-## Gebäude reduziert. Wie in S2 brauchen große Gebäude mehr freien Platz —
-## direkt neben einem Gebäude geht nur eine Flagge, zwei Felder daneben höchstens
-## ein mittleres Haus. So „verkleinern" sich die Bauplätze neben großen Gebäuden.
+## Effektive BauQualität: Terrain-Potenzial, reduziert durch belegte Knoten und
+## benachbarte Gebäude — größenabhängig wie in S2 (RTTR BQCalculator):
+## Hütten/Häuser dürfen direkt neben ein Gebäude. Nur eine BURG braucht Luft:
+## ihre 3 Extension-Knoten oben-links (W/NW/NE) müssen frei sein UND es darf kein
+## Gebäude im Umkreis von 2 Knoten stehen, sonst sinkt sie auf ein Haus. Belegte
+## Knoten (inkl. der Extensions großer Gebäude) bleiben gesperrt.
 func effective_bq(x: int, y: int) -> int:
 	var bq := compute_bq(x, y)
 	if bq == BQ_NOTHING:
 		return BQ_NOTHING
 	if _occ(x, y) != OBJ_NONE:
 		return BQ_NOTHING
-	if bq == BQ_FLAG:
-		return BQ_FLAG
+	if bq == BQ_FLAG or bq == BQ_MINE:
+		return bq
 	var cap := bq
-	for i in buildings:
-		var b: Building = buildings[i]
-		var d := hex_distance(Vector2i(x, y), b.pos)
-		if d == 0:
-			return BQ_NOTHING
-		elif d == 1:
-			cap = mini(cap, BQ_FLAG)        # direkt daneben: nur Flagge
-		elif d == 2:
-			cap = mini(cap, BQ_HOUSE)       # nah dran: höchstens mittleres Haus
+	# Nur Burg-Kandidaten sind durch Nachbar-Gebäude eingeschränkt.
+	if cap == BQ_CASTLE:
+		# a) Die 3 Extension-Knoten (W/NW/NE) müssen frei sein.
+		for dir in [Grid.W, Grid.NW, Grid.NE]:
+			var e := map.neighbor(x, y, dir)
+			if e.x < 0 or _occ(e.x, e.y) != OBJ_NONE:
+				cap = BQ_HOUSE
+				break
+	if cap == BQ_CASTLE:
+		# b) Kein Gebäude im Umkreis von 2 Knoten.
+		for i in buildings:
+			if hex_distance(Vector2i(x, y), buildings[i].pos) <= 2:
+				cap = BQ_HOUSE
+				break
 	return cap
 
 
@@ -490,7 +498,25 @@ func place_building(x: int, y: int, size: int, is_hq := false,
 	var i := map.idx(x, y)
 	buildings[i] = b
 	occupied[i] = OBJ_BUILDING
+	reserve_building_extensions(b)
 	return b
+
+
+## S2: große Gebäude (Burg/HQ) belegen zusätzlich ihre 3 Extension-Knoten oben-
+## links (W/NW/NE). Reserviert die freien davon als belegt und merkt sie am
+## Gebäude (für den Abriss). Idempotent — kann nach Laden erneut aufgerufen werden.
+func reserve_building_extensions(b: Building) -> void:
+	b.ext_nodes.clear()
+	if b.size != BQ_CASTLE:
+		return
+	for dir in [Grid.W, Grid.NW, Grid.NE]:
+		var e := map.neighbor(b.pos.x, b.pos.y, dir)
+		if e.x < 0:
+			continue
+		var ei := map.idx(e.x, e.y)
+		if occupied.get(ei, OBJ_NONE) == OBJ_NONE:
+			occupied[ei] = OBJ_BUILDING
+			b.ext_nodes.append(e)
 
 
 func building_at(pos: Vector2i) -> Building:
@@ -506,6 +532,8 @@ func building_at(pos: Vector2i) -> Building:
 func remove_at(pos: Vector2i) -> bool:
 	var i := map.idx(pos.x, pos.y)
 	if buildings.has(i):
+		for e in buildings[i].ext_nodes:
+			occupied.erase(map.idx(e.x, e.y))
 		buildings.erase(i)
 		occupied.erase(i)
 		return true

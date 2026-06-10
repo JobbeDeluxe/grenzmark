@@ -548,23 +548,42 @@ func _test_ore_deposit_mining() -> void:
 		"Erschöpftes Vorkommen wird nicht mehr gefunden")
 
 
+## S2-Footprint: Hütte/Haus dürfen direkt neben ein Gebäude; nur Burgen brauchen
+## Luft (kein Gebäude im Radius 2). Große Gebäude (Burg/HQ) belegen zusätzlich
+## ihre 3 Extension-Knoten oben-links (W/NW/NE).
 func _test_building_spacing() -> void:
 	var map := _flat_map(30, 30)
 	var state := WorldState.new(map)
-	var eco := Economy.new(state)
 	state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
-	eco.resync()
-	var b := state.place_building(13, 14, WorldState.BQ_HUT, false, "woodcutter", 0, true)
+	var b := state.place_building(13, 16, WorldState.BQ_HUT, false, "woodcutter", 0, false)
 	_check(b != null, "Gebäude im Gebiet platzierbar")
 	if b == null:
 		return
-	var n := map.neighbor(13, 14, Grid.E)
-	_check(state.effective_bq(n.x, n.y) <= WorldState.BQ_FLAG,
-		"Direkt neben Gebäude nur noch Flagge (eff. BQ %d)" % state.effective_bq(n.x, n.y))
-	_check(not state.can_place_building(n.x, n.y, WorldState.BQ_HUT),
-		"Kein zweites Gebäude direkt daneben")
-	_check(state.effective_bq(15, 25) >= WorldState.BQ_HOUSE,
-		"Freier, flacher Platz erlaubt großes Gebäude")
+	var n := map.neighbor(13, 16, Grid.E)
+	# S2: Footprint neben einem Gebäude erlaubt Hütte/Haus (kein Flaggen-Ring mehr).
+	# (Ob dort tatsächlich gebaut werden kann, hängt zusätzlich am Flaggenabstand.)
+	_check(state.effective_bq(n.x, n.y) >= WorldState.BQ_HUT,
+		"S2: Footprint direkt neben Gebäude erlaubt Hütte/Haus (eff. BQ %d)" % state.effective_bq(n.x, n.y))
+	# S2: aber KEINE Burg im Umkreis von 2 Knoten eines Gebäudes.
+	_check(state.effective_bq(n.x, n.y) <= WorldState.BQ_HOUSE,
+		"S2: keine Burg direkt neben Gebäude (nur bis Haus)")
+	# Freier, flacher Platz weit weg erlaubt eine Burg.
+	_check(state.effective_bq(25, 4) >= WorldState.BQ_CASTLE,
+		"Freier, flacher Platz erlaubt Burg")
+	# Eine platzierte Burg belegt ihre 3 Extension-Knoten (W/NW/NE).
+	var castle := state.place_building(25, 4, WorldState.BQ_CASTLE, false, "fortress", 10, false)
+	_check(castle != null, "Burg auf freiem Platz baubar")
+	if castle != null:
+		_check(castle.ext_nodes.size() == 3, "Burg reserviert 3 Extension-Knoten (%d)" % castle.ext_nodes.size())
+		for dir in [Grid.W, Grid.NW, Grid.NE]:
+			var e := map.neighbor(25, 4, dir)
+			_check(state.effective_bq(e.x, e.y) == WorldState.BQ_NOTHING,
+				"Extension-Knoten der Burg ist gesperrt (dir %d)" % dir)
+		# Nach Abriss sind die Extension-Knoten wieder frei.
+		state.remove_at(Vector2i(25, 4))
+		var w := map.neighbor(25, 4, Grid.W)
+		_check(state.effective_bq(w.x, w.y) != WorldState.BQ_NOTHING,
+			"Extension-Knoten nach Abriss wieder baubar")
 
 
 func _test_catapult() -> void:

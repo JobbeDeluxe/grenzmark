@@ -2010,6 +2010,11 @@ func _load_game() -> void:
 			state.occupied[map.idx(rr.nodes[k].x, rr.nodes[k].y)] = WorldState.OBJ_ROAD
 		state.roads.append(rr)
 
+	# Extension-Knoten großer Gebäude (Burg/HQ) erst nach allen echten Objekten
+	# reservieren, damit nichts überschrieben wird.
+	for bi in state.buildings:
+		state.reserve_building_extensions(state.buildings[bi])
+
 	economy = Economy.new(state)
 	economy._hq_inited = true
 	economy.hq_stock = data.hq_stock

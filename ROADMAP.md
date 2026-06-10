@@ -105,8 +105,10 @@ Das Skelett, auf dem alles aufbaut.
       (assets/construction/stage1.png), sonst Rückfall auf 1 Stufe.
 - [x] Bauplatz-Grafik (assets/construction/site.png) statt gelbem Platzhalter
 - [x] Bauarbeiter läuft nach Fertigstellung sichtbar zurück zum HQ (purpose_return)
-- [x] Bauplatz-Größenlogik wie S2: große Gebäude brauchen Abstand, Nachbar-
-      bauplätze schrumpfen (effective_bq); Gebäude optisch nach Größe gestaffelt
+- [x] Bauplatz-Größenlogik wie S2 (RTTR BQCalculator, #29): Footprint
+      kandidatengrößen-abhängig — Hütte/Haus dürfen direkt neben ein Gebäude, nur
+      Burgen brauchen 2 Knoten Abstand. Burg/HQ belegen zusätzlich ihre 3
+      Extension-Knoten oben-links (W/NW/NE). Gebäude optisch nach Größe gestaffelt
 - [x] Kurzer Eingangsweg Flagge → Gebäudetür mitgezeichnet (fester Eingangspunkt)
 - [x] Gebäudegrößen/Eingang per Config (assets/design.json), nicht hartcodiert
 - [x] Jedes Gebäude einzeln einstellbar (Größe & Eingang je def_id)
