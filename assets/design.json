@@ -2,28 +2,28 @@
   "_hinweis": "Groessen & Eingang. Werte hier aendern, KEIN Code noetig. Godot danach neu starten.",
   "build_spot_offsets": {
     "castle": [
-      2,
-      -8
+      2.0,
+      -8.0
     ],
     "flag": [
-      3,
-      -8
+      3.0,
+      -8.0
     ],
     "house": [
-      2,
-      -4
+      2.0,
+      -4.0
     ],
     "hut": [
-      1,
-      -4
+      1.0,
+      -4.0
     ],
     "mine": [
-      1,
-      -5
+      1.0,
+      -5.0
     ],
     "road_flag": [
-      3,
-      -8
+      3.0,
+      -8.0
     ]
   },
   "build_spot_sizes": {
@@ -52,21 +52,169 @@
       30.0
     ]
   },
-  "flag_size": [
-    20.0,
-    30.0
-  ],
   "building_offset": {
+    "bakery": [
+      0,
+      0
+    ],
+    "brewery": [
+      0,
+      0
+    ],
+    "catapult": [
+      0,
+      0
+    ],
+    "coalmine": [
+      0,
+      0
+    ],
+    "farm": [
+      0,
+      0
+    ],
+    "fortress": [
+      0,
+      0
+    ],
+    "goldmine": [
+      0,
+      0
+    ],
+    "granitemine": [
+      0,
+      0
+    ],
     "hq": [
-      20.0,
-      22.0
+      20,
+      22
+    ],
+    "ironmine": [
+      0,
+      0
+    ],
+    "mill": [
+      0,
+      0
+    ],
+    "mint": [
+      0,
+      0
+    ],
+    "pigfarm": [
+      0,
+      0
+    ],
+    "sawmill": [
+      0,
+      0
+    ],
+    "slaughterhouse": [
+      0,
+      0
+    ],
+    "smelter": [
+      0,
+      0
+    ],
+    "smithy": [
+      0,
+      0
+    ],
+    "toolmaker": [
+      0,
+      0
+    ],
+    "watchtower": [
+      0,
+      0
+    ],
+    "well": [
+      0,
+      0
     ]
   },
   "building_sizes": {
     "_hinweis": "Einzelne Gebaeude individuell groesser/kleiner (ueberschreibt sizes).",
+    "bakery": [
+      55,
+      36
+    ],
+    "brewery": [
+      59,
+      36
+    ],
+    "catapult": [
+      31,
+      36
+    ],
+    "coalmine": [
+      50,
+      26
+    ],
+    "farm": [
+      69,
+      46
+    ],
+    "fortress": [
+      97,
+      46
+    ],
+    "goldmine": [
+      43,
+      26
+    ],
+    "granitemine": [
+      43,
+      26
+    ],
     "hq": [
-      53.0,
-      51.0
+      58,
+      51
+    ],
+    "ironmine": [
+      43,
+      26
+    ],
+    "mill": [
+      64,
+      36
+    ],
+    "mint": [
+      49,
+      36
+    ],
+    "pigfarm": [
+      68,
+      46
+    ],
+    "sawmill": [
+      53,
+      36
+    ],
+    "slaughterhouse": [
+      64,
+      36
+    ],
+    "smelter": [
+      54,
+      36
+    ],
+    "smithy": [
+      50,
+      36
+    ],
+    "toolmaker": [
+      46,
+      36
+    ],
+    "watchtower": [
+      53,
+      36
+    ],
+    "well": [
+      20,
+      30
     ],
     "woodcutter": [
       37.0,
@@ -75,19 +223,95 @@
   },
   "entrance": {
     "_hinweis": "Tuer relativ zum Gebaeudeknoten in Pixeln. 'default' gilt fuer alle, je def_id ueberschreibbar.",
+    "bakery": [
+      0,
+      -6
+    ],
+    "brewery": [
+      0,
+      -6
+    ],
     "catapult": [
-      0.0,
-      -6.0
+      0,
+      -6
+    ],
+    "coalmine": [
+      0,
+      -14
     ],
     "default": [
       0.0,
       -6.0
     ],
+    "farm": [
+      42,
+      -30
+    ],
+    "fortress": [
+      0,
+      -6
+    ],
+    "goldmine": [
+      -8,
+      -20
+    ],
+    "granitemine": [
+      -10,
+      -9
+    ],
     "hq": [
-      -15.0,
-      12.0
+      -15,
+      12
+    ],
+    "ironmine": [
+      0,
+      -10
+    ],
+    "mill": [
+      -8,
+      -18
+    ],
+    "mint": [
+      0,
+      -6
+    ],
+    "pigfarm": [
+      0,
+      -6
+    ],
+    "sawmill": [
+      0,
+      -6
+    ],
+    "slaughterhouse": [
+      0,
+      -6
+    ],
+    "smelter": [
+      0,
+      -6
+    ],
+    "smithy": [
+      0,
+      -6
+    ],
+    "toolmaker": [
+      0,
+      -6
+    ],
+    "watchtower": [
+      -23,
+      -9
+    ],
+    "well": [
+      0,
+      -6
     ]
   },
+  "flag_size": [
+    20.0,
+    30.0
+  ],
   "hq_scale": 1.35,
   "object_heights": {
     "_hinweis": "Zielhoehen fuer Kartenobjekte in Weltpixeln; Baum-Breite folgt automatisch dem PNG-Seitenverhaeltnis.",
