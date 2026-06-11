@@ -112,6 +112,22 @@ class HouseCarrier:
 	var carrying: Good = null
 
 
+## Ein Lager (Vorratshaus). Das HQ ist Lager #0; weitere baubare Lager folgen mit
+## dem Mehr-Lager-System (#31). Hält Waren UND Personen (S2/RTTR-Inventory) sowie den
+## eigenen Tür↔Flagge-Träger. Die hq_*-Aliase unten delegieren auf storages[0], damit
+## bestehende Aufrufer unverändert bleiben, während das Routing schrittweise auf die
+## ganze Liste verallgemeinert wird.
+class Storage:
+	extends RefCounted
+	var flag_idx := -1                # Flaggen-Index (Anschluss ans Straßennetz)
+	var idx := -1                     # Gebäude-Index in state.buildings
+	var owner := 0                    # Besitzer (aktuell nur Spieler 0 hat ein Lager)
+	var stock: Dictionary = {}        # good -> Anzahl
+	var people: Dictionary = {}       # job -> Anzahl (Träger + Spezialisten)
+	var outbox: Array = []            # Waren, die der Tür-Träger noch zur Flagge bringt
+	var house: HouseCarrier = null    # Tür↔Flagge-Träger dieses Lagers
+
+
 class BState:
 	extends RefCounted
 	var idx: int
@@ -146,12 +162,33 @@ var carriers: Dictionary = {}        # Road -> Carrier
 var bstates: Dictionary = {}         # building idx -> BState
 var flag_to_building: Dictionary = {}# flag idx -> building idx
 var flag_goods: Dictionary = {}      # flag idx -> Array[Good]
-var hq_flag := -1
-var hq_idx := -1
-var hq_stock: Dictionary = {}        # good -> Anzahl
-var hq_people: Dictionary = {}       # job -> Anzahl (Träger + Spezialisten im Lager; S2-Modell)
-var hq_outbox: Array = []             # Waren, die der HQ-Träger noch zur Flagge bringt
-var hq_house: HouseCarrier = null     # Tür↔Flagge-Träger des HQ
+
+# Lager-Liste (#31): das HQ ist Lager #0. Wird in _init mit genau einem Lager
+# angelegt; weitere baubare Lager kommen mit dem Mehr-Lager-Routing dazu.
+var storages: Array[Storage] = []
+
+# Rückwärtskompatible Sicht auf das Hauptlager (HQ = storages[0]). Solange es nur ein
+# Lager gibt, delegieren diese Aliase 1:1 auf storages[0] — bestehende Aufrufer (auch
+# Save/Load und UI) bleiben unverändert. Mehr-Lager-Routing verallgemeinert die heißen
+# Pfade (_ship_outputs/_request_from_hq/...) schrittweise auf die ganze Liste.
+var hq_flag: int:
+	get: return storages[0].flag_idx
+	set(value): storages[0].flag_idx = value
+var hq_idx: int:
+	get: return storages[0].idx
+	set(value): storages[0].idx = value
+var hq_stock: Dictionary:
+	get: return storages[0].stock
+	set(value): storages[0].stock = value
+var hq_people: Dictionary:
+	get: return storages[0].people
+	set(value): storages[0].people = value
+var hq_outbox: Array:
+	get: return storages[0].outbox
+	set(value): storages[0].outbox = value
+var hq_house: HouseCarrier:
+	get: return storages[0].house
+	set(value): storages[0].house = value
 var soldiers := 0                    # ausgebildete Soldaten im HQ (Reserve)
 var ai_enabled := true               # Gegner-KI aktiv? (zum Testen abschaltbar)
 var ai: AIBase = null                # austauschbare Gegner-KI (Plugin)
@@ -171,6 +208,9 @@ var _rng := RandomNumberGenerator.new()  # seeded → deterministisch (Lockstep-
 
 func _init(world_state: WorldState) -> void:
 	state = world_state
+	# Hauptlager (#31): genau ein Lager (das HQ) anlegen, bevor irgendein hq_*-Alias
+	# darauf zugreift. Bestand/Personen füllt später _init_hq_stock beim HQ-Fund.
+	storages = [Storage.new()]
 	ai = DefaultAI.new()  # Standard-Gegner-KI (austauschbar über world)
 	_rng.seed = 0xA17E57   # fester Seed: gleiche Abläufe auf allen Clients
 	_init_tree_growth_from_map()

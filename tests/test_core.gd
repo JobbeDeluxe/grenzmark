@@ -30,6 +30,7 @@ func _initialize() -> void:
 	_test_economy()
 	_test_population_limit()
 	_test_population_growth()
+	_test_storage_list()
 	_test_stop_finishes_cycle()
 	_test_productivity_and_building_info()
 	_test_military()
@@ -184,6 +185,37 @@ func _test_route_cache_invalidation() -> void:
 	_check(state.remove_at(mid), "Cache: Straße über Zwischenknoten abgerissen")
 	_check(state.find_route(a, b).size() == 0,
 		"Cache: nach Straßenabriss keine veraltete Route mehr")
+
+
+## #31: Das HQ ist Lager #0 der storages-Liste; die hq_*-Aliase delegieren 1:1 auf
+## storages[0] (Lese-, In-Place- und Setter-Zugriff). Sichert das Fundament des
+## Mehr-Lager-Systems gegen Regressionen ab.
+func _test_storage_list() -> void:
+	var map := _flat_map(20, 20)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	# Schon vor dem HQ existiert genau ein Lager, damit die Aliase nie ins Leere greifen.
+	_check(eco.storages.size() == 1, "Lager: genau ein Lager nach _init")
+	var hq := state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_check(hq != null, "Lager: HQ platzierbar")
+	if hq == null:
+		return
+	eco.resync()
+	_check(eco.hq_flag == eco.storages[0].flag_idx and eco.hq_flag >= 0,
+		"Lager: hq_flag == storages[0].flag_idx")
+	_check(eco.hq_idx == eco.storages[0].idx, "Lager: hq_idx == storages[0].idx")
+	# In-Place-Mutation über den Alias (hq_stock[x]=…) erreicht das Lagerobjekt.
+	eco.hq_stock[Goods.WOOD] = 42
+	_check(int(eco.storages[0].stock.get(Goods.WOOD, 0)) == 42,
+		"Lager: hq_stock[]= schreibt in storages[0].stock")
+	# Volle Zuweisung über den Alias-Setter.
+	eco.hq_people = { Jobs.HELPER: 7 }
+	_check(int(eco.storages[0].people.get(Jobs.HELPER, 0)) == 7,
+		"Lager: hq_people= setzt storages[0].people")
+	# Und umgekehrt: direkt aufs Lagerobjekt geschrieben ist über den Alias sichtbar.
+	eco.storages[0].stock[Goods.BOARDS] = 5
+	_check(int(eco.hq_stock.get(Goods.BOARDS, 0)) == 5,
+		"Lager: storages[0].stock über hq_stock sichtbar")
 
 
 func _test_economy() -> void:

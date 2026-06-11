@@ -443,6 +443,10 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
       statt sichtbar führen; Sichtbarkeit später über Geologen/Debug.
       (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/19)
 - [ ] Lagerhaus / Vorratshaus (zweites Lager) — braucht Mehr-Lager-System
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/31)
+      Stufe-1-Fundament gelegt: Economy hält jetzt eine `storages`-Liste (HQ = Lager
+      #0, `Storage`-Klasse), die `hq_*`-Felder sind delegierende Aliase darauf.
+      Offen: baubares zweites Lager + „nächstes Lager gewinnt"-Routing.
 - [ ] Eselzüchter (→ Esel) — braucht Esel-auf-Straßen-System
 - [ ] Waffenschmiede mit Schwert UND Schild (statt nur Schwert)
 - [ ] Hafen + Werft (Schiffe/Boote)
