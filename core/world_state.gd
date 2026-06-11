@@ -69,6 +69,17 @@ var explored: Dictionary = {}         # idx -> true (vom Spieler aufgedeckt)
 # verwerfen und beide Teilstücke neu vom HQ zu besetzen). k = Teilungs-Knotenindex.
 var splits: Array = []
 
+# Routing-Cache (#30): Flaggengraph und gelöste Routen ändern sich NUR, wenn Straßen
+# entstehen/wegfallen. Statt bei jedem find_route() den Graphen aus allen Straßen neu
+# zu bauen, halten wir ihn vor und merken uns gelöste Routen je (Start, Ziel) — der
+# Warenfluss fragt pro Ware pro Tick dieselben Routen ab. Jede strukturelle Straßen-
+# änderung (build_road / _remove_road / _split_road_with_flag / Laden) muss
+# invalidate_routes() rufen und verwirft beides. Routing-Kosten hängen nur an
+# Road.length() (= nodes.size()-1), das sich nach dem Anlegen nicht mehr ändert.
+var _flag_graph_cache: Dictionary = {}
+var _flag_graph_dirty := true
+var _route_cache: Dictionary = {}   # Vector2i(start_idx, goal_idx) -> Array[Vector2i]
+
 var _next_flag_id := 1
 
 
@@ -409,6 +420,7 @@ func _split_road_with_flag(x: int, y: int, owner := 0) -> Flag:
 	roads.erase(road)
 	roads.append(r1)
 	roads.append(r2)
+	invalidate_routes()  # Graph/Routen-Cache verwerfen (#30)
 	# Teilung vormerken, damit die Economy den bestehenden Träger erhalten kann.
 	splits.append({ old = road, r1 = r1, r2 = r2, k = k })
 	return f
@@ -580,6 +592,7 @@ func _remove_road(r: Road) -> void:
 	for k in range(1, r.nodes.size() - 1):
 		occupied.erase(map.idx(r.nodes[k].x, r.nodes[k].y))
 	roads.erase(r)
+	invalidate_routes()  # Graph/Routen-Cache verwerfen (#30)
 
 
 # --------------------------------------------------------------------------
@@ -742,6 +755,7 @@ func build_road(from: Vector2i, to: Vector2i, owner := -1) -> Road:
 	for n in path:
 		_reveal(n, REVEAL_ROAD)  # inkrementell aufdecken (Issue #30)
 	roads.append(r)
+	invalidate_routes()  # Graph/Routen-Cache verwerfen (#30)
 	return r
 
 
@@ -814,17 +828,39 @@ func _reconstruct(came_from: Dictionary, cur_i: int) -> Array[Vector2i]:
 #  Pfadfindung über das Flaggen-/Straßennetz (Dijkstra)
 # --------------------------------------------------------------------------
 
+## Verwirft den gecachten Flaggengraphen und alle gemerkten Routen. MUSS nach jeder
+## strukturellen Straßenänderung aufgerufen werden (siehe Cache-Felder oben). Billig:
+## der Graph wird beim nächsten find_route() faul neu gebaut.
+func invalidate_routes() -> void:
+	_flag_graph_dirty = true
+	_route_cache.clear()
+
+
+## Liefert den (gecachten) Flaggen-/Straßengraphen; baut ihn nur neu, wenn seit der
+## letzten Straßenänderung als veraltet markiert.
+func _get_flag_graph() -> Dictionary:
+	if _flag_graph_dirty:
+		_flag_graph_cache = _build_flag_graph()
+		_flag_graph_dirty = false
+	return _flag_graph_cache
+
+
 ## Kürzeste Route über das Straßennetz. Liefert die Folge der Flaggen-Knoten,
-## oder leeres Array wenn nicht verbunden.
+## oder leeres Array wenn nicht verbunden. Ergebnis ist gecacht (#30) — der Aufrufer
+## darf das zurückgegebene Array behandeln, als wäre es nur lesbar (es ist eine Kopie).
 func find_route(from_flag: Vector2i, to_flag: Vector2i) -> Array[Vector2i]:
 	var empty: Array[Vector2i] = []
 	if flag_at(from_flag) == null or flag_at(to_flag) == null:
 		return empty
 
-	var adj := _build_flag_graph()
 	var start := map.idx(from_flag.x, from_flag.y)
 	var goal := map.idx(to_flag.x, to_flag.y)
+	var key := Vector2i(start, goal)
+	if _route_cache.has(key):
+		var hit: Array[Vector2i] = _route_cache[key]
+		return hit.duplicate()
 
+	var adj := _get_flag_graph()
 	var dist := { start: 0.0 }
 	var prev := {}
 	var open := { start: 0.0 }
@@ -840,17 +876,19 @@ func find_route(from_flag: Vector2i, to_flag: Vector2i) -> Array[Vector2i]:
 				prev[edge.to] = cur
 				open[edge.to] = nd
 
-	if not dist.has(goal):
-		return empty
-
+	# Auch das "nicht verbunden"-Ergebnis cachen, damit wiederholte Fehlanfragen
+	# (z. B. noch nicht ans Netz angeschlossene Baustellen pro Tick) nicht jedes Mal
+	# eine volle Dijkstra-Suche auslösen.
 	var out: Array[Vector2i] = []
-	var c: int = goal
-	while true:
-		out.push_front(Vector2i(c % map.width, c / map.width))
-		if c == start:
-			break
-		c = prev[c]
-	return out
+	if dist.has(goal):
+		var c: int = goal
+		while true:
+			out.push_front(Vector2i(c % map.width, c / map.width))
+			if c == start:
+				break
+			c = prev[c]
+	_route_cache[key] = out
+	return out.duplicate()
 
 
 func _build_flag_graph() -> Dictionary:

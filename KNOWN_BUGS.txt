@@ -4,6 +4,37 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-11] (TEILWEISE) find_route baute den Flaggengraphen bei jedem Aufruf neu
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/30
+
+  Symptom: Der Warenfluss ruft world_state.find_route() pro Ware pro Tick auf. Jeder
+  Aufruf baute den kompletten Flaggen-/Straßengraphen aus ALLEN Straßen neu auf
+  (_build_flag_graph) und löste dann erst die Dijkstra-Suche — die Graph-Neubildung
+  war der dominierende Posten und wuchs mit der Stadtgröße.
+
+  Behoben (Graph- + Routen-Cache):
+  - Der Flaggengraph wird gecacht und nur faul neu gebaut, wenn er als veraltet
+    markiert ist (_get_flag_graph / _flag_graph_dirty).
+  - Gelöste Routen werden je (Start, Ziel) gemerkt (_route_cache), inkl. des
+    "nicht verbunden"-Ergebnisses, damit wiederholte Anfragen O(1) sind.
+  - Jede strukturelle Straßenänderung ruft invalidate_routes() und verwirft beides:
+    build_road, _remove_road, _split_road_with_flag sowie der Lade-Pfad in
+    world.gd (geladene Straßen umgehen build_road).
+  - Routing-Kosten hängen nur an Road.length() (= nodes.size()-1), das sich nach dem
+    Anlegen nie ändert (Splits erzeugen neue Road-Objekte) → Cache ist korrekt.
+
+  Messung (tests/bench_placement.gd, 66 Straßen, je 200 Aufrufe):
+    (a) Graph je Aufruf neu (alt) = 0,549 ms/Aufruf
+    (b) Graph gecacht, Route neu  = 0,170 ms/Aufruf  (3,2× schneller)
+    (c) warm (Route-Cache-Treffer)= 0,003 ms/Aufruf  (~180× schneller)
+  Neuer Test _test_route_cache_invalidation (deckt Bau + Abriss ab). 682 Kern-Tests
+  grün, Szene lädt fehlerfrei.
+
+  Noch offen aus #30 (separat): Renderer-Redraw beim Platzieren (map_renderer._draw
+  sortiert alle Objekte neu — Folgearbeit auf baumreichen Karten). Issue bleibt offen.
+
+
 [2026-06-10] (BEHOBEN) Gebäude-Footprint & Nachbarabstand entsprachen nicht S2
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/29

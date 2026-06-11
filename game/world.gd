@@ -2338,6 +2338,7 @@ func _load_game() -> void:
 		for k in range(1, rr.nodes.size() - 1):
 			state.occupied[map.idx(rr.nodes[k].x, rr.nodes[k].y)] = WorldState.OBJ_ROAD
 		state.roads.append(rr)
+	state.invalidate_routes()  # geladene Straßen umgehen build_road → Cache verwerfen (#30)
 
 	# Extension-Knoten großer Gebäude (Burg/HQ) erst nach allen echten Objekten
 	# reservieren, damit nichts überschrieben wird.

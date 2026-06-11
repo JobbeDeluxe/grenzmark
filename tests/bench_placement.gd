@@ -57,12 +57,36 @@ func _initialize() -> void:
 			% [state.flags.size(), state.roads.size(), d_total / 1000.0,
 				d_terr / 1000.0, d_vis / 1000.0])
 
-	# Kosten einer einzelnen find_route bei dieser Netzgröße (für Warenfluss/Tick).
+	# find_route-Kosten bei dieser Netzgröße (Warenfluss fragt pro Ware pro Tick).
+	# Drei Stufen, um den Cache (#30) ehrlich gegenüberzustellen:
+	#   (a) Graph je Aufruf neu bauen  = altes Verhalten vor dem Cache
+	#   (b) Graph gecacht, Route je Aufruf neu (nur Dijkstra über den Cache-Graphen)
+	#   (c) warm: identische Anfrage, Route-Cache-Treffer (Alltag, wenn nichts gebaut wird)
 	if flags.size() >= 2:
-		var t_route := Time.get_ticks_usec()
-		for k in 50:
-			state.find_route(hq.flag_pos, flags[flags.size() - 1])
-		var d_route := Time.get_ticks_usec() - t_route
-		print("find_route x50 = %.2f ms (%.3f ms/Aufruf)  bei %d Strassen"
-			% [d_route / 1000.0, d_route / 50000.0, state.roads.size()])
+		var dest: Vector2i = flags[flags.size() - 1]
+		var n := 200
+
+		var t := Time.get_ticks_usec()
+		for k in n:
+			state.invalidate_routes()        # Graph + Route je Aufruf neu (alt)
+			state.find_route(hq.flag_pos, dest)
+		var d_a := Time.get_ticks_usec() - t
+
+		state.invalidate_routes()
+		state.find_route(hq.flag_pos, dest)  # Graph einmal aufbauen
+		t = Time.get_ticks_usec()
+		for k in n:
+			state._route_cache.clear()       # Graph behalten, nur Route neu
+			state.find_route(hq.flag_pos, dest)
+		var d_b := Time.get_ticks_usec() - t
+
+		t = Time.get_ticks_usec()
+		for k in n:
+			state.find_route(hq.flag_pos, dest)  # warm: Route-Cache greift
+		var d_c := Time.get_ticks_usec() - t
+
+		print("find_route @ %d Strassen, %d Aufrufe:" % [state.roads.size(), n])
+		print("  (a) Graph je Aufruf neu (alt) = %.3f ms/Aufruf" % (d_a / float(n) / 1000.0))
+		print("  (b) Graph gecacht, Route neu  = %.3f ms/Aufruf" % (d_b / float(n) / 1000.0))
+		print("  (c) warm (Route-Cache-Treffer)= %.3f ms/Aufruf" % (d_c / float(n) / 1000.0))
 	quit(0)

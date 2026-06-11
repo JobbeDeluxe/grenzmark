@@ -26,6 +26,7 @@ func _initialize() -> void:
 	_test_bq_and_flags()
 	_test_building_spacing()
 	_test_road_and_route()
+	_test_route_cache_invalidation()
 	_test_economy()
 	_test_population_limit()
 	_test_population_growth()
@@ -152,6 +153,37 @@ func _test_road_and_route() -> void:
 		_check(road.nodes.size() >= 2, "Straße hat Knoten")
 		var route := state.find_route(a, road.b)
 		_check(route.size() >= 2, "Route über das Flaggennetz gefunden")
+
+
+## #30: find_route cacht Graph + gelöste Routen. Hier wird sichergestellt, dass jede
+## Straßenänderung (Bau wie Abriss) den Cache verwirft und nicht eine veraltete bzw.
+## negative Route zurückgegeben wird.
+func _test_route_cache_invalidation() -> void:
+	var map := _flat_map(24, 24)
+	var state := WorldState.new(map)
+	var a := Vector2i(6, 6)
+	var b := Vector2i(14, 6)
+	_check(state.place_flag(a.x, a.y) != null, "Cache: Flagge A gesetzt")
+	_check(state.place_flag(b.x, b.y) != null, "Cache: Flagge B gesetzt")
+
+	# Negativ-Ergebnis wird gecacht: vor dem Straßenbau gibt es keine Verbindung.
+	_check(state.find_route(a, b).size() == 0, "Cache: vor Straßenbau keine Route")
+
+	# build_road muss den (Negativ-)Cache verwerfen.
+	var road := state.build_road(a, b)
+	_check(road != null and road.nodes.size() >= 3, "Cache: Straße A→B mit Zwischenknoten")
+	if road == null or road.nodes.size() < 3:
+		return
+	_check(state.find_route(a, b).size() >= 2, "Cache: nach Straßenbau Route vorhanden")
+
+	# Route ist jetzt gecacht. Straße über einen Zwischenknoten abreißen — beide
+	# Flaggen bleiben bestehen (der flag_at-Frühausstieg greift also NICHT), sodass nur
+	# eine korrekte Cache-Invalidierung in _remove_road das richtige Ergebnis liefert.
+	var mid := road.nodes[road.nodes.size() / 2]
+	_check(mid != a and mid != b, "Cache: Zwischenknoten ist kein Endpunkt")
+	_check(state.remove_at(mid), "Cache: Straße über Zwischenknoten abgerissen")
+	_check(state.find_route(a, b).size() == 0,
+		"Cache: nach Straßenabriss keine veraltete Route mehr")
 
 
 func _test_economy() -> void:
