@@ -97,6 +97,7 @@ func _new_game() -> void:
 	_apply_start_options()
 	var hq := _place_headquarters()
 	_ensure_test_pond_near(hq)
+	MapGenerator.seed_coastal_fish(map)  # Fischbestand am neuen Teichufer (Issue #6)
 	state.recompute_territory()
 	_ensure_stone_cluster_in_territory(0)
 	_place_enemy(hq)
@@ -2236,6 +2237,7 @@ func _save_game() -> void:
 		ore_deposit_kind = map.ore_deposit_kind.duplicate(),
 		ore_deposit_amount = map.ore_deposit_amount.duplicate(),
 		ore_deposit_found = map.ore_deposit_found.duplicate(),
+		fish_stock = map.fish_stock.duplicate(),
 		tree_stage = map.tree_stage.duplicate(),
 		tree_type = map.tree_type.duplicate(),
 		stone_stage = map.stone_stage.duplicate(),
@@ -2301,6 +2303,9 @@ func _load_game() -> void:
 	var saved_dep_found = data.get("ore_deposit_found", {})
 	if saved_dep_found is Dictionary:
 		map.ore_deposit_found = saved_dep_found
+	var saved_fish = data.get("fish_stock", {})
+	if saved_fish is Dictionary:
+		map.fish_stock = saved_fish
 	var saved_tree_stage = data.get("tree_stage", {})
 	if saved_tree_stage is Dictionary:
 		map.tree_stage = saved_tree_stage

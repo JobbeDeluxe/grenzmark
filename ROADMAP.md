@@ -89,7 +89,7 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Lagerhaus/HQ als Quelle & Senke (zentrales Inventar)
 - [x] Daten-getriebener Gebäude-Katalog mit ~19 Typen
 - [x] Produktionsketten: Holz→Bretter; Getreide→Mehl→Brot; Erz+Kohle→Eisen→Schwert; Gold+Kohle→Münzen; Bier; usw.
-- [x] Terrain-Ressourcen: Holzfäller fällt Bäume, Förster pflanzt, Steinbruch, Minen verbrauchen Erz, Fischer am Wasser, Bauer sät/erntet Felder (#26)
+- [x] Terrain-Ressourcen: Holzfäller fällt Bäume, Förster pflanzt, Steinbruch, Minen verbrauchen Erz, Fischer fängt endlichen Fisch am Ufer (#6), Bauer sät/erntet Felder (#26)
 - [x] Baustelle + Materialanlieferung (Bretter/Steine) + Baufortschritt
 - [x] Baufortschritt proportional zum gelieferten Material (Stein wertvoller als Holz)
 - [x] Bauarbeiter kommt vom HQ; gebaut wird erst nach seiner Ankunft
@@ -478,9 +478,12 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [x] Nebel des Krieges / Sichtbarkeit nur im erkundeten Gebiet (Taste F);
       auch im Hauptmenü als Startoption einstellbar.
 - [ ] Erdarbeiter (Planierer) ebnen Bauland; Höhe beeinflusst Bau stärker
-- [ ] Fisch als endlicher Kartenbestand statt unendliche Wasserquelle:
-      Wasser-/Küstenknoten bekommen Fischvorrat, Fischer verbraucht ihn, UI zeigt
-      "keine Fische" und spätere Regeneration/Schwärme bleiben optional.
+- [x] Fisch als endlicher Kartenbestand statt unendliche Wasserquelle (Issue #6,
+      RTTR nofFisher): Küstenknoten (Wasser+Land) bekommen einen versteckten
+      Fischvorrat (`fish_per_node`), der Fischer baut ihn ab, erschöpfte Gründe
+      werden übersprungen; ist nichts mehr in Reichweite, wartet die Hütte mit
+      Warnung „Keine Fische in Reichweite". Save/Load erhält den Bestand.
+      Regeneration/Schwärme bleiben optional offen.
       (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/6)
 - [ ] Jäger als echte Naturressource: Wildtiere spawnen nur in/nahe Waldclustern
       außerhalb dichter Bebauung (Startregel: mindestens ca. 10 große Bäume im

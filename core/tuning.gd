@@ -106,6 +106,11 @@ static func field_decay_ticks() -> int:
 	return maxi(1, int(_num("field_decay_ticks", 1800)))
 
 
+## Anfangs-Fischbestand je Küstenknoten (Issue #6). Endlich — der Fischer baut ihn ab.
+static func fish_per_node() -> int:
+	return maxi(1, int(_num("fish_per_node", 6)))
+
+
 ## Warenlieferungen über eine Straße bis zur sichtbaren Pflaster-Stufe.
 static func road_upgrade_deliveries() -> int:
 	return maxi(1, int(_num("road_upgrade_deliveries", 24)))

@@ -1429,6 +1429,10 @@ func _do_resource_action(bs: BState) -> void:
 			# Unterirdisches Vorkommen abbauen (eine Einheit; bei 0 erschöpft).
 			if state.map.take_ore_deposit(n.x, n.y):
 				dirty = true
+		"water":
+			# Einen Fisch fangen (Issue #6); der Fischgrund erschöpft bei 0.
+			if state.map.take_fish(n.x, n.y):
+				dirty = true
 		"plant_tree":
 			if not state.has_object(n.x, n.y):
 				# Förster pflanzt einen SETZLING, der über mehrere Stufen wächst.
@@ -1463,6 +1467,9 @@ func _do_resource_action(bs: BState) -> void:
 				bs.out_yield = false
 
 
+## Fischgrund im Umkreis: ein Küstenknoten mit verbleibendem Fischbestand (Issue #6).
+## Erschöpfte Gründe (fish == 0) werden übersprungen → der Fischer wandert weiter
+## bzw. die Hütte wartet, wenn nichts mehr in Reichweite ist.
 func _find_water_edge(center: Vector2i) -> Vector2i:
 	for r in range(1, ORE_RADIUS + 1):
 		for dy in range(-r, r + 1):
@@ -1473,9 +1480,8 @@ func _find_water_edge(center: Vector2i) -> Vector2i:
 					continue
 				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
 					continue
-				for t in state.map.terrains_around(x, y):
-					if Terrain.is_water(t):
-						return Vector2i(x, y)
+				if state.map.fish_at(x, y) > 0:
+					return Vector2i(x, y)
 	return Vector2i(-1, -1)
 
 
@@ -2153,7 +2159,10 @@ func building_info(bld: WorldState.Building) -> Dictionary:
 		match bs.idle_reason:
 			IDLE_OUT_FULL: info.warning = "Ausgang voll — Abtransport stockt"
 			IDLE_NO_INPUTS: info.warning = "Wartet auf Waren"
-			IDLE_NO_RESOURCE: info.warning = "Kein Rohstoff in Reichweite"
+			IDLE_NO_RESOURCE:
+				info.warning = "Keine Fische in Reichweite" \
+					if String(bs.def.get("resource", "")) == "water" \
+					else "Kein Rohstoff in Reichweite"
 	return info
 
 

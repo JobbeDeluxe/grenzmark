@@ -19,6 +19,7 @@ func _initialize() -> void:
 	_test_start_territory_stone_guarantee()
 	_test_ore_types()
 	_test_ore_deposit_mining()
+	_test_fishery_fish()
 	_test_farm_fields()
 	_test_catalog_complete()
 	_test_asset_files()
@@ -949,6 +950,36 @@ func _test_ore_deposit_mining() -> void:
 	_check(map.ore_deposit_amount_at(10, 8) == 0, "Vorkommen nach 3 Schlägen erschöpft")
 	_check(eco._find_deposit(Vector2i(10, 10), MapData.ORE_IRON, Economy.ORE_RADIUS).x < 0,
 		"Erschöpftes Vorkommen wird nicht mehr gefunden")
+
+
+## Endliche Fischbestände (Issue #6), original-getreu an RTTR nofFisher: Fisch ist
+## eine begrenzte Ressource je Küstenknoten; der Fischer baut sie ab, bei 0 ist der
+## Grund leer und die Hütte wartet. seed_coastal_fish belegt nur echte Küstenknoten.
+func _test_fishery_fish() -> void:
+	var map := _flat_map(20, 20)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	map.set_fish(10, 8, 2)
+	# Fischer findet den Fischgrund im Radius.
+	_check(eco._find_water_edge(Vector2i(10, 10)) == Vector2i(10, 8), "Fischer findet Fischgrund im Radius")
+	# Fangen reduziert den Bestand.
+	var bs := Economy.BState.new()
+	bs.def = { resource = "water", output = Goods.FISH }
+	bs.worker_target = Vector2i(10, 8)
+	eco._do_resource_action(bs)
+	_check(map.fish_at(10, 8) == 1, "1. Fang: Bestand 2 → 1")
+	eco._do_resource_action(bs)
+	_check(map.fish_at(10, 8) == 0, "Fischgrund nach 2 Fängen erschöpft")
+	# Erschöpfter Grund wird nicht mehr gefunden → Hütte hat keine Fische in Reichweite.
+	_check(eco._find_water_edge(Vector2i(10, 10)).x < 0, "Erschöpfter Fischgrund wird nicht mehr gefunden")
+
+	# seed_coastal_fish: nur Küstenknoten (Wasser UND Land im Dreiecksring) bekommen Fisch.
+	var cmap := _flat_map(12, 12)
+	cmap.set_tri(Vector2i(6, 6), Grid.TRI_R, Terrain.WATER)
+	cmap.set_tri(Vector2i(6, 6), Grid.TRI_D, Terrain.WATER)
+	MapGenerator.seed_coastal_fish(cmap)
+	_check(cmap.fish_at(6, 6) > 0, "seed_coastal_fish: Küstenknoten bekommt Fisch")
+	_check(cmap.fish_at(2, 2) == 0, "seed_coastal_fish: reines Land bleibt fischlos")
 
 
 ## Bauernhof-Felder (Issue #26), original-getreu an RTTR nofFarmer/noGrainfield:

@@ -24,6 +24,11 @@ var objects: Dictionary = {}   # idx -> MO_*
 enum { ORE_COAL, ORE_IRON, ORE_GOLD, ORE_GRANITE }
 var ore_kind: Dictionary = {}  # idx -> ORE_* (nur Deko-Objekte)
 
+# Fischbestand je Wasser-/Küstenknoten (Issue #6). In S2 unsichtbar unter Wasser:
+# ein begrenzter Vorrat, den der Fischer am Ufer abbaut; bei 0 ist dort Schluss.
+# Analog zu den Erz-Lagerstätten eine versteckte Mengen-Schicht (kein Rendering).
+var fish_stock: Dictionary = {}  # idx -> verbleibende Fische (>0)
+
 # Unterirdische Erz-Lagerstätten (in S2 unsichtbar bis ein Geologe sie aufdeckt).
 # Eine Mine baut im Umkreis ab; jedes Vorkommen liefert `amount` Einheiten, dann
 # ist es erschöpft. `found` wird später vom Geologen/Debug gesetzt (#21).
@@ -266,6 +271,35 @@ func take_ore_deposit(x: int, y: int) -> bool:
 		ore_deposit_found.erase(i)
 	else:
 		ore_deposit_amount[i] = amount
+	return true
+
+
+# --- Fischbestand (Issue #6) ----------------------------------------------
+
+func fish_at(x: int, y: int) -> int:
+	return fish_stock.get(idx(x, y), 0)
+
+
+func set_fish(x: int, y: int, amount: int) -> void:
+	var i := idx(x, y)
+	if amount <= 0:
+		fish_stock.erase(i)
+	else:
+		fish_stock[i] = amount
+
+
+## Fängt einen Fisch am Knoten. Gibt true zurück, wenn etwas da war; leert den
+## Knoten bei Erschöpfung.
+func take_fish(x: int, y: int) -> bool:
+	var i := idx(x, y)
+	var amount: int = fish_stock.get(i, 0)
+	if amount <= 0:
+		return false
+	amount -= 1
+	if amount <= 0:
+		fish_stock.erase(i)
+	else:
+		fish_stock[i] = amount
 	return true
 
 

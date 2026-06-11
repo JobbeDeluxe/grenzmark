@@ -206,6 +206,8 @@ Wichtige Felder:
   bevor es verdorrt. Startwert `3500`.
 - `field_decay_ticks`: wie lange eine Feld-Deko (Stoppel ODER verdorrt) liegen
   bleibt, bevor sie verschwindet (blockiert nichts). Startwert `1800` (= 60 s).
+- `fish_per_node`: Anfangs-Fischbestand je Küstenknoten (Issue #6). Endlich — der
+  Fischer baut ihn ab; bei 0 ist der Fischgrund leer. Startwert `6`.
 - `road_upgrade_deliveries`: Anzahl Warenlieferungen über eine Straße bis zum
   sichtbaren Kopfsteinpflaster.
 

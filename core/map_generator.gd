@@ -66,7 +66,26 @@ static func generate(width: int, height: int, seed: int = 12345) -> MapData:
 	_cleanup_terrain(map)
 
 	_scatter_objects(map, seed)
+	seed_coastal_fish(map)
 	return map
+
+
+## Endlicher Fischbestand (Issue #6) auf allen Küstenknoten (Knoten mit Wasser UND
+## Land im Dreiecksring). Reine Tiefwasserknoten bleiben leer — dort fischt niemand.
+## Überschreibt vorhandene Werte nicht (idempotent, auch für nachträglich gegrabene
+## Gewässer wie den Test-Teich aufrufbar).
+static func seed_coastal_fish(map: MapData) -> void:
+	for y in map.height:
+		for x in map.width:
+			if map.fish_at(x, y) > 0:
+				continue
+			var has_water := false
+			var has_land := false
+			for t in map.terrains_around(x, y):
+				if Terrain.is_water(t): has_water = true
+				else: has_land = true
+			if has_water and has_land:
+				map.set_fish(x, y, Tuning.fish_per_node())
 
 
 ## Bäume auf Wiesen, Stein-Haufen, Erz in den Bergen — deterministisch.
