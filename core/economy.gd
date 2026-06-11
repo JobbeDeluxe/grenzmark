@@ -24,6 +24,7 @@ const OUT_CAP := 4             # Ausgangspuffer eines Gebäudes
 const PROD_WINDOW := 1800      # rollendes Bewertungsfenster (Ticks) für die Produktivität %
 const RES_RADIUS := 6          # Suchradius für Baum/Stein/Pflanzplatz
 const ORE_RADIUS := 4          # Suchradius für Erz / Wasser
+const FARM_RADIUS := 2         # Suchradius für Bauernhof-Felder (RTTR GetWorkRadius=2)
 const SOLDIER_TICKS := 120     # Ticks, um aus einem Schwert einen Soldaten zu machen
 const MARCH_SPEED := 0.07      # Tempo marschierender Soldaten (Segmente/Tick)
 const ATTACK_SPEED := 1.3      # Tempo angreifender Soldaten (Weltpixel/Tick)
@@ -205,8 +206,8 @@ var _promo_timer := PROMO_TICKS
 var _cata_timer := CATAPULT_TICKS
 var _helper_timer := 0               # Träger-Nachschub des HQ-Lagers (Issue #33)
 var _growing_trees: Dictionary = {} # map idx -> Restticks bis zur nächsten Baumstufe
-var _growing_fields: Dictionary = {} # map idx -> Restticks bis zur nächsten Feldstufe (#26)
-var _cut_fields: Dictionary = {}     # map idx -> Restticks bis das Stoppelfeld verschwindet (#26)
+var _growing_fields: Dictionary = {} # map idx -> Restticks bis nächste Feldstufe / bis Verdorren (#26)
+var _decay_fields: Dictionary = {}   # map idx -> Restticks bis Feld-Deko (Stoppel/verdorrt) verschwindet (#26)
 var _rng := RandomNumberGenerator.new()  # seeded → deterministisch (Lockstep-tauglich)
 
 
@@ -219,7 +220,7 @@ func _init(world_state: WorldState) -> void:
 	_rng.seed = 0xA17E57   # fester Seed: gleiche Abläufe auf allen Clients
 	_init_tree_growth_from_map()
 	_init_field_growth_from_map()
-	_init_cut_fields_from_map()
+	_init_decay_fields_from_map()
 
 
 # --------------------------------------------------------------------------
@@ -426,7 +427,7 @@ func tick() -> void:
 		ai.think(self, 1)
 	_tick_tree_growth()
 	_tick_field_growth()
-	_tick_cut_fields()
+	_tick_decay_fields()
 	_tick_soldiers()
 	_tick_promotions()
 	_tick_catapults()
@@ -512,9 +513,19 @@ func _tick_tree_growth() -> void:
 
 # --------------------------------------------------------------------------
 #  Feld-Wachstum (Bauernhof, Issue #26) — analog zum Baumwachstum.
-#  Felder wachsen seed→young→growing→reif und bleiben dann stehen, bis der
-#  Bauer sie erntet. Deterministisch über feste Tick-Zeiten (Tuning).
+#  Felder wachsen seed→young→growing→reif. Ein REIFES Feld bekommt einen
+#  Verdorr-Timer (RTTR State::Withering): erntet es niemand, verdorrt es zu
+#  einer nicht-blockierenden Deko und verschwindet danach. _growing_fields hält
+#  je Knoten die Restticks bis zum nächsten Ereignis (nächste Stufe bzw. Verdorr).
 # --------------------------------------------------------------------------
+
+## Restticks des nächsten Ereignisses für ein Feld der Stufe `stage`:
+## wächst es noch → Wachstumszeit; ist es reif → Verdorr-Zeit.
+func _field_event_ticks(stage: int) -> float:
+	if stage < MapData.FIELD_RIPE:
+		return float(Tuning.field_growth_ticks(stage))
+	return float(Tuning.field_wither_ticks())
+
 
 func _init_field_growth_from_map() -> void:
 	_growing_fields.clear()
@@ -524,9 +535,7 @@ func _init_field_growth_from_map() -> void:
 		var i := int(key)
 		if state.map.objects.get(i, -1) != MapData.MO_FIELD:
 			continue
-		var stage := int(state.map.field_stage[key])
-		if stage < MapData.FIELD_RIPE:
-			_growing_fields[i] = float(Tuning.field_growth_ticks(stage))
+		_growing_fields[i] = _field_event_ticks(int(state.map.field_stage[key]))
 
 
 func field_growth_state() -> Dictionary:
@@ -538,18 +547,14 @@ func restore_field_growth(data: Dictionary) -> void:
 	for key in data:
 		var i := int(key)
 		if state.map.objects.get(i, -1) == MapData.MO_FIELD:
-			var stage := state.map.field_stage_at(i % state.map.width, int(i / state.map.width))
-			if stage < MapData.FIELD_RIPE:
-				_growing_fields[i] = maxf(float(data[key]), 1.0)
+			_growing_fields[i] = maxf(float(data[key]), 1.0)
 	for key in state.map.field_stage:
 		var i := int(key)
 		if _growing_fields.has(i):
 			continue
 		if state.map.objects.get(i, -1) != MapData.MO_FIELD:
 			continue
-		var stage := int(state.map.field_stage[key])
-		if stage < MapData.FIELD_RIPE:
-			_growing_fields[i] = float(Tuning.field_growth_ticks(stage))
+		_growing_fields[i] = _field_event_ticks(int(state.map.field_stage[key]))
 
 
 func _tick_field_growth() -> void:
@@ -566,59 +571,69 @@ func _tick_field_growth() -> void:
 			continue
 		var stage := state.map.field_stage_at(x, y)
 		if stage >= MapData.FIELD_RIPE:
+			# Reifes Feld blieb ungeerntet → es verdorrt (RTTR State::Withering).
+			state.map.clear_map_object(x, y)
 			_growing_fields.erase(i)
+			state.map.set_field_decay(x, y, MapData.FIELD_DECAY_WITHERED)
+			_decay_fields[i] = float(Tuning.field_decay_ticks())
+			dirty = true
 			continue
 		stage += 1
 		state.map.set_field_stage(x, y, stage)
+		_growing_fields[i] = _field_event_ticks(stage)
 		dirty = true
-		if stage < MapData.FIELD_RIPE:
-			_growing_fields[i] = float(Tuning.field_growth_ticks(stage))
-		else:
-			_growing_fields.erase(i)
 
 
 # --------------------------------------------------------------------------
-#  Stoppelfelder (RTTR: abgeerntetes Feld bleibt als nicht-blockierende Deko
-#  liegen und verschwindet nach kurzer Zeit). Issue #26.
+#  Feld-Deko (RTTR: abgeerntetes/verdorrtes Feld bleibt als nicht-blockierendes
+#  noEnvObject liegen und verschwindet nach kurzer Zeit). Issue #26.
 # --------------------------------------------------------------------------
 
-func _init_cut_fields_from_map() -> void:
-	_cut_fields.clear()
+func _init_decay_fields_from_map() -> void:
+	_decay_fields.clear()
 	if state == null or state.map == null:
 		return
-	for key in state.map.field_cut:
-		_cut_fields[int(key)] = float(Tuning.field_cut_ticks())
+	for key in state.map.field_decay:
+		_decay_fields[int(key)] = float(Tuning.field_decay_ticks())
 
 
-func cut_fields_state() -> Dictionary:
-	return _cut_fields.duplicate()
+func decay_fields_state() -> Dictionary:
+	return _decay_fields.duplicate()
 
 
-func restore_cut_fields(data: Dictionary) -> void:
-	_cut_fields.clear()
+func restore_decay_fields(data: Dictionary) -> void:
+	_decay_fields.clear()
 	for key in data:
 		var i := int(key)
-		if state.map.field_cut.get(i, false):
-			_cut_fields[i] = maxf(float(data[key]), 1.0)
-	for key in state.map.field_cut:
+		if state.map.field_decay.has(i):
+			_decay_fields[i] = maxf(float(data[key]), 1.0)
+	for key in state.map.field_decay:
 		var i := int(key)
-		if not _cut_fields.has(i):
-			_cut_fields[i] = float(Tuning.field_cut_ticks())
+		if not _decay_fields.has(i):
+			_decay_fields[i] = float(Tuning.field_decay_ticks())
 
 
-func _tick_cut_fields() -> void:
-	for key in _cut_fields.keys():
+func _tick_decay_fields() -> void:
+	for key in _decay_fields.keys():
 		var i := int(key)
-		if not state.map.field_cut.get(i, false):
-			_cut_fields.erase(i)
+		if not state.map.field_decay.has(i):
+			_decay_fields.erase(i)
 			continue
-		var left := float(_cut_fields[i]) - 1.0
+		var x := i % state.map.width
+		var y := int(i / state.map.width)
+		# Wird der Knoten anderweitig genutzt (Bau/Flagge/Straße/Objekt), Deko sofort weg.
+		if state._occ(x, y) != WorldState.OBJ_NONE or state.has_object(x, y):
+			state.map.field_decay.erase(i)
+			_decay_fields.erase(i)
+			dirty = true
+			continue
+		var left := float(_decay_fields[i]) - 1.0
 		if left > 0.0:
-			_cut_fields[i] = left
+			_decay_fields[i] = left
 			continue
-		# Stoppelfeld verschwindet (RTTR: noEnvObject wird entfernt).
-		state.map.field_cut.erase(i)
-		_cut_fields.erase(i)
+		# Deko verschwindet (RTTR: noEnvObject wird entfernt).
+		state.map.field_decay.erase(i)
+		_decay_fields.erase(i)
 		dirty = true
 
 
@@ -1431,13 +1446,13 @@ func _do_resource_action(bs: BState) -> void:
 				# (noEnvObject) ersetzt, das nach kurzer Zeit verschwindet.
 				state.map.clear_map_object(n.x, n.y)
 				_growing_fields.erase(fi)
-				state.map.set_field_cut(n.x, n.y, true)
-				_cut_fields[fi] = float(Tuning.field_cut_ticks())
+				state.map.set_field_decay(n.x, n.y, MapData.FIELD_DECAY_CUT)
+				_decay_fields[fi] = float(Tuning.field_decay_ticks())
 				dirty = true  # out_yield bleibt true → Getreide entsteht in WK_BACK
-			elif not state.has_object(n.x, n.y) and _is_field_spot(n.x, n.y):
-				# Auf einem alten Stoppelfeld darf neu gesät werden → Deko entfernen.
-				state.map.set_field_cut(n.x, n.y, false)
-				_cut_fields.erase(fi)
+			elif _is_field_spot(n.x, n.y):
+				# Auf einer alten Feld-Deko (Stoppel/verdorrt) darf neu gesät werden.
+				state.map.clear_field_decay(n.x, n.y)
+				_decay_fields.erase(fi)
 				state.map.set_map_object(n.x, n.y, MapData.MO_FIELD)
 				state.map.set_field_stage(n.x, n.y, MapData.FIELD_SEED)
 				_growing_fields[fi] = float(Tuning.field_growth_ticks(MapData.FIELD_SEED))
@@ -1558,27 +1573,37 @@ func _all_meadow(x: int, y: int) -> bool:
 	return true
 
 
-## Eignet sich der Knoten als Ackerplatz? Nur freie, fruchtbare Wiesenknoten
-## (kein Objekt/Bau/Flagge/Straße, baubar, ringsum Wiese — wie der Förster-Pflanzplatz).
+## Eignet sich der Knoten als neuer Ackerplatz? Original-getreu nach RTTR
+## nofFarmer::GetNewFieldPointQuality: keine Straße auf dem Knoten, fruchtbares
+## Wiesenterrain, Platz frei (Feld-Deko/Stoppel ist erlaubt — wird übersät) und
+## KEIN Getreidefeld/Gebäude/Baustelle direkt daneben (Felder brauchen Lücken).
 func _is_field_spot(x: int, y: int) -> bool:
+	# Knoten frei: kein blockierendes Objekt, keine Flagge/Straße/Gebäude.
+	# (Feld-Deko liegt NICHT in objects → has_object false → darf übersät werden.)
 	if state.has_object(x, y) or state._occ(x, y) != WorldState.OBJ_NONE:
 		return false
-	return state.compute_bq(x, y) >= WorldState.BQ_FLAG and _all_meadow(x, y)
+	if not _all_meadow(x, y):
+		return false
+	# Keine direkten Nachbar-Getreidefelder oder Gebäude/Baustellen.
+	for dir in Grid.DIRS:
+		var n := state.map.neighbor(x, y, dir)
+		if n.x < 0:
+			continue
+		if state.map.map_object(n.x, n.y) == MapData.MO_FIELD:
+			return false
+		if state._occ(n.x, n.y) == WorldState.OBJ_BUILDING:
+			return false
+	return true
 
 
-## Arbeitsziel des Bauern: zuerst ein REIFES Feld im Umkreis ernten, sonst einen
-## freien Ackerplatz säen. Liefert (-1,-1), wenn beides fehlt → der Hof wartet
-## sichtbar (kein Getreide aus dem Nichts).
+## Arbeitsziel des Bauern (RTTR nofFarmhand): im kleinen Umkreis (FARM_RADIUS=2)
+## alle gültigen Plätze sammeln — Class1 = reife Felder (ernten), Class2 =
+## Saatplätze (säen) — und aus der besten verfügbaren Klasse ZUFÄLLIG (seeded,
+## deterministisch) wählen. Ernten geht vor Säen. (-1,-1) → der Hof wartet sichtbar.
 func _find_farm_target(center: Vector2i) -> Vector2i:
-	var ripe := _find_ripe_field(center, RES_RADIUS)
-	if ripe.x >= 0:
-		return ripe
-	return _find_field_sow_spot(center)
-
-
-## Reifes Feld (MO_FIELD, Stufe RIPE) im Umkreis, nächstgelegen zuerst.
-func _find_ripe_field(center: Vector2i, radius: int) -> Vector2i:
-	for r in range(1, radius + 1):
+	var ripe: Array[Vector2i] = []
+	var sow: Array[Vector2i] = []
+	for r in range(1, FARM_RADIUS + 1):
 		for dy in range(-r, r + 1):
 			for dx in range(-r, r + 1):
 				var x := center.x + dx
@@ -1587,25 +1612,15 @@ func _find_ripe_field(center: Vector2i, radius: int) -> Vector2i:
 					continue
 				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
 					continue
-				if state.map.map_object(x, y) == MapData.MO_FIELD \
-						and state.map.field_stage_at(x, y) == MapData.FIELD_RIPE:
-					return Vector2i(x, y)
-	return Vector2i(-1, -1)
-
-
-## Freier Ackerplatz zum Säen im Umkreis, nächstgelegen zuerst.
-func _find_field_sow_spot(center: Vector2i) -> Vector2i:
-	for r in range(1, RES_RADIUS + 1):
-		for dy in range(-r, r + 1):
-			for dx in range(-r, r + 1):
-				var x := center.x + dx
-				var y := center.y + dy
-				if not state.map.in_bounds(x, y):
-					continue
-				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
-					continue
-				if _is_field_spot(x, y):
-					return Vector2i(x, y)
+				if state.map.map_object(x, y) == MapData.MO_FIELD:
+					if state.map.field_stage_at(x, y) == MapData.FIELD_RIPE:
+						ripe.append(Vector2i(x, y))
+				elif _is_field_spot(x, y):
+					sow.append(Vector2i(x, y))
+	if not ripe.is_empty():
+		return ripe[_rng.randi() % ripe.size()]
+	if not sow.is_empty():
+		return sow[_rng.randi() % sow.size()]
 	return Vector2i(-1, -1)
 
 

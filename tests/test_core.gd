@@ -951,58 +951,78 @@ func _test_ore_deposit_mining() -> void:
 		"Erschöpftes Vorkommen wird nicht mehr gefunden")
 
 
-## Bauernhof-Felder (Issue #26): säen → wachsen → ernten; Säen liefert kein
-## Getreide, erst die Ernte eines REIFEN Feldes; ungeeignete Fläche verhindert
-## Produktion; Save/Load erhält den Feldzustand.
+## Bauernhof-Felder (Issue #26), original-getreu an RTTR nofFarmer/noGrainfield:
+## säen → wachsen → ernten (Säen liefert kein Getreide), Ernte hinterlässt eine
+## nicht-blockierende Stoppel-Deko, ungeerntete reife Felder verdorren, neben
+## wachsenden Feldern ist nur eine Flagge möglich, Saatregel verbietet Felder/
+## Gebäude direkt daneben, Suchradius 2; Save/Load erhält den Feldzustand.
 func _test_farm_fields() -> void:
 	var map := _flat_map(24, 24)
 	var state := WorldState.new(map)
 	var eco := Economy.new(state)
 	var farm_pos := Vector2i(12, 12)
-
-	# Leeres Wiesen-Umfeld → der Bauer wählt einen Saatplatz (kein reifes Feld da).
-	var sow := eco._find_farm_target(farm_pos)
-	_check(sow.x >= 0, "Farm: findet freien Ackerplatz im leeren Wiesen-Umfeld")
-
-	# Säen über _do_resource_action: Feld entsteht, aber KEIN Getreide-Ertrag.
 	var bs := Economy.BState.new()
 	bs.def = { resource = "field", output = Goods.GRAIN }
+
+	# Leeres Wiesen-Umfeld → der Bauer wählt einen Saatplatz im Radius 2.
+	var sow := eco._find_farm_target(farm_pos)
+	_check(sow.x >= 0, "Farm: findet freien Ackerplatz im leeren Wiesen-Umfeld")
+	_check(WorldState.hex_distance(farm_pos, sow) <= Economy.FARM_RADIUS,
+		"Farm: Saatplatz liegt im Original-Radius 2")
+
+	# Säen: Feld entsteht, aber KEIN Getreide-Ertrag.
 	bs.worker_target = sow
 	bs.out_yield = true
 	eco._do_resource_action(bs)
 	_check(map.map_object(sow.x, sow.y) == MapData.MO_FIELD, "Farm: Saat erzeugt ein Feld")
 	_check(map.field_stage_at(sow.x, sow.y) == MapData.FIELD_SEED, "Farm: frisches Feld ist Stufe SEED")
 	_check(bs.out_yield == false, "Farm: Säen liefert kein Getreide (out_yield=false)")
-	_check(eco._growing_fields.has(map.idx(sow.x, sow.y)), "Farm: gesätes Feld wächst")
 
-	# Wachstum: seed → ripe über die Tuning-Ticks.
+	# S2: direkt neben einem wachsenden Feld ist nur eine Flagge möglich (kein Gebäude).
+	var nb := map.neighbor(sow.x, sow.y, Grid.E)
+	_check(state.compute_bq(nb.x, nb.y) == WorldState.BQ_FLAG,
+		"Farm: neben wachsendem Feld nur Flagge (RTTR FlagsAround)")
+	# Die Saatregel verbietet ein zweites Feld direkt daneben.
+	_check(not eco._is_field_spot(nb.x, nb.y), "Farm: kein zweites Feld direkt neben einem Feld")
+
+	# Wachstum: seed → ripe.
 	var total := Tuning.field_growth_ticks(0) + Tuning.field_growth_ticks(1) + Tuning.field_growth_ticks(2)
 	for t in total:
 		eco._tick_field_growth()
 	_check(map.field_stage_at(sow.x, sow.y) == MapData.FIELD_RIPE, "Farm: Feld reift nach %d Ticks" % total)
-	_check(not eco._growing_fields.has(map.idx(sow.x, sow.y)), "Farm: reifes Feld wächst nicht weiter")
 
-	# Jetzt wird das reife Feld zum Ernten priorisiert (vor neuem Säen).
+	# Reifes Feld wird zum Ernten priorisiert (Class1 vor Class2).
 	_check(eco._find_farm_target(farm_pos) == sow, "Farm: reifes Feld wird zum Ernten gewählt")
 
-	# Ernten: Feld verschwindet, out_yield bleibt true → Getreide entsteht in WK_BACK.
+	# Ernten: Feld verschwindet, out_yield bleibt true → Getreide; Stoppel-Deko bleibt.
 	bs.worker_target = sow
 	bs.out_yield = true
 	eco._do_resource_action(bs)
 	_check(map.map_object(sow.x, sow.y) != MapData.MO_FIELD, "Farm: Ernte entfernt das Feld")
 	_check(bs.out_yield == true, "Farm: Ernte liefert Getreide (out_yield=true)")
-
-	# RTTR-getreu: Ernte hinterlässt ein Stoppelfeld (Deko), das NICHTS blockiert
-	# und nach field_cut_ticks verschwindet.
-	_check(map.has_field_cut(sow.x, sow.y), "Farm: Ernte hinterlässt ein Stoppelfeld")
+	_check(map.field_decay_at(sow.x, sow.y) == MapData.FIELD_DECAY_CUT,
+		"Farm: Ernte hinterlässt ein Stoppelfeld (CUT)")
 	_check(not state.has_object(sow.x, sow.y), "Farm: Stoppelfeld ist kein blockierendes Objekt")
-	_check(state.compute_bq(sow.x, sow.y) >= WorldState.BQ_FLAG,
-		"Farm: auf dem Stoppelfeld ist wieder Bauen/Flagge möglich")
-	_check(eco._cut_fields.has(map.idx(sow.x, sow.y)), "Farm: Stoppelfeld hat Verschwind-Timer")
-	for t in Tuning.field_cut_ticks():
-		eco._tick_cut_fields()
-	_check(not map.has_field_cut(sow.x, sow.y), "Farm: Stoppelfeld verschwindet nach field_cut_ticks")
-	_check(not eco._cut_fields.has(map.idx(sow.x, sow.y)), "Farm: Stoppel-Timer nach Verschwinden weg")
+	_check(state.effective_bq(sow.x, sow.y) >= WorldState.BQ_HUT,
+		"Farm: auf/an der Stoppel-Deko ist wieder ein Gebäude möglich (blockiert nicht)")
+	for t in Tuning.field_decay_ticks():
+		eco._tick_decay_fields()
+	_check(not map.has_field_decay(sow.x, sow.y), "Farm: Stoppelfeld verschwindet nach field_decay_ticks")
+
+	# Verdorren: ein reifes, ungeerntetes Feld wird nach field_wither_ticks zu
+	# verdorrter Deko (RTTR State::Withering) und verschwindet dann.
+	var wmap := _flat_map(20, 20)
+	var wstate := WorldState.new(wmap)
+	var weco := Economy.new(wstate)
+	wmap.set_map_object(10, 10, MapData.MO_FIELD)
+	wmap.set_field_stage(10, 10, MapData.FIELD_RIPE)
+	weco._init_field_growth_from_map()  # reifes Feld bekommt Verdorr-Timer
+	_check(int(weco._growing_fields.get(wmap.idx(10, 10), -1)) == Tuning.field_wither_ticks(),
+		"Farm: reifes Feld bekommt Verdorr-Timer")
+	for t in Tuning.field_wither_ticks():
+		weco._tick_field_growth()
+	_check(wmap.map_object(10, 10) != MapData.MO_FIELD, "Farm: ungeerntetes reifes Feld verdorrt")
+	_check(wmap.field_decay_at(10, 10) == MapData.FIELD_DECAY_WITHERED, "Farm: verdorrtes Feld als WITHERED-Deko")
 
 	# Ungeeignete Fläche (Sand statt Wiese): kein Ackerplatz → Hof wartet.
 	var smap := _flat_map(24, 24)
@@ -1014,21 +1034,16 @@ func _test_farm_fields() -> void:
 	var seco := Economy.new(sstate)
 	_check(seco._find_farm_target(Vector2i(12, 12)).x < 0, "Farm: auf Sand kein Ackerplatz → wartet")
 
-	# Save/Load: restore_field_growth rekonstruiert Wachstumsticks aus field_stage.
-	var fidx := map.idx(8, 8)
-	map.set_map_object(8, 8, MapData.MO_FIELD)
-	map.set_field_stage(8, 8, MapData.FIELD_YOUNG)
+	# Save/Load: Wachstums- und Deko-Timer werden rekonstruiert.
+	var fidx := map.idx(4, 4)
+	map.set_map_object(4, 4, MapData.MO_FIELD)
+	map.set_field_stage(4, 4, MapData.FIELD_YOUNG)
 	eco.restore_field_growth({ fidx: 42.0 })
 	_check(int(eco._growing_fields.get(fidx, -1)) == 42, "Farm: Save/Load stellt Feld-Wachstumsticks wieder her")
-	# Ein reifes Feld bekommt nach dem Laden keine Wachstumsticks mehr.
-	map.set_field_stage(8, 8, MapData.FIELD_RIPE)
-	eco.restore_field_growth({})
-	_check(not eco._growing_fields.has(fidx), "Farm: reifes Feld nach Load ohne Wachstumsticks")
-	# Save/Load des Stoppelfeld-Timers.
-	map.set_field_cut(9, 9, true)
-	eco.restore_cut_fields({ map.idx(9, 9): 99.0 })
-	_check(int(eco._cut_fields.get(map.idx(9, 9), -1)) == 99,
-		"Farm: Save/Load stellt den Stoppelfeld-Timer wieder her")
+	map.set_field_decay(18, 18, MapData.FIELD_DECAY_WITHERED)
+	eco.restore_decay_fields({ map.idx(18, 18): 99.0 })
+	_check(int(eco._decay_fields.get(map.idx(18, 18), -1)) == 99,
+		"Farm: Save/Load stellt den Feld-Deko-Timer wieder her")
 
 	# Voller Pipeline-Durchlauf: ein realer Hof produziert Getreide ERST nach
 	# Säen + Reifen + Ernten (nicht aus dem Nichts).
@@ -1045,7 +1060,7 @@ func _test_farm_fields() -> void:
 		fbs.staffed = true
 		var grain_seen := false
 		var field_seen := false
-		for t in 14000:
+		for t in 16000:
 			ieco._tick_work(fbs)
 			ieco._tick_field_growth()
 			if not field_seen:

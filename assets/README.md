@@ -24,7 +24,7 @@ Typ Ordner, Dateiname und empfohlene Größe.
 | `assets/roads/`     | `road.png`, optional `<terrain>.png`, `road_cobble.png` | Straßen-Textur, längs gekachelt | ~192×48 |
 | `assets/construction/` | `site.png` (Bauplatz), `stage1.png` (Holzbau-Stufe) + optional `<def_id>_site.png` / `<def_id>_stage1.png` | Bauplatz & Baustufe 1 | ~64×64 |
 | `assets/buildings/` | `<def_id>.png` | Gebäude-Sprite = **fertiger Bau / Baustufe 2** (Boden = untere Kante) | ~64×64 |
-| `assets/objects/`   | `tree_<typ>.png`, `tree_<typ>_seed.png`, `tree_<typ>_small.png`, `field_seed.png`, `field_young.png`, `field_growing.png`, `field_ripe.png`, `stone.png`, `stone_stage2.png`, `stone_stage3.png`, `ore.png` | Karten-Objekte, Baumtypen, Kornfeld- & Stein-Stufen | frei; Bäume werden per Zielhöhe skaliert |
+| `assets/objects/`   | `tree_<typ>.png`, `tree_<typ>_seed.png`, `tree_<typ>_small.png`, `field_seed.png`, `field_young.png`, `field_growing.png`, `field_ripe.png`, `field_cut.png`, `field_withered.png`, `stone.png`, `stone_stage2.png`, `stone_stage3.png`, `ore.png` | Karten-Objekte, Baumtypen, Kornfeld- & Stein-Stufen | frei; Bäume werden per Zielhöhe skaliert |
 | `assets/goods/`     | `<nummer>.png` | Waren-Symbol | ~16×16 |
 | `assets/units/`     | `carrier.png`, `worker.png`, `soldier.png`, `builder.png` (+ `_<spieler>` Varianten) | Lauf-Sprite-Sheet (4×6) | Zelle ~32×32 |
 | `assets/ui/`        | `main_menu_background.png`, `flag_<spieler>.png`, `build_spots/*.png` | Hauptmenü, Spielflaggen & Bauhilfe-Symbole | 16:9 / ~64×64 |
@@ -152,7 +152,10 @@ Fallback-Acker (kein Absturz):
 - `field_ripe.png`: goldenes reifes Korn, erntebereit
 - `field_cut.png`: abgeerntetes Stoppelfeld (umgesetzt, RTTR-getreu) — bleibt nach
   der Ernte als reine Deko liegen, **blockiert nichts** (Bau/Straßen/neues Säen
-  sofort wieder möglich) und verschwindet nach `field_cut_ticks`
+  sofort wieder möglich) und verschwindet nach `field_decay_ticks`
+- `field_withered.png`: verdorrtes Feld (umgesetzt) — ein REIFES Feld, das niemand
+  erntet, verdorrt nach `field_wither_ticks` zu dieser fahlen Deko (blockiert
+  ebenfalls nichts) und verschwindet dann nach `field_decay_ticks`
 
 Mechanik: Öffentliche S2/10th-Quellen nennen **1 Minute 55 Sekunden** vom Säen
 bis zur vollen Reife. Bei 30 Hz sind das **3450 Ticks**, mit 4 Phasen verteilt auf
@@ -199,8 +202,10 @@ Wichtige Felder:
   Erst der große Baum darf vom Holzfäller gefällt werden.
 - `field_growth_stage_ticks`: Kornfeld-Wachstum `[gesät→jung, jung→wachsend,
   wachsend→reif]`, Startwert `[1150, 1150, 1150]` = 1:55 min bis zur Ernte (30 Hz).
-- `field_cut_ticks`: wie lange ein abgeerntetes Stoppelfeld liegen bleibt, bevor
-  es verschwindet (Deko, blockiert nichts). Startwert `1800` (= 60 s bei 30 Hz).
+- `field_wither_ticks`: wie lange ein REIFES, ungeerntetes Feld stehen bleibt,
+  bevor es verdorrt. Startwert `3500`.
+- `field_decay_ticks`: wie lange eine Feld-Deko (Stoppel ODER verdorrt) liegen
+  bleibt, bevor sie verschwindet (blockiert nichts). Startwert `1800` (= 60 s).
 - `road_upgrade_deliveries`: Anzahl Warenlieferungen über eine Straße bis zum
   sichtbaren Kopfsteinpflaster.
 

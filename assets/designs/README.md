@@ -17,6 +17,7 @@ malt das Spiel einen Fallback-Acker. Ziel-Assets:
 | `assets/objects/field_growing.png` | hoher grüner Bestand | `dense growing wheat field patch, tall green stalks, not ripe yet` |
 | `assets/objects/field_ripe.png` | golden, erntebereit | `ripe golden wheat field patch, harvest-ready grain heads` |
 | `assets/objects/field_cut.png` | Stoppeln nach der Ernte (umgesetzt) | `cut wheat stubble field patch after harvest` |
+| `assets/objects/field_withered.png` | verdorrtes, ungeerntetes Feld (umgesetzt) | `withered dried-out wheat field patch, pale brown collapsed dead stalks, overgrown` |
 
 Gemeinsamer Stil:
 
@@ -36,7 +37,10 @@ Recherche-Stand für die Mechanik:
   `seed -> young -> growing -> ripe`, also als Startwert ca. 1150 Ticks pro
   Übergang.
 - Nach der Ernte bleibt RTTR-getreu ein **Stoppelfeld** (`field_cut.png`) liegen,
-  das nichts blockiert und nach `field_cut_ticks` verschwindet.
+  das nichts blockiert und nach `field_decay_ticks` verschwindet.
+- Ein **reifes, ungeerntetes** Feld verdorrt RTTR-getreu nach `field_wither_ticks`
+  zu `field_withered.png` (ebenfalls nicht-blockierende Deko, verschwindet danach).
+  Gleiche Kameraperspektive/Footprint wie die Wachstumsphasen, nur fahl/vertrocknet.
 
 Wichtig: Keine Original-Siedler-Dateien oder 1:1-Kopien verwenden. Die Bilder
 sollen neu generiert oder selbst erstellt sein und nur das Konzept nachbauen.

@@ -90,13 +90,14 @@ func _draw_billboards() -> void:
 		var p := map.node_world(x, y)
 		var oi := int(map.objects[i])
 		items.append({ y = p.y, fn = func(): _paint_object(p, oi, x, y) })
-	# Abgeerntete Stoppelfelder (Issue #26): nicht-blockierende Boden-Deko, liegen
-	# getrennt von map.objects → hier eigens in den y-sortierten Pass aufnehmen.
-	for i in map.field_cut:
+	# Feld-Deko (Issue #26): abgeerntete/verdorrte Felder, nicht-blockierende
+	# Boden-Deko getrennt von map.objects → eigens in den y-sortierten Pass.
+	for i in map.field_decay:
 		var x := int(i) % map.width
 		var y := int(i) / map.width
 		var p := map.node_world(x, y)
-		items.append({ y = p.y, fn = func(): _draw_field_cut(p) })
+		var kind := int(map.field_decay[i])
+		items.append({ y = p.y, fn = func(): _draw_field_decay(p, kind) })
 	for i in state.buildings:
 		var b: WorldState.Building = state.buildings[i]
 		var bp := map.node_world(b.pos.x, b.pos.y) + GameTheme.building_offset(b.def_id)
@@ -518,20 +519,23 @@ func _paint_field(p: Vector2, stage: int) -> void:
 			draw_line(Vector2(bx, p.y + ry), Vector2(bx, p.y + ry - hgt), crop, 1.5)
 
 
-## Abgeerntetes Stoppelfeld (assets/objects/field_cut.png), sonst gemalter Fallback.
-func _draw_field_cut(p: Vector2) -> void:
-	var tex := GameTheme.object_texture("field_cut")
+## Feld-Deko: CUT = abgeerntetes Stoppelfeld (field_cut.png), WITHERED = verdorrtes
+## Feld (field_withered.png). Eigene PNGs, sonst gemalter Fallback je Art.
+func _draw_field_decay(p: Vector2, kind: int) -> void:
+	var name := "field_withered" if kind == MapData.FIELD_DECAY_WITHERED else "field_cut"
+	var tex := GameTheme.object_texture(name)
 	if tex != null:
-		var sz := GameTheme.object_draw_size("field_cut")
+		var sz := GameTheme.object_draw_size(name)
 		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y * 0.5, sz.x, sz.y), false)
 		return
-	# Fallback: brauner Acker mit kurzen Stoppelresten.
+	# Fallback-Acker; verdorrt graubraun-fahl, abgeerntet warmes Stroh.
 	var hw := 14.0
 	var hh := 8.0
+	var soil := Color(0.34, 0.28, 0.17) if kind == MapData.FIELD_DECAY_WITHERED else Color(0.40, 0.31, 0.18)
 	draw_colored_polygon(PackedVector2Array([
 		p + Vector2(-hw, 0), p + Vector2(0, -hh),
-		p + Vector2(hw, 0), p + Vector2(0, hh)]), Color(0.40, 0.31, 0.18))
-	var stub := Color(0.62, 0.54, 0.30)
+		p + Vector2(hw, 0), p + Vector2(0, hh)]), soil)
+	var stub := Color(0.50, 0.46, 0.34) if kind == MapData.FIELD_DECAY_WITHERED else Color(0.62, 0.54, 0.30)
 	for c in range(-2, 3):
 		var bx := p.x + c * 5.0
 		draw_line(Vector2(bx, p.y + 1), Vector2(bx, p.y - 2.5), stub, 1.5)

@@ -292,10 +292,24 @@ func compute_bq(x: int, y: int) -> int:
 			var se := map.neighbor(x, y, Grid.SE)
 			if se.x < 0 or not node_walkable(se.x, se.y):
 				base = BQ_FLAG
+		# S2 (RTTR BQCalculator, BlockingManner::FlagsAround): direkt neben einem
+		# wachsenden Getreidefeld ist nur eine Flagge möglich, kein Gebäude.
+		if base > BQ_FLAG and _grainfield_adjacent(x, y):
+			base = BQ_FLAG
 		return base
 
 	# Gemischtes, aber begehbares Terrain: nur Flagge.
 	return BQ_FLAG
+
+
+## Liegt ein wachsendes Getreidefeld (MO_FIELD) auf einem der 6 Nachbarknoten?
+## (Abgeerntete/verdorrte Feld-Deko zählt NICHT — sie blockiert nichts.)
+func _grainfield_adjacent(x: int, y: int) -> bool:
+	for dir in Grid.DIRS:
+		var n := map.neighbor(x, y, dir)
+		if n.x >= 0 and map.map_object(n.x, n.y) == MapData.MO_FIELD:
+			return true
+	return false
 
 
 ## Effektive BauQualität: Terrain-Potenzial, reduziert durch belegte Knoten und

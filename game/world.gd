@@ -2241,10 +2241,10 @@ func _save_game() -> void:
 		stone_stage = map.stone_stage.duplicate(),
 		stone_hits_left = map.stone_hits_left.duplicate(),
 		field_stage = map.field_stage.duplicate(),
-		field_cut = map.field_cut.duplicate(),
+		field_decay = map.field_decay.duplicate(),
 		tree_growth = economy.tree_growth_state(),
 		field_growth = economy.field_growth_state(),
-		cut_fields = economy.cut_fields_state(),
+		decay_fields = economy.decay_fields_state(),
 		buildings = [], flags = [], roads = [],
 		hq_stock = economy.hq_stock.duplicate(),
 		# Gesamtbevölkerung (Reserve + eingesetzte Träger/Arbeiter), Issue #9: beim
@@ -2316,9 +2316,13 @@ func _load_game() -> void:
 	var saved_field_stage = data.get("field_stage", {})
 	if saved_field_stage is Dictionary:
 		map.field_stage = saved_field_stage
-	var saved_field_cut = data.get("field_cut", {})
-	if saved_field_cut is Dictionary:
-		map.field_cut = saved_field_cut
+	var saved_field_decay = data.get("field_decay", {})
+	if saved_field_decay is Dictionary and not saved_field_decay.is_empty():
+		map.field_decay = saved_field_decay
+	elif data.get("field_cut", {}) is Dictionary:
+		# Rückwärtskompat: altes Stoppelfeld-Flag → CUT-Deko.
+		for k in data.get("field_cut", {}):
+			map.field_decay[int(k)] = MapData.FIELD_DECAY_CUT
 	state = WorldState.new(map)
 
 	for fp in data.flags:
@@ -2369,9 +2373,9 @@ func _load_game() -> void:
 	var field_growth = data.get("field_growth", {})
 	if field_growth is Dictionary:
 		economy.restore_field_growth(field_growth)
-	var cut_fields = data.get("cut_fields", {})
-	if cut_fields is Dictionary:
-		economy.restore_cut_fields(cut_fields)
+	var decay_fields = data.get("decay_fields", data.get("cut_fields", {}))
+	if decay_fields is Dictionary:
+		economy.restore_decay_fields(decay_fields)
 	_wire_world()
 	_apply_ai()
 	_apply_start_options()

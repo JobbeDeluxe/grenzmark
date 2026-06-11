@@ -458,12 +458,17 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [x] Gebäude-Produktion an/aus schalten (Taste P am gewählten Gebäude)
 - [ ] Produktion drosseln (Prozent), Eingangsmengen begrenzen
 - [ ] Direkte Gebäude→Gebäude-Lieferung (nicht alles über HQ)
-- [x] Felder: Bauer sät/erntet Getreide-Felder (Acker als Map-Objekt, Issue #26):
-      reifes Feld ernten > sonst säen > sonst warten; 4 Wachstumsstufen (seed/
-      young/growing/ripe) deterministisch über `field_growth_stage_ticks`. Säen
-      liefert kein Getreide, erst die Ernte. Felder blockieren Bau/Straßen.
-      Nach der Ernte bleibt RTTR-getreu ein nicht-blockierendes Stoppelfeld liegen,
-      das nach `field_cut_ticks` verschwindet.
+- [x] Felder: Bauer sät/erntet Getreide-Felder (Acker als Map-Objekt, Issue #26),
+      original-getreu an RTTR nofFarmer/noGrainfield abgeglichen:
+      * Suchradius 2 (RTTR GetWorkRadius), sammelt alle gültigen Plätze und wählt
+        seeded ZUFÄLLIG — Class1 (reife Felder ernten) vor Class2 (säen).
+      * Saatregel = keine Straße auf dem Knoten, fruchtbare Wiese, kein Feld/Gebäude
+        direkt daneben (Felder brauchen Lücken). Säen liefert kein Getreide, erst
+        die Ernte. 4 Wachstumsstufen über `field_growth_stage_ticks`.
+      * Neben einem wachsenden Feld ist nur eine Flagge möglich (RTTR FlagsAround).
+      * Ernte → nicht-blockierendes Stoppelfeld; ungeerntetes reifes Feld verdorrt
+        nach `field_wither_ticks`. Beide Deko-Arten verschwinden nach
+        `field_decay_ticks` und blockieren nichts (Bau/Säen sofort wieder möglich).
 - [x] Produktivitäts-Anzeige je Gebäude (% wie im Original; rollendes Fenster,
       sichtbar im Gebäudefenster)
 
