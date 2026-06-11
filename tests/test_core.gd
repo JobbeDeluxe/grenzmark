@@ -28,6 +28,7 @@ func _initialize() -> void:
 	_test_road_and_route()
 	_test_route_cache_invalidation()
 	_test_build_spots_within_territory()
+	_test_build_spot_bq_equivalence()
 	_test_economy()
 	_test_population_limit()
 	_test_population_growth()
@@ -256,6 +257,37 @@ func _test_build_spots_within_territory() -> void:
 			missing += 1
 	_check(missing == 0,
 		"Bauspots: Territoriums-Scan verschluckt keinen Bauplatz (fehlend=%d von %d)" % [missing, full.size()])
+
+
+## #30: Der Einpass-actual_build_spot_bq muss EXAKT dasselbe liefern wie die alte
+## CASTLE/HOUSE/HUT/MINE/FLAG-Kaskade (über die unveränderten can_place_*). Sichert,
+## dass die Performance-Optimierung das sichtbare Overlay nicht verändert.
+func _test_build_spot_bq_equivalence() -> void:
+	var map := MapGenerator.generate(48, 48, 909)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var c := _find_buildable(state, 24, 24)
+	if c.x >= 0:
+		state.place_building(c.x, c.y, WorldState.BQ_CASTLE, true, "hq", 9, false)
+		eco.resync()
+	var mism := 0
+	var cells := 0
+	for y in map.height:
+		for x in map.width:
+			cells += 1
+			if state.actual_build_spot_bq(x, y) != _cascade_spot_bq(state, x, y):
+				mism += 1
+	_check(mism == 0, "BQ-Einpass: identisch zur Kaskade (Abweichungen=%d von %d)" % [mism, cells])
+
+
+## Referenz: die frühere Kaskade aus can_place_building/can_place_flag (unverändert).
+func _cascade_spot_bq(state: WorldState, x: int, y: int) -> int:
+	if state.can_place_building(x, y, WorldState.BQ_CASTLE): return WorldState.BQ_CASTLE
+	if state.can_place_building(x, y, WorldState.BQ_HOUSE): return WorldState.BQ_HOUSE
+	if state.can_place_building(x, y, WorldState.BQ_HUT): return WorldState.BQ_HUT
+	if state.can_place_building(x, y, WorldState.BQ_MINE): return WorldState.BQ_MINE
+	if state.can_place_flag(x, y): return WorldState.BQ_FLAG
+	return WorldState.BQ_NOTHING
 
 
 func _test_economy() -> void:

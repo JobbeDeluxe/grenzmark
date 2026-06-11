@@ -484,14 +484,35 @@ func can_place_building(x: int, y: int, size: int, owner := 0, influence := 0) -
 
 ## Bauhilfe: was ist an diesem Knoten wirklich baubar, inkl. Gebiet/Flaggenregel?
 func actual_build_spot_bq(x: int, y: int) -> int:
-	if can_place_building(x, y, BQ_CASTLE):
-		return BQ_CASTLE
-	if can_place_building(x, y, BQ_HOUSE):
-		return BQ_HOUSE
-	if can_place_building(x, y, BQ_HUT):
-		return BQ_HUT
-	if can_place_building(x, y, BQ_MINE):
-		return BQ_MINE
+	# Einpass-Variante (#30): Die für ALLE Gebäudegrößen identischen Gates (Belegung,
+	# Territoriumsrand am Knoten UND an der Eingangsflagge SE) und effective_bq werden
+	# nur EINMAL ausgewertet — statt can_place_building 4× (CASTLE/HOUSE/HUT/MINE) zu
+	# rufen. Ergebnis ist identisch zur früheren Kaskade (Test _test_build_spot_bq_*).
+	if _occ(x, y) != OBJ_NONE:
+		return BQ_NOTHING
+	# Gebäude-Gates (Spieler, owner 0): eigenes Gebiet mit Rand + gültige SE-Eingangsflagge.
+	var can_build := has_building_territory_margin_for(0, x, y)
+	if can_build:
+		var se := map.neighbor(x, y, Grid.SE)
+		if se.x < 0 or not has_building_territory_margin_for(0, se.x, se.y):
+			can_build = false
+		elif _occ(se.x, se.y) != OBJ_FLAG and not can_place_flag(se.x, se.y):
+			can_build = false
+	if can_build:
+		var ebq := effective_bq(x, y)
+		if ebq == BQ_MINE:
+			# Minen nicht direkt neben anderen Gebäuden (wie can_place_building, MINE-Zweig).
+			var mine_ok := true
+			for dir in Grid.DIRS:
+				var n := map.neighbor(x, y, dir)
+				if n.x >= 0 and _occ(n.x, n.y) == OBJ_BUILDING:
+					mine_ok = false
+					break
+			if mine_ok:
+				return BQ_MINE
+		elif ebq >= BQ_HUT:   # HUT / HOUSE / CASTLE (MINE oben schon behandelt)
+			return ebq
+	# Kein Gebäude möglich → Flaggenplatz?
 	if can_place_flag(x, y):
 		return BQ_FLAG
 	return BQ_NOTHING

@@ -28,16 +28,22 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
     billige Struktur-Signatur ändert (Anzahl Gebäude/Flaggen/Straßen/Territorium/
     Karten-Objekte). Die häufigen dirty-Redraws nutzen den Cache → kein Scan.
 
-  Messung (tests/bench_buildspots.gd, 96×96):
-    (a) Vollkarte (alt)   = 538 ms
-    (b) Territorium (neu) =  83 ms   (nur bei echter Strukturänderung)
-    (c) Cache-Treffer     =  ~0 ms   (laufender Betrieb)
-  Neuer Test _test_build_spots_within_territory (kein Spot geht verloren). 692
-  Kern-Tests grün, Smoke-Test grün.
+  Nachschlag: actual_build_spot_bq rief pro Zelle bis zu 4× can_place_building (jeweils
+  mit eigenem effective_bq + Gate-Checks). Jetzt EIN Pass: Gates (Belegung, Territoriums-
+  rand am Knoten + Eingangsflagge SE) und effective_bq nur einmal, MINE/HUT/HOUSE/CASTLE
+  daraus abgeleitet. Ergebnis identisch (Test _test_build_spot_bq_equivalence vergleicht
+  zellenweise gegen die alte Kaskade).
 
-  Offen (Folgearbeit, unkritisch): per-Zelle actual_build_spot_bq ruft effective_bq
-  mehrfach (CASTLE/HOUSE/HUT/MINE) → Einpass-BQ würde den 83-ms-Posten weiter senken,
-  relevant erst bei sehr großem Territorium.
+  Messung (tests/bench_buildspots.gd, 96×96, Territorium 271 Knoten):
+    (a) Vollkarte (alt)        = 538 ms
+    (b) Territorium-Scan       =  83 ms → 38 ms (nach Einpass-BQ)
+    (c) Cache-Treffer          =  ~0 ms   (laufender Betrieb)
+  Pro Platzierung also ~14× schneller als zuvor; im Betrieb kein Scan. Tests
+  _test_build_spots_within_territory + _test_build_spot_bq_equivalence. 693 Kern-Tests
+  grün, Smoke-Test grün.
+
+  Offen (Folgearbeit, falls bei sehr großem Reich noch spürbar): regional inkrementell
+  nachziehen statt das ganze Territorium neu zu scannen (nur die Zellen um die Änderung).
 
 
 [2026-06-11] (TEILWEISE) find_route baute den Flaggengraphen bei jedem Aufruf neu
