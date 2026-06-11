@@ -150,8 +150,9 @@ Fallback-Acker (kein Absturz):
 - `field_young.png`: junges grünes Korn, niedrige Halme
 - `field_growing.png`: dichter, hoher grüner Bestand
 - `field_ripe.png`: goldenes reifes Korn, erntebereit
-- optional `field_cut.png`: abgeerntete Stoppeln, falls die Mechanik später eine
-  kurze Nach-Ernte-Phase statt sofortigem Entfernen nutzt
+- `field_cut.png`: abgeerntetes Stoppelfeld (umgesetzt, RTTR-getreu) — bleibt nach
+  der Ernte als reine Deko liegen, **blockiert nichts** (Bau/Straßen/neues Säen
+  sofort wieder möglich) und verschwindet nach `field_cut_ticks`
 
 Mechanik: Öffentliche S2/10th-Quellen nennen **1 Minute 55 Sekunden** vom Säen
 bis zur vollen Reife. Bei 30 Hz sind das **3450 Ticks**, mit 4 Phasen verteilt auf
@@ -198,6 +199,8 @@ Wichtige Felder:
   Erst der große Baum darf vom Holzfäller gefällt werden.
 - `field_growth_stage_ticks`: Kornfeld-Wachstum `[gesät→jung, jung→wachsend,
   wachsend→reif]`, Startwert `[1150, 1150, 1150]` = 1:55 min bis zur Ernte (30 Hz).
+- `field_cut_ticks`: wie lange ein abgeerntetes Stoppelfeld liegen bleibt, bevor
+  es verschwindet (Deko, blockiert nichts). Startwert `1800` (= 60 s bei 30 Hz).
 - `road_upgrade_deliveries`: Anzahl Warenlieferungen über eine Straße bis zum
   sichtbaren Kopfsteinpflaster.
 

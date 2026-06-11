@@ -43,6 +43,7 @@
     1150,
     1150
   ],
+  "field_cut_ticks": 1800,
   "road_upgrade_deliveries": 24,
   "_inventar_hinweis": "S2-Lagermodell: ein Lager (HQ) haelt Waren UND Personen. Schluessel = String-IDs aus Goods.KEYS bzw. Jobs.KEYS. Werkzeuge dienen der Rekrutierung: Traeger (helper) + Werkzeug -> Spezialist.",
   "hq_start_goods": {

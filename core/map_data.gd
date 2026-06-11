@@ -49,6 +49,12 @@ var tree_type: Dictionary = {}  # idx -> TREE_*
 enum { FIELD_SEED, FIELD_YOUNG, FIELD_GROWING, FIELD_RIPE }
 var field_stage: Dictionary = {}  # idx -> 0/1/2/3
 
+# Abgeerntete Stoppelfelder (RTTR: nach der Ernte wird das Feld durch ein
+# noEnvObject ersetzt — reine Deko, die nichts blockiert und nach kurzer Zeit
+# verschwindet). Bewusst NICHT in `objects`, damit has_object/Bau/Straßen den
+# Knoten sofort wieder frei sehen. Existenz hier, Restzeit in Economy._cut_fields.
+var field_cut: Dictionary = {}    # idx -> true (Stoppelfeld liegt hier)
+
 # Stein-Stufe (visuelle Größe): STONE_BIG → STONE_MEDIUM → STONE_SMALL → weg.
 enum { STONE_SMALL = 1, STONE_MEDIUM = 2, STONE_BIG = 3 }
 var stone_stage: Dictionary = {}      # idx -> 1/2/3
@@ -167,6 +173,18 @@ func field_stage_at(x: int, y: int) -> int:
 
 func set_field_stage(x: int, y: int, stage: int) -> void:
 	field_stage[idx(x, y)] = clampi(stage, FIELD_SEED, FIELD_RIPE)
+
+
+## Liegt ein abgeerntetes Stoppelfeld auf dem Knoten? (rein dekorativ)
+func has_field_cut(x: int, y: int) -> bool:
+	return field_cut.get(idx(x, y), false)
+
+
+func set_field_cut(x: int, y: int, on: bool) -> void:
+	if on:
+		field_cut[idx(x, y)] = true
+	else:
+		field_cut.erase(idx(x, y))
 
 
 func stone_stage_at(x: int, y: int) -> int:

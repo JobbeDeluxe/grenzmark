@@ -16,7 +16,7 @@ malt das Spiel einen Fallback-Acker. Ziel-Assets:
 | `assets/objects/field_young.png` | junges grünes Korn | `young green wheat field patch, short fresh wheat shoots` |
 | `assets/objects/field_growing.png` | hoher grüner Bestand | `dense growing wheat field patch, tall green stalks, not ripe yet` |
 | `assets/objects/field_ripe.png` | golden, erntebereit | `ripe golden wheat field patch, harvest-ready grain heads` |
-| `assets/objects/field_cut.png` | optional: Stoppeln nach der Ernte | `cut wheat stubble field patch after harvest` |
+| `assets/objects/field_cut.png` | Stoppeln nach der Ernte (umgesetzt) | `cut wheat stubble field patch after harvest` |
 
 Gemeinsamer Stil:
 
@@ -34,8 +34,9 @@ Recherche-Stand für die Mechanik:
 - Bei Grenzmarks 30-Hz-Simulation sind das 3450 Ticks.
 - Als spielnahe, gut lesbare Asset-Aufteilung sind 4 sichtbare Phasen vorgesehen:
   `seed -> young -> growing -> ripe`, also als Startwert ca. 1150 Ticks pro
-  Übergang. `field_cut.png` ist optional, falls später eine kurze Stoppelphase
-  nach der Ernte sichtbar bleiben soll.
+  Übergang.
+- Nach der Ernte bleibt RTTR-getreu ein **Stoppelfeld** (`field_cut.png`) liegen,
+  das nichts blockiert und nach `field_cut_ticks` verschwindet.
 
 Wichtig: Keine Original-Siedler-Dateien oder 1:1-Kopien verwenden. Die Bilder
 sollen neu generiert oder selbst erstellt sein und nur das Konzept nachbauen.

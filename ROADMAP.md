@@ -462,6 +462,8 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
       reifes Feld ernten > sonst säen > sonst warten; 4 Wachstumsstufen (seed/
       young/growing/ripe) deterministisch über `field_growth_stage_ticks`. Säen
       liefert kein Getreide, erst die Ernte. Felder blockieren Bau/Straßen.
+      Nach der Ernte bleibt RTTR-getreu ein nicht-blockierendes Stoppelfeld liegen,
+      das nach `field_cut_ticks` verschwindet.
 - [x] Produktivitäts-Anzeige je Gebäude (% wie im Original; rollendes Fenster,
       sichtbar im Gebäudefenster)
 

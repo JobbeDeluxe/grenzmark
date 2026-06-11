@@ -206,6 +206,7 @@ var _cata_timer := CATAPULT_TICKS
 var _helper_timer := 0               # Träger-Nachschub des HQ-Lagers (Issue #33)
 var _growing_trees: Dictionary = {} # map idx -> Restticks bis zur nächsten Baumstufe
 var _growing_fields: Dictionary = {} # map idx -> Restticks bis zur nächsten Feldstufe (#26)
+var _cut_fields: Dictionary = {}     # map idx -> Restticks bis das Stoppelfeld verschwindet (#26)
 var _rng := RandomNumberGenerator.new()  # seeded → deterministisch (Lockstep-tauglich)
 
 
@@ -218,6 +219,7 @@ func _init(world_state: WorldState) -> void:
 	_rng.seed = 0xA17E57   # fester Seed: gleiche Abläufe auf allen Clients
 	_init_tree_growth_from_map()
 	_init_field_growth_from_map()
+	_init_cut_fields_from_map()
 
 
 # --------------------------------------------------------------------------
@@ -424,6 +426,7 @@ func tick() -> void:
 		ai.think(self, 1)
 	_tick_tree_growth()
 	_tick_field_growth()
+	_tick_cut_fields()
 	_tick_soldiers()
 	_tick_promotions()
 	_tick_catapults()
@@ -572,6 +575,51 @@ func _tick_field_growth() -> void:
 			_growing_fields[i] = float(Tuning.field_growth_ticks(stage))
 		else:
 			_growing_fields.erase(i)
+
+
+# --------------------------------------------------------------------------
+#  Stoppelfelder (RTTR: abgeerntetes Feld bleibt als nicht-blockierende Deko
+#  liegen und verschwindet nach kurzer Zeit). Issue #26.
+# --------------------------------------------------------------------------
+
+func _init_cut_fields_from_map() -> void:
+	_cut_fields.clear()
+	if state == null or state.map == null:
+		return
+	for key in state.map.field_cut:
+		_cut_fields[int(key)] = float(Tuning.field_cut_ticks())
+
+
+func cut_fields_state() -> Dictionary:
+	return _cut_fields.duplicate()
+
+
+func restore_cut_fields(data: Dictionary) -> void:
+	_cut_fields.clear()
+	for key in data:
+		var i := int(key)
+		if state.map.field_cut.get(i, false):
+			_cut_fields[i] = maxf(float(data[key]), 1.0)
+	for key in state.map.field_cut:
+		var i := int(key)
+		if not _cut_fields.has(i):
+			_cut_fields[i] = float(Tuning.field_cut_ticks())
+
+
+func _tick_cut_fields() -> void:
+	for key in _cut_fields.keys():
+		var i := int(key)
+		if not state.map.field_cut.get(i, false):
+			_cut_fields.erase(i)
+			continue
+		var left := float(_cut_fields[i]) - 1.0
+		if left > 0.0:
+			_cut_fields[i] = left
+			continue
+		# Stoppelfeld verschwindet (RTTR: noEnvObject wird entfernt).
+		state.map.field_cut.erase(i)
+		_cut_fields.erase(i)
+		dirty = true
 
 
 func hq_pos_of(owner: int) -> Vector2i:
@@ -1376,15 +1424,23 @@ func _do_resource_action(bs: BState) -> void:
 				dirty = true
 		"field":
 			# Bauer: reifes Feld ernten (→ Getreide) ODER frisches Feld säen (kein Ertrag).
+			var fi := state.map.idx(n.x, n.y)
 			if state.map.map_object(n.x, n.y) == MapData.MO_FIELD \
 					and state.map.field_stage_at(n.x, n.y) == MapData.FIELD_RIPE:
+				# RTTR: abgeerntetes Feld wird durch ein nicht-blockierendes Stoppelfeld
+				# (noEnvObject) ersetzt, das nach kurzer Zeit verschwindet.
 				state.map.clear_map_object(n.x, n.y)
-				_growing_fields.erase(state.map.idx(n.x, n.y))
+				_growing_fields.erase(fi)
+				state.map.set_field_cut(n.x, n.y, true)
+				_cut_fields[fi] = float(Tuning.field_cut_ticks())
 				dirty = true  # out_yield bleibt true → Getreide entsteht in WK_BACK
 			elif not state.has_object(n.x, n.y) and _is_field_spot(n.x, n.y):
+				# Auf einem alten Stoppelfeld darf neu gesät werden → Deko entfernen.
+				state.map.set_field_cut(n.x, n.y, false)
+				_cut_fields.erase(fi)
 				state.map.set_map_object(n.x, n.y, MapData.MO_FIELD)
 				state.map.set_field_stage(n.x, n.y, MapData.FIELD_SEED)
-				_growing_fields[state.map.idx(n.x, n.y)] = float(Tuning.field_growth_ticks(MapData.FIELD_SEED))
+				_growing_fields[fi] = float(Tuning.field_growth_ticks(MapData.FIELD_SEED))
 				bs.out_yield = false  # Säen liefert kein Getreide
 				dirty = true
 			else:

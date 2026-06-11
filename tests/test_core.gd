@@ -992,6 +992,18 @@ func _test_farm_fields() -> void:
 	_check(map.map_object(sow.x, sow.y) != MapData.MO_FIELD, "Farm: Ernte entfernt das Feld")
 	_check(bs.out_yield == true, "Farm: Ernte liefert Getreide (out_yield=true)")
 
+	# RTTR-getreu: Ernte hinterlässt ein Stoppelfeld (Deko), das NICHTS blockiert
+	# und nach field_cut_ticks verschwindet.
+	_check(map.has_field_cut(sow.x, sow.y), "Farm: Ernte hinterlässt ein Stoppelfeld")
+	_check(not state.has_object(sow.x, sow.y), "Farm: Stoppelfeld ist kein blockierendes Objekt")
+	_check(state.compute_bq(sow.x, sow.y) >= WorldState.BQ_FLAG,
+		"Farm: auf dem Stoppelfeld ist wieder Bauen/Flagge möglich")
+	_check(eco._cut_fields.has(map.idx(sow.x, sow.y)), "Farm: Stoppelfeld hat Verschwind-Timer")
+	for t in Tuning.field_cut_ticks():
+		eco._tick_cut_fields()
+	_check(not map.has_field_cut(sow.x, sow.y), "Farm: Stoppelfeld verschwindet nach field_cut_ticks")
+	_check(not eco._cut_fields.has(map.idx(sow.x, sow.y)), "Farm: Stoppel-Timer nach Verschwinden weg")
+
 	# Ungeeignete Fläche (Sand statt Wiese): kein Ackerplatz → Hof wartet.
 	var smap := _flat_map(24, 24)
 	for yy in smap.height:
@@ -1012,6 +1024,11 @@ func _test_farm_fields() -> void:
 	map.set_field_stage(8, 8, MapData.FIELD_RIPE)
 	eco.restore_field_growth({})
 	_check(not eco._growing_fields.has(fidx), "Farm: reifes Feld nach Load ohne Wachstumsticks")
+	# Save/Load des Stoppelfeld-Timers.
+	map.set_field_cut(9, 9, true)
+	eco.restore_cut_fields({ map.idx(9, 9): 99.0 })
+	_check(int(eco._cut_fields.get(map.idx(9, 9), -1)) == 99,
+		"Farm: Save/Load stellt den Stoppelfeld-Timer wieder her")
 
 	# Voller Pipeline-Durchlauf: ein realer Hof produziert Getreide ERST nach
 	# Säen + Reifen + Ernten (nicht aus dem Nichts).

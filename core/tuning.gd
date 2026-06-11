@@ -94,6 +94,13 @@ static func field_growth_ticks(stage: int) -> int:
 	return 1150
 
 
+## Wie lange ein abgeerntetes Stoppelfeld liegen bleibt, bevor es verschwindet
+## (RTTR: noEnvObject verdorrt nach ~3000-4000 Frames; hier fester, deterministischer
+## Tuning-Wert). Reine Deko — blockiert nichts.
+static func field_cut_ticks() -> int:
+	return maxi(1, int(_num("field_cut_ticks", 1800)))
+
+
 ## Warenlieferungen über eine Straße bis zur sichtbaren Pflaster-Stufe.
 static func road_upgrade_deliveries() -> int:
 	return maxi(1, int(_num("road_upgrade_deliveries", 24)))
