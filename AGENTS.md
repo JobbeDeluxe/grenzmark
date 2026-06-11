@@ -45,6 +45,13 @@ gewollt und Teil des Experiments. Die Entwicklung wird teils live gestreamt:
 - **Doku pflegen:** ROADMAP (erledigt abhaken / Neues ergänzen), bei Bugs die
   KNOWN_BUGS.txt aktualisieren.
 - **Sprache:** Code-Kommentare und Doku auf Deutsch (Projektsprache).
+- **Commits (Windows-Falle!):** Auf Windows gibt es zwei getrennte Shells — eine
+  **Bash**- und eine **PowerShell**-Umgebung. Die PowerShell-Here-String-Syntax
+  `@'…'@` ist **nur** PowerShell und **funktioniert nicht im Bash-Tool**: dort
+  landet ein verirrtes `@` am Anfang des Betreffs und am Ende der Nachricht.
+  → Für **mehrzeilige Commit-Nachrichten** die Botschaft in eine Datei schreiben und
+  `git commit -F <datei>` nutzen (oder mehrere `-m "…"`-Flags). Niemals Shell-Syntax
+  der einen Umgebung im Tool der anderen verwenden. Commit-Message deutsch.
 
 ## Beitragen (Pull Requests)
 1. Branch von `main`, Änderung umsetzen, Tests grün halten.
