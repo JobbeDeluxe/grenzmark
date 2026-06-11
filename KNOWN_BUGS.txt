@@ -4,6 +4,42 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-11] (BEHOBEN) ~0,5–1 s Freeze beim Platzieren — Bauplatz-Overlay scannte
+                       die ganze Karte
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/30
+
+  Symptom: Mit eingeblendeten Bauplätzen (Leertaste / Option) fror das Spiel bei
+  jedem Platzieren ~0,5–1 s ein; zusätzlich ruckelte es im laufenden Betrieb immer
+  wieder. (Kam nach dem Visibility-Quick-Win zurück, weil dort ein anderer Posten
+  dominant wurde.)
+
+  Ursache: map_renderer._draw_build_spots() scannte bei JEDEM Redraw die GANZE Karte
+  (96×96 = 9216 Knoten) und rief pro Knoten can_place_road_flag + actual_build_spot_bq
+  (bis zu 5 can_place_building-Checks). ~540 ms pro Scan. Und der statische Renderer
+  zeichnet bei jedem economy.dirty neu (Produktion/Animation/Baumwachstum), nicht nur
+  beim Platzieren → Dauerruckler.
+
+  Behoben (rein im Renderer):
+  - Bauplätze liegen ausschließlich im eigenen Territorium (can_place_building/_flag/
+    _road_flag verlangen es) → der Scan läuft nur noch über die Territoriumsknoten
+    (~270 statt 9216). Vor dem HQ (kein Territorium) Fallback auf Ganzkarte.
+  - Die berechnete Spot-Liste wird gecacht und nur neu berechnet, wenn sich eine
+    billige Struktur-Signatur ändert (Anzahl Gebäude/Flaggen/Straßen/Territorium/
+    Karten-Objekte). Die häufigen dirty-Redraws nutzen den Cache → kein Scan.
+
+  Messung (tests/bench_buildspots.gd, 96×96):
+    (a) Vollkarte (alt)   = 538 ms
+    (b) Territorium (neu) =  83 ms   (nur bei echter Strukturänderung)
+    (c) Cache-Treffer     =  ~0 ms   (laufender Betrieb)
+  Neuer Test _test_build_spots_within_territory (kein Spot geht verloren). 692
+  Kern-Tests grün, Smoke-Test grün.
+
+  Offen (Folgearbeit, unkritisch): per-Zelle actual_build_spot_bq ruft effective_bq
+  mehrfach (CASTLE/HOUSE/HUT/MINE) → Einpass-BQ würde den 83-ms-Posten weiter senken,
+  relevant erst bei sehr großem Territorium.
+
+
 [2026-06-11] (TEILWEISE) find_route baute den Flaggengraphen bei jedem Aufruf neu
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/30
@@ -31,8 +67,9 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
   Neuer Test _test_route_cache_invalidation (deckt Bau + Abriss ab). 682 Kern-Tests
   grün, Szene lädt fehlerfrei.
 
-  Noch offen aus #30 (separat): Renderer-Redraw beim Platzieren (map_renderer._draw
-  sortiert alle Objekte neu — Folgearbeit auf baumreichen Karten). Issue bleibt offen.
+  Noch offen aus #30 (separat): Renderer-Redraw beim Platzieren — siehe eigenen
+  Eintrag unten (Bauplatz-Overlay). Issue bleibt offen für Restpunkte (Billboard-
+  Sortier-Cache, Territorium nur bei Militäränderung).
 
 
 [2026-06-10] (BEHOBEN) Gebäude-Footprint & Nachbarabstand entsprachen nicht S2

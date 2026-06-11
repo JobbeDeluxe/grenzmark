@@ -20,6 +20,13 @@ var _terrain_layer: Node2D   # zeichnet Terrain einmalig; nie neu zeichnen da Te
 var fog_enabled := false        # Nebel des Krieges an/aus (zum Testen)
 var show_build_spots := false   # Bauplätze einblenden (Leertaste)
 
+# Bauplatz-Overlay-Cache (#30): Der Ganzkarten-Scan mit bis zu 5 BQ-Checks pro Zelle
+# ist teuer (~0,5 s auf 96×96). Er hängt aber NUR an der Struktur (Gebäude/Flaggen/
+# Straßen/Territorium/Karten-Objekte), nicht an jedem Redraw. Wir merken uns die zu
+# zeichnenden Spots und berechnen sie nur neu, wenn sich die Struktur-Signatur ändert.
+var _spot_cache: Array = []     # [{ p: Vector2, bq: int, road: bool }]
+var _spot_cache_sig := -1
+
 
 func setup(world_state: WorldState) -> void:
 	state = world_state
@@ -135,19 +142,53 @@ func _occlude_node(p: Vector2, halfw: float, top: float, bottom: float) -> void:
 
 ## Bauplatz-Anzeige (Leertaste): Symbole je effektiver Bauqualität.
 func _draw_build_spots() -> void:
+	var sig := _structure_sig()
+	if sig != _spot_cache_sig:
+		_recompute_build_spots()
+		_spot_cache_sig = sig
+	for it in _spot_cache:
+		var p: Vector2 = it.p
+		if it.road:
+			_draw_build_spot_road_flag(p)
+		else:
+			_draw_build_spot_symbol(p, it.bq)
+		_occlude_node(p, 14.0, p.y - 16.0, p.y + 8.0)
+
+
+## Billige Signatur, die sich bei jeder Bauplatz-relevanten Strukturänderung ändert
+## (Gebäude/Flaggen/Straßen/Territorium/Karten-Objekte wie Bäume/Steine). Reine
+## .size()-Abfragen → O(1). Reicht für ein Hinweis-Overlay; minimale Multiplikatoren
+## vermeiden Kollisionen bei gleichzeitigem +/− verschiedener Mengen.
+func _structure_sig() -> int:
+	return state.buildings.size() * 1000003 + state.flags.size() * 10007 \
+		+ state.roads.size() * 101 + state.territory.size() * 7 + state.map.objects.size()
+
+
+## Bauplatz-Liste neu berechnen. Bauplätze liegen ausschließlich im eigenen Territorium
+## (can_place_building/_flag/_road_flag verlangen es), darum reicht ein Scan über die
+## Territoriumsknoten (statt der ganzen Karte). Vor dem HQ (kein Territorium) fällt es
+## auf den Ganzkarten-Scan zurück.
+func _recompute_build_spots() -> void:
+	_spot_cache.clear()
 	var map := state.map
-	for y in map.height:
-		for x in map.width:
-			var p := map.node_world(x, y)
-			if state.can_place_road_flag(x, y):
-				_draw_build_spot_road_flag(p)
-				_occlude_node(p, 14.0, p.y - 16.0, p.y + 8.0)
-				continue
-			var bq := state.actual_build_spot_bq(x, y)
-			if bq < WorldState.BQ_FLAG:
-				continue
-			_draw_build_spot_symbol(p, bq)
-			_occlude_node(p, 14.0, p.y - 16.0, p.y + 8.0)
+	if state.territory.is_empty():
+		for y in map.height:
+			for x in map.width:
+				_collect_build_spot(x, y)
+	else:
+		for ti in state.territory:
+			_collect_build_spot(int(ti) % map.width, int(ti) / map.width)
+
+
+func _collect_build_spot(x: int, y: int) -> void:
+	var p := state.map.node_world(x, y)
+	if state.can_place_road_flag(x, y):
+		_spot_cache.append({ p = p, bq = WorldState.BQ_FLAG, road = true })
+		return
+	var bq := state.actual_build_spot_bq(x, y)
+	if bq < WorldState.BQ_FLAG:
+		return
+	_spot_cache.append({ p = p, bq = bq, road = false })
 
 
 func _node_in_player_area(x: int, y: int) -> bool:

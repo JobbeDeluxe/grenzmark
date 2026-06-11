@@ -27,6 +27,7 @@ func _initialize() -> void:
 	_test_building_spacing()
 	_test_road_and_route()
 	_test_route_cache_invalidation()
+	_test_build_spots_within_territory()
 	_test_economy()
 	_test_population_limit()
 	_test_population_growth()
@@ -216,6 +217,45 @@ func _test_storage_list() -> void:
 	eco.storages[0].stock[Goods.BOARDS] = 5
 	_check(int(eco.hq_stock.get(Goods.BOARDS, 0)) == 5,
 		"Lager: storages[0].stock über hq_stock sichtbar")
+
+
+## #30 (Renderer): Das Bauplatz-Overlay scannt nur noch das eigene Territorium statt
+## der ganzen Karte. Dieser Test belegt, dass dabei KEIN Bauplatz verloren geht — alle
+## per Ganzkarten-Scan gefundenen Spots liegen auch im Territoriums-Scan (can_place_*
+## verlangt ohnehin eigenes Gebiet).
+func _test_build_spots_within_territory() -> void:
+	var map := MapGenerator.generate(48, 48, 4242)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var c := _find_buildable(state, 24, 24)
+	if c.x < 0:
+		_check(false, "Bauspots: HQ-Knoten gefunden")
+		return
+	var hq := state.place_building(c.x, c.y, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_check(hq != null, "Bauspots: HQ platzierbar")
+	if hq == null:
+		return
+	eco.resync()
+	# Referenz: voller Ganzkarten-Scan (das alte Verhalten).
+	var full := {}
+	for y in map.height:
+		for x in map.width:
+			if state.can_place_road_flag(x, y) or state.actual_build_spot_bq(x, y) >= WorldState.BQ_FLAG:
+				full[map.idx(x, y)] = true
+	# Neu: nur Territorium scannen.
+	var terr := {}
+	for ti in state.territory:
+		var x := int(ti) % map.width
+		var y := int(ti) / map.width
+		if state.can_place_road_flag(x, y) or state.actual_build_spot_bq(x, y) >= WorldState.BQ_FLAG:
+			terr[map.idx(x, y)] = true
+	_check(full.size() > 0, "Bauspots: Referenz-Scan findet überhaupt Bauplätze")
+	var missing := 0
+	for k in full:
+		if not terr.has(k):
+			missing += 1
+	_check(missing == 0,
+		"Bauspots: Territoriums-Scan verschluckt keinen Bauplatz (fehlend=%d von %d)" % [missing, full.size()])
 
 
 func _test_economy() -> void:
