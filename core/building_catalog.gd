@@ -50,7 +50,7 @@ static func defs() -> Dictionary:
 		"farm": {
 			id = "farm", name = "Bauernhof", size = C,
 			cost = { Goods.BOARDS: 3, Goods.STONE: 3 }, inputs = {},
-			output = Goods.GRAIN, work = 200, resource = "", influence = 0,
+			output = Goods.GRAIN, work = 200, resource = "field", influence = 0,
 			category = "nahrung",
 		},
 		"mill": {

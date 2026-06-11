@@ -19,6 +19,7 @@ func _initialize() -> void:
 	_test_start_territory_stone_guarantee()
 	_test_ore_types()
 	_test_ore_deposit_mining()
+	_test_farm_fields()
 	_test_catalog_complete()
 	_test_asset_files()
 	_test_inventory_model()
@@ -948,6 +949,98 @@ func _test_ore_deposit_mining() -> void:
 	_check(map.ore_deposit_amount_at(10, 8) == 0, "Vorkommen nach 3 Schlägen erschöpft")
 	_check(eco._find_deposit(Vector2i(10, 10), MapData.ORE_IRON, Economy.ORE_RADIUS).x < 0,
 		"Erschöpftes Vorkommen wird nicht mehr gefunden")
+
+
+## Bauernhof-Felder (Issue #26): säen → wachsen → ernten; Säen liefert kein
+## Getreide, erst die Ernte eines REIFEN Feldes; ungeeignete Fläche verhindert
+## Produktion; Save/Load erhält den Feldzustand.
+func _test_farm_fields() -> void:
+	var map := _flat_map(24, 24)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var farm_pos := Vector2i(12, 12)
+
+	# Leeres Wiesen-Umfeld → der Bauer wählt einen Saatplatz (kein reifes Feld da).
+	var sow := eco._find_farm_target(farm_pos)
+	_check(sow.x >= 0, "Farm: findet freien Ackerplatz im leeren Wiesen-Umfeld")
+
+	# Säen über _do_resource_action: Feld entsteht, aber KEIN Getreide-Ertrag.
+	var bs := Economy.BState.new()
+	bs.def = { resource = "field", output = Goods.GRAIN }
+	bs.worker_target = sow
+	bs.out_yield = true
+	eco._do_resource_action(bs)
+	_check(map.map_object(sow.x, sow.y) == MapData.MO_FIELD, "Farm: Saat erzeugt ein Feld")
+	_check(map.field_stage_at(sow.x, sow.y) == MapData.FIELD_SEED, "Farm: frisches Feld ist Stufe SEED")
+	_check(bs.out_yield == false, "Farm: Säen liefert kein Getreide (out_yield=false)")
+	_check(eco._growing_fields.has(map.idx(sow.x, sow.y)), "Farm: gesätes Feld wächst")
+
+	# Wachstum: seed → ripe über die Tuning-Ticks.
+	var total := Tuning.field_growth_ticks(0) + Tuning.field_growth_ticks(1) + Tuning.field_growth_ticks(2)
+	for t in total:
+		eco._tick_field_growth()
+	_check(map.field_stage_at(sow.x, sow.y) == MapData.FIELD_RIPE, "Farm: Feld reift nach %d Ticks" % total)
+	_check(not eco._growing_fields.has(map.idx(sow.x, sow.y)), "Farm: reifes Feld wächst nicht weiter")
+
+	# Jetzt wird das reife Feld zum Ernten priorisiert (vor neuem Säen).
+	_check(eco._find_farm_target(farm_pos) == sow, "Farm: reifes Feld wird zum Ernten gewählt")
+
+	# Ernten: Feld verschwindet, out_yield bleibt true → Getreide entsteht in WK_BACK.
+	bs.worker_target = sow
+	bs.out_yield = true
+	eco._do_resource_action(bs)
+	_check(map.map_object(sow.x, sow.y) != MapData.MO_FIELD, "Farm: Ernte entfernt das Feld")
+	_check(bs.out_yield == true, "Farm: Ernte liefert Getreide (out_yield=true)")
+
+	# Ungeeignete Fläche (Sand statt Wiese): kein Ackerplatz → Hof wartet.
+	var smap := _flat_map(24, 24)
+	for yy in smap.height:
+		for xx in smap.width:
+			smap.set_tri(Vector2i(xx, yy), Grid.TRI_R, Terrain.SAND)
+			smap.set_tri(Vector2i(xx, yy), Grid.TRI_D, Terrain.SAND)
+	var sstate := WorldState.new(smap)
+	var seco := Economy.new(sstate)
+	_check(seco._find_farm_target(Vector2i(12, 12)).x < 0, "Farm: auf Sand kein Ackerplatz → wartet")
+
+	# Save/Load: restore_field_growth rekonstruiert Wachstumsticks aus field_stage.
+	var fidx := map.idx(8, 8)
+	map.set_map_object(8, 8, MapData.MO_FIELD)
+	map.set_field_stage(8, 8, MapData.FIELD_YOUNG)
+	eco.restore_field_growth({ fidx: 42.0 })
+	_check(int(eco._growing_fields.get(fidx, -1)) == 42, "Farm: Save/Load stellt Feld-Wachstumsticks wieder her")
+	# Ein reifes Feld bekommt nach dem Laden keine Wachstumsticks mehr.
+	map.set_field_stage(8, 8, MapData.FIELD_RIPE)
+	eco.restore_field_growth({})
+	_check(not eco._growing_fields.has(fidx), "Farm: reifes Feld nach Load ohne Wachstumsticks")
+
+	# Voller Pipeline-Durchlauf: ein realer Hof produziert Getreide ERST nach
+	# Säen + Reifen + Ernten (nicht aus dem Nichts).
+	var imap := _flat_map(28, 28)
+	var istate := WorldState.new(imap)
+	var ieco := Economy.new(istate)
+	istate.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	ieco.resync()
+	var farm := istate.place_building(15, 13, WorldState.BQ_HOUSE, false, "farm", 0, false)
+	_check(farm != null, "Farm baubar")
+	if farm != null:
+		ieco.resync()
+		var fbs: Economy.BState = ieco.bstates[imap.idx(15, 13)]
+		fbs.staffed = true
+		var grain_seen := false
+		var field_seen := false
+		for t in 14000:
+			ieco._tick_work(fbs)
+			ieco._tick_field_growth()
+			if not field_seen:
+				for k in imap.objects:
+					if int(imap.objects[k]) == MapData.MO_FIELD:
+						field_seen = true
+						break
+			if fbs.out_stock > 0:
+				grain_seen = true
+				break
+		_check(field_seen, "Farm: legt sichtbar ein Feld auf der Karte an")
+		_check(grain_seen, "Farm: produziert Getreide erst nach Säen+Reifen+Ernten")
 
 
 ## S2-Footprint: Hütte/Haus dürfen direkt neben ein Gebäude; nur Burgen brauchen

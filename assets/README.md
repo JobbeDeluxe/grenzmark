@@ -143,8 +143,9 @@ Steine haben **3 Abbau-Stufen**:
 - `stone_stage2.png`: mittlerer Stein, liefert noch 2 Arbeitsgänge
 - `stone.png`: kleiner Stein, liefert den letzten Arbeitsgang und verschwindet
 
-Kornfelder (geplant für den Bauernhof) sollen als eigene austauschbare PNGs in
-**4 sichtbaren Wachstumsphasen** vorbereitet werden:
+Kornfelder des Bauernhofs (Issue #26, umgesetzt) liegen als eigene austauschbare
+PNGs in **4 sichtbaren Wachstumsphasen** vor; fehlen sie, malt das Spiel einen
+Fallback-Acker (kein Absturz):
 - `field_seed.png`: frisch gesätes Feld / dunkler Acker mit ersten Keimen
 - `field_young.png`: junges grünes Korn, niedrige Halme
 - `field_growing.png`: dichter, hoher grüner Bestand
@@ -152,11 +153,11 @@ Kornfelder (geplant für den Bauernhof) sollen als eigene austauschbare PNGs in
 - optional `field_cut.png`: abgeerntete Stoppeln, falls die Mechanik später eine
   kurze Nach-Ernte-Phase statt sofortigem Entfernen nutzt
 
-Recherche-Stand für die Mechanik: Öffentliche S2/10th-Quellen nennen **1 Minute
-55 Sekunden** vom Säen bis zur vollen Reife. Bei 30 Hz sind das **3450 Ticks**.
-Mit 4 sichtbaren Phasen entspricht das als Startwert etwa **3 Übergängen à
-1150 Ticks** (`field_seed -> field_young -> field_growing -> field_ripe`).
-Die Werte sollen später in `assets/tuning.json` liegen, nicht hartcodiert sein.
+Mechanik: Öffentliche S2/10th-Quellen nennen **1 Minute 55 Sekunden** vom Säen
+bis zur vollen Reife. Bei 30 Hz sind das **3450 Ticks**, mit 4 Phasen verteilt auf
+**3 Übergänge à 1150 Ticks** (`field_seed -> field_young -> field_growing ->
+field_ripe`). Die Werte stehen in `assets/tuning.json` (`field_growth_stage_ticks`),
+nicht hartcodiert.
 
 Feld-PNGs sollten flach am Boden liegen, kachel-/clusterfähig wirken und den
 Knoten nicht wie ein hohes Gebäude verdecken. Ideale Quellgröße: ca. 48×32 bis
@@ -195,8 +196,8 @@ Wichtige Felder:
 - `work_wait_ticks_by_building`: Pause am Gebäude zwischen zwei Arbeitsgängen.
 - `tree_growth_stage_ticks`: `[Setzling→kleiner Baum, kleiner Baum→großer Baum]`.
   Erst der große Baum darf vom Holzfäller gefällt werden.
-- geplant: `field_growth_stage_ticks` für Kornfelder, z. B.
-  `[1150, 1150, 1150]` bei 30 Hz = 1:55 min vom Säen bis zur Ernte.
+- `field_growth_stage_ticks`: Kornfeld-Wachstum `[gesät→jung, jung→wachsend,
+  wachsend→reif]`, Startwert `[1150, 1150, 1150]` = 1:55 min bis zur Ernte (30 Hz).
 - `road_upgrade_deliveries`: Anzahl Warenlieferungen über eine Straße bis zum
   sichtbaren Kopfsteinpflaster.
 

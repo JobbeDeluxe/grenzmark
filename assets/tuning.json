@@ -37,6 +37,12 @@
     780,
     2220
   ],
+  "_feld_hinweis": "Bauernhof-Felder (Issue #26): Ticks je Wachstumsschritt seed->young->growing->ripe. S2/10th-Reifezeit 1:55 min = 115 s = 3450 Ticks bei 30 Hz, hier auf 3 Schritte verteilt.",
+  "field_growth_stage_ticks": [
+    1150,
+    1150,
+    1150
+  ],
   "road_upgrade_deliveries": 24,
   "_inventar_hinweis": "S2-Lagermodell: ein Lager (HQ) haelt Waren UND Personen. Schluessel = String-IDs aus Goods.KEYS bzw. Jobs.KEYS. Werkzeuge dienen der Rekrutierung: Traeger (helper) + Werkzeug -> Spezialist.",
   "hq_start_goods": {

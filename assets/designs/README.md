@@ -7,7 +7,8 @@ vom Spiel geladene PNGs gehören in die jeweiligen Zielordner, z. B.
 
 ## Kornfelder für den Bauernhof
 
-Geplante Ziel-Assets:
+Die Feldmechanik ist umgesetzt (Issue #26); diese PNGs sind optional — fehlen sie,
+malt das Spiel einen Fallback-Acker. Ziel-Assets:
 
 | Ziel-Datei | Bedeutung | Prompt-Kern |
 |---|---|---|

@@ -143,6 +143,8 @@ class BState:
 	var work_timer := 0
 	var out_stock := 0
 	var worker_target := Vector2i(-1, -1)  # Knoten, zu dem der Arbeiter geht
+	var out_yield := true                  # liefert der laufende Gang ein Ausgangsgut?
+	                                       # (Bauernhof: Ernte ja, Säen nein — Issue #26)
 	var consumed_mid := false              # Ressourcen-Aktion am Wendepunkt erledigt?
 	var wphase := 0                        # WK_* — aktuelle Arbeiter-Phase
 	var ph_t := 0.0                        # verbleibende Ticks der aktuellen Phase
@@ -203,6 +205,7 @@ var _promo_timer := PROMO_TICKS
 var _cata_timer := CATAPULT_TICKS
 var _helper_timer := 0               # Träger-Nachschub des HQ-Lagers (Issue #33)
 var _growing_trees: Dictionary = {} # map idx -> Restticks bis zur nächsten Baumstufe
+var _growing_fields: Dictionary = {} # map idx -> Restticks bis zur nächsten Feldstufe (#26)
 var _rng := RandomNumberGenerator.new()  # seeded → deterministisch (Lockstep-tauglich)
 
 
@@ -214,6 +217,7 @@ func _init(world_state: WorldState) -> void:
 	ai = DefaultAI.new()  # Standard-Gegner-KI (austauschbar über world)
 	_rng.seed = 0xA17E57   # fester Seed: gleiche Abläufe auf allen Clients
 	_init_tree_growth_from_map()
+	_init_field_growth_from_map()
 
 
 # --------------------------------------------------------------------------
@@ -419,6 +423,7 @@ func tick() -> void:
 	if ai_enabled and ai != null:
 		ai.think(self, 1)
 	_tick_tree_growth()
+	_tick_field_growth()
 	_tick_soldiers()
 	_tick_promotions()
 	_tick_catapults()
@@ -500,6 +505,73 @@ func _tick_tree_growth() -> void:
 			_growing_trees[i] = float(Tuning.tree_growth_ticks(stage))
 		else:
 			_growing_trees.erase(i)
+
+
+# --------------------------------------------------------------------------
+#  Feld-Wachstum (Bauernhof, Issue #26) — analog zum Baumwachstum.
+#  Felder wachsen seed→young→growing→reif und bleiben dann stehen, bis der
+#  Bauer sie erntet. Deterministisch über feste Tick-Zeiten (Tuning).
+# --------------------------------------------------------------------------
+
+func _init_field_growth_from_map() -> void:
+	_growing_fields.clear()
+	if state == null or state.map == null:
+		return
+	for key in state.map.field_stage:
+		var i := int(key)
+		if state.map.objects.get(i, -1) != MapData.MO_FIELD:
+			continue
+		var stage := int(state.map.field_stage[key])
+		if stage < MapData.FIELD_RIPE:
+			_growing_fields[i] = float(Tuning.field_growth_ticks(stage))
+
+
+func field_growth_state() -> Dictionary:
+	return _growing_fields.duplicate()
+
+
+func restore_field_growth(data: Dictionary) -> void:
+	_growing_fields.clear()
+	for key in data:
+		var i := int(key)
+		if state.map.objects.get(i, -1) == MapData.MO_FIELD:
+			var stage := state.map.field_stage_at(i % state.map.width, int(i / state.map.width))
+			if stage < MapData.FIELD_RIPE:
+				_growing_fields[i] = maxf(float(data[key]), 1.0)
+	for key in state.map.field_stage:
+		var i := int(key)
+		if _growing_fields.has(i):
+			continue
+		if state.map.objects.get(i, -1) != MapData.MO_FIELD:
+			continue
+		var stage := int(state.map.field_stage[key])
+		if stage < MapData.FIELD_RIPE:
+			_growing_fields[i] = float(Tuning.field_growth_ticks(stage))
+
+
+func _tick_field_growth() -> void:
+	for key in _growing_fields.keys():
+		var i := int(key)
+		if state.map.objects.get(i, -1) != MapData.MO_FIELD:
+			_growing_fields.erase(i)
+			continue
+		var x := i % state.map.width
+		var y := int(i / state.map.width)
+		var left := float(_growing_fields[i]) - 1.0
+		if left > 0.0:
+			_growing_fields[i] = left
+			continue
+		var stage := state.map.field_stage_at(x, y)
+		if stage >= MapData.FIELD_RIPE:
+			_growing_fields.erase(i)
+			continue
+		stage += 1
+		state.map.set_field_stage(x, y, stage)
+		dirty = true
+		if stage < MapData.FIELD_RIPE:
+			_growing_fields[i] = float(Tuning.field_growth_ticks(stage))
+		else:
+			_growing_fields.erase(i)
 
 
 func hq_pos_of(owner: int) -> Vector2i:
@@ -1181,9 +1253,10 @@ func _tick_work(bs: BState) -> void:
 				var tgt := _resource_target(bs)
 				if tgt.x < 0:
 					bs.idle_reason = IDLE_NO_RESOURCE
-					return  # nichts zu tun (kein fällbarer Baum / Pflanzplatz)
+					return  # nichts zu tun (kein fällbarer Baum / Pflanzplatz / Feld)
 				bs.idle_reason = IDLE_OK
 				bs.worker_target = tgt
+				bs.out_yield = true  # Default; _do_resource_action setzt bei Säen auf false
 				_consume_inputs(bs)
 				bs.producing = true
 				_enter_wphase(bs, WK_OUT, _worker_walk_ticks(bs, tgt))
@@ -1211,7 +1284,7 @@ func _tick_work(bs: BState) -> void:
 		WK_BACK:
 			bs.ph_t -= 1.0
 			if bs.ph_t <= 0.0:
-				if output != -1:
+				if output != -1 and bs.out_yield:
 					bs.out_stock += 1
 				_enter_wphase(bs, WK_WAIT, float(Tuning.work_wait(bs.bld.def_id, resource)))
 		WK_WAIT:
@@ -1258,6 +1331,7 @@ func _resource_target(bs: BState) -> Vector2i:
 		"stone": return _find_object(bs.bld.pos, MapData.MO_STONE, RES_RADIUS)
 		"ore": return _find_deposit(bs.bld.pos, int(bs.def.get("mineral", -1)), ORE_RADIUS)
 		"plant_tree": return _find_plant_spot(bs.bld.pos)
+		"field": return _find_farm_target(bs.bld.pos)
 		"water": return _find_water_edge(bs.bld.pos)
 	return Vector2i(-1, -1)
 
@@ -1300,6 +1374,22 @@ func _do_resource_action(bs: BState) -> void:
 				state.map.set_tree_type(n.x, n.y, state.map.deterministic_tree_type(n.x, n.y))
 				_growing_trees[state.map.idx(n.x, n.y)] = float(Tuning.tree_growth_ticks(MapData.TREE_SEED))
 				dirty = true
+		"field":
+			# Bauer: reifes Feld ernten (→ Getreide) ODER frisches Feld säen (kein Ertrag).
+			if state.map.map_object(n.x, n.y) == MapData.MO_FIELD \
+					and state.map.field_stage_at(n.x, n.y) == MapData.FIELD_RIPE:
+				state.map.clear_map_object(n.x, n.y)
+				_growing_fields.erase(state.map.idx(n.x, n.y))
+				dirty = true  # out_yield bleibt true → Getreide entsteht in WK_BACK
+			elif not state.has_object(n.x, n.y) and _is_field_spot(n.x, n.y):
+				state.map.set_map_object(n.x, n.y, MapData.MO_FIELD)
+				state.map.set_field_stage(n.x, n.y, MapData.FIELD_SEED)
+				_growing_fields[state.map.idx(n.x, n.y)] = float(Tuning.field_growth_ticks(MapData.FIELD_SEED))
+				bs.out_yield = false  # Säen liefert kein Getreide
+				dirty = true
+			else:
+				# Ziel zwischenzeitlich entwertet (anderer Hof war schneller) → kein Ertrag.
+				bs.out_yield = false
 
 
 func _find_water_edge(center: Vector2i) -> Vector2i:
@@ -1410,6 +1500,57 @@ func _all_meadow(x: int, y: int) -> bool:
 		if t != Terrain.MEADOW:
 			return false
 	return true
+
+
+## Eignet sich der Knoten als Ackerplatz? Nur freie, fruchtbare Wiesenknoten
+## (kein Objekt/Bau/Flagge/Straße, baubar, ringsum Wiese — wie der Förster-Pflanzplatz).
+func _is_field_spot(x: int, y: int) -> bool:
+	if state.has_object(x, y) or state._occ(x, y) != WorldState.OBJ_NONE:
+		return false
+	return state.compute_bq(x, y) >= WorldState.BQ_FLAG and _all_meadow(x, y)
+
+
+## Arbeitsziel des Bauern: zuerst ein REIFES Feld im Umkreis ernten, sonst einen
+## freien Ackerplatz säen. Liefert (-1,-1), wenn beides fehlt → der Hof wartet
+## sichtbar (kein Getreide aus dem Nichts).
+func _find_farm_target(center: Vector2i) -> Vector2i:
+	var ripe := _find_ripe_field(center, RES_RADIUS)
+	if ripe.x >= 0:
+		return ripe
+	return _find_field_sow_spot(center)
+
+
+## Reifes Feld (MO_FIELD, Stufe RIPE) im Umkreis, nächstgelegen zuerst.
+func _find_ripe_field(center: Vector2i, radius: int) -> Vector2i:
+	for r in range(1, radius + 1):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var x := center.x + dx
+				var y := center.y + dy
+				if not state.map.in_bounds(x, y):
+					continue
+				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
+					continue
+				if state.map.map_object(x, y) == MapData.MO_FIELD \
+						and state.map.field_stage_at(x, y) == MapData.FIELD_RIPE:
+					return Vector2i(x, y)
+	return Vector2i(-1, -1)
+
+
+## Freier Ackerplatz zum Säen im Umkreis, nächstgelegen zuerst.
+func _find_field_sow_spot(center: Vector2i) -> Vector2i:
+	for r in range(1, RES_RADIUS + 1):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var x := center.x + dx
+				var y := center.y + dy
+				if not state.map.in_bounds(x, y):
+					continue
+				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
+					continue
+				if _is_field_spot(x, y):
+					return Vector2i(x, y)
+	return Vector2i(-1, -1)
 
 
 func _water_near(center: Vector2i) -> bool:

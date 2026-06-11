@@ -254,6 +254,7 @@ static func object_draw_size(name: String) -> Vector2:
 		"stone_stage2": return Vector2(44, 34)
 		"stone_stage3": return Vector2(58, 44)
 		"ore": return Vector2(32, 27)
+		"field_seed", "field_young", "field_growing", "field_ripe": return Vector2(30, 18)
 	return Vector2(28, 28)
 
 

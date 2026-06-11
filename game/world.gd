@@ -2240,7 +2240,9 @@ func _save_game() -> void:
 		tree_type = map.tree_type.duplicate(),
 		stone_stage = map.stone_stage.duplicate(),
 		stone_hits_left = map.stone_hits_left.duplicate(),
+		field_stage = map.field_stage.duplicate(),
 		tree_growth = economy.tree_growth_state(),
+		field_growth = economy.field_growth_state(),
 		buildings = [], flags = [], roads = [],
 		hq_stock = economy.hq_stock.duplicate(),
 		# Gesamtbevölkerung (Reserve + eingesetzte Träger/Arbeiter), Issue #9: beim
@@ -2309,6 +2311,9 @@ func _load_game() -> void:
 	var saved_stone_hits_left = data.get("stone_hits_left", {})
 	if saved_stone_hits_left is Dictionary:
 		map.stone_hits_left = saved_stone_hits_left
+	var saved_field_stage = data.get("field_stage", {})
+	if saved_field_stage is Dictionary:
+		map.field_stage = saved_field_stage
 	state = WorldState.new(map)
 
 	for fp in data.flags:
@@ -2356,6 +2361,9 @@ func _load_game() -> void:
 	var tree_growth = data.get("tree_growth", {})
 	if tree_growth is Dictionary:
 		economy.restore_tree_growth(tree_growth)
+	var field_growth = data.get("field_growth", {})
+	if field_growth is Dictionary:
+		economy.restore_field_growth(field_growth)
 	_wire_world()
 	_apply_ai()
 	_apply_start_options()

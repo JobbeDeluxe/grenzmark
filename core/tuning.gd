@@ -82,6 +82,18 @@ static func tree_growth_ticks(stage: int) -> int:
 	return legacy
 
 
+## Ticks für den nächsten Feld-Wachstumsschritt (Bauernhof, Issue #26):
+## stage 0: gesät -> jung, stage 1: jung -> wachsend, stage 2: wachsend -> reif.
+static func field_growth_ticks(stage: int) -> int:
+	var stages = _cfg_dict().get("field_growth_stage_ticks", [])
+	if stages is Array and stages.size() >= 3:
+		var idx := clampi(stage, 0, 2)
+		var v = stages[idx]
+		if v is float or v is int:
+			return maxi(1, int(v))
+	return 1150
+
+
 ## Warenlieferungen über eine Straße bis zur sichtbaren Pflaster-Stufe.
 static func road_upgrade_deliveries() -> int:
 	return maxi(1, int(_num("road_upgrade_deliveries", 24)))

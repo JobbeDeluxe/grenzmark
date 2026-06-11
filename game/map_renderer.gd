@@ -430,6 +430,9 @@ func _paint_object(p: Vector2, oi: int, x: int, y: int) -> void:
 	if oi == MapData.MO_STONE:
 		_draw_stone_object(p, map.stone_stage_at(x, y))
 		return
+	if oi == MapData.MO_FIELD:
+		_draw_field_object(p, map.field_stage_at(x, y))
+		return
 	var oname: String = ["tree", "stone", "ore"][oi]
 	var tex := GameTheme.object_texture(oname)
 	if tex != null:
@@ -465,6 +468,47 @@ func _draw_stone_object(p: Vector2, stage: int) -> void:
 		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
 	else:
 		_paint_stone(p, stage)
+
+
+## Acker-Feld (Bauernhof, Issue #26). Flacher Bodenfleck, mittig auf dem Knoten —
+## kein stehendes Billboard. Eigene PNGs aus assets/objects/ (field_seed/young/
+## growing/ripe), sonst gemalter Fallback je Wachstumsstufe.
+const _FIELD_STAGE_NAMES := ["field_seed", "field_young", "field_growing", "field_ripe"]
+
+
+func _draw_field_object(p: Vector2, stage: int) -> void:
+	var name: String = _FIELD_STAGE_NAMES[clampi(stage, 0, 3)]
+	var tex := GameTheme.object_texture(name)
+	if tex != null:
+		var sz := GameTheme.object_draw_size(name)
+		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y * 0.5, sz.x, sz.y), false)
+		return
+	_paint_field(p, stage)
+
+
+func _paint_field(p: Vector2, stage: int) -> void:
+	# Rautenförmiger Ackerfleck (Bodenfarbe) plus Halme je nach Reife.
+	var hw := 14.0
+	var hh := 8.0
+	draw_colored_polygon(PackedVector2Array([
+		p + Vector2(-hw, 0), p + Vector2(0, -hh),
+		p + Vector2(hw, 0), p + Vector2(0, hh)]), Color(0.34, 0.22, 0.12))
+	var crop := Color(0.30, 0.50, 0.18)
+	match stage:
+		MapData.FIELD_SEED: crop = Color(0.40, 0.30, 0.16)   # kaum Grün
+		MapData.FIELD_YOUNG: crop = Color(0.36, 0.55, 0.22)
+		MapData.FIELD_GROWING: crop = Color(0.30, 0.58, 0.20)
+		MapData.FIELD_RIPE: crop = Color(0.85, 0.72, 0.22)   # goldgelb
+	var rows := 0
+	match stage:
+		MapData.FIELD_YOUNG: rows = 2
+		MapData.FIELD_GROWING, MapData.FIELD_RIPE: rows = 3
+	var hgt := 4.0 if stage <= MapData.FIELD_YOUNG else 7.0
+	for r in rows:
+		var ry := -hh * 0.4 + r * (hh * 0.5)
+		for c in range(-2, 3):
+			var bx := p.x + c * 5.0
+			draw_line(Vector2(bx, p.y + ry), Vector2(bx, p.y + ry - hgt), crop, 1.5)
 
 
 func _paint_tree(p: Vector2, stage := MapData.TREE_BIG) -> void:

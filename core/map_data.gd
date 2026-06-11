@@ -14,8 +14,9 @@ var heights: PackedByteArray   # ein Höhenwert pro Knoten
 var terr_r: PackedByteArray    # Terrain des rechten Dreiecks pro Knoten
 var terr_d: PackedByteArray    # Terrain des unteren Dreiecks pro Knoten
 
-# Statische Karten-Objekte (Baum/Stein/Erz) — blockieren Bauen & Straßen.
-enum { MO_TREE, MO_STONE, MO_ORE }
+# Statische Karten-Objekte (Baum/Stein/Erz/Feld) — blockieren Bauen & Straßen.
+# Reihenfolge = Serialisierungswert; NEUE Typen nur ANHÄNGEN.
+enum { MO_TREE, MO_STONE, MO_ORE, MO_FIELD }
 var objects: Dictionary = {}   # idx -> MO_*
 
 # Erzsorten. ore_kind/MO_ORE bleiben nur für optionale dekorative Erzbrocken;
@@ -40,6 +41,13 @@ var tree_stage: Dictionary = {} # idx -> 0/1/2
 enum { TREE_OAK, TREE_PINE, TREE_BIRCH }
 const TREE_TYPE_COUNT := 3
 var tree_type: Dictionary = {}  # idx -> TREE_*
+
+# Feld-Wachstumsstufe je Acker-Knoten (Bauernhof, Issue #26):
+# 0 = frisch gesät, 1 = junges Korn, 2 = wachsend, 3 = reif/erntebereit.
+# Nur Stufe 3 darf geerntet werden. Ein MO_FIELD-Knoten hat immer einen Eintrag;
+# ohne Eintrag wird ein Feld als frisch gesät (0) behandelt.
+enum { FIELD_SEED, FIELD_YOUNG, FIELD_GROWING, FIELD_RIPE }
+var field_stage: Dictionary = {}  # idx -> 0/1/2/3
 
 # Stein-Stufe (visuelle Größe): STONE_BIG → STONE_MEDIUM → STONE_SMALL → weg.
 enum { STONE_SMALL = 1, STONE_MEDIUM = 2, STONE_BIG = 3 }
@@ -109,6 +117,8 @@ func set_map_object(x: int, y: int, obj: int) -> void:
 	if obj != MO_STONE:
 		stone_stage.erase(i)
 		stone_hits_left.erase(i)
+	if obj != MO_FIELD:
+		field_stage.erase(i)
 
 
 func clear_map_object(x: int, y: int) -> void:
@@ -118,6 +128,7 @@ func clear_map_object(x: int, y: int) -> void:
 	tree_type.erase(idx(x, y))
 	stone_stage.erase(idx(x, y))
 	stone_hits_left.erase(idx(x, y))
+	field_stage.erase(idx(x, y))
 
 
 ## Baum-Wachstumsstufe (0/1/2). Ohne Eintrag = ausgewachsen (2, fällbar).
@@ -147,6 +158,15 @@ func tree_type_name(typ: int) -> String:
 func deterministic_tree_type(x: int, y: int) -> int:
 	var h := (x * 73856093) ^ (y * 19349663) ^ (width * 83492791) ^ (height * 2654435761)
 	return absi(h) % TREE_TYPE_COUNT
+
+
+## Feld-Wachstumsstufe (0..3). Ohne Eintrag = frisch gesät (0).
+func field_stage_at(x: int, y: int) -> int:
+	return field_stage.get(idx(x, y), FIELD_SEED)
+
+
+func set_field_stage(x: int, y: int, stage: int) -> void:
+	field_stage[idx(x, y)] = clampi(stage, FIELD_SEED, FIELD_RIPE)
 
 
 func stone_stage_at(x: int, y: int) -> int:

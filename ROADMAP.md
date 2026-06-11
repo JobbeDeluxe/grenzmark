@@ -89,7 +89,7 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Lagerhaus/HQ als Quelle & Senke (zentrales Inventar)
 - [x] Daten-getriebener Gebäude-Katalog mit ~19 Typen
 - [x] Produktionsketten: Holz→Bretter; Getreide→Mehl→Brot; Erz+Kohle→Eisen→Schwert; Gold+Kohle→Münzen; Bier; usw.
-- [x] Terrain-Ressourcen: Holzfäller fällt Bäume, Förster pflanzt, Steinbruch, Minen verbrauchen Erz, Fischer am Wasser
+- [x] Terrain-Ressourcen: Holzfäller fällt Bäume, Förster pflanzt, Steinbruch, Minen verbrauchen Erz, Fischer am Wasser, Bauer sät/erntet Felder (#26)
 - [x] Baustelle + Materialanlieferung (Bretter/Steine) + Baufortschritt
 - [x] Baufortschritt proportional zum gelieferten Material (Stein wertvoller als Holz)
 - [x] Bauarbeiter kommt vom HQ; gebaut wird erst nach seiner Ankunft
@@ -458,7 +458,10 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [x] Gebäude-Produktion an/aus schalten (Taste P am gewählten Gebäude)
 - [ ] Produktion drosseln (Prozent), Eingangsmengen begrenzen
 - [ ] Direkte Gebäude→Gebäude-Lieferung (nicht alles über HQ)
-- [ ] Felder: Bauer pflügt/erntet Getreide-Felder (Acker als Map-Objekt)
+- [x] Felder: Bauer sät/erntet Getreide-Felder (Acker als Map-Objekt, Issue #26):
+      reifes Feld ernten > sonst säen > sonst warten; 4 Wachstumsstufen (seed/
+      young/growing/ripe) deterministisch über `field_growth_stage_ticks`. Säen
+      liefert kein Getreide, erst die Ernte. Felder blockieren Bau/Straßen.
 - [x] Produktivitäts-Anzeige je Gebäude (% wie im Original; rollendes Fenster,
       sichtbar im Gebäudefenster)
 
