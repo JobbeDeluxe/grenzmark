@@ -1,19 +1,31 @@
 extends Control
 
-## DEV/Design-Editor: Gebäude auswählen, Größe + Eingangspunkt (Tür/Weg-Ende)
-## live einstellen und automatisch in assets/design.json speichern.
-## Erreichbar über Hauptmenü -> Einstellungen -> Design-Editor.
+## DEV/Design-Editor: in EINER Liste links Gebäude UND Bauplatz-Symbole auswählen,
+## rechts Größe/Eingang bzw. Icon-Offset live einstellen und in assets/design.json
+## speichern. Erreichbar über Hauptmenü -> Einstellungen -> Design-Editor.
 
 const DESIGN_PATH := "res://assets/design.json"
+
+# Bauplatz-Symbole (Leertaste-Menü) mit deutscher Bezeichnung für die Liste.
+const BSPOT_KEYS := ["flag", "road_flag", "castle", "house", "hut", "mine", "blocked"]
+const BSPOT_NAMES := {
+	"flag": "Flagge", "road_flag": "Straßen-Flagge", "castle": "Burg-/HQ-Platz",
+	"house": "Haus-Platz", "hut": "Hütte-Platz", "mine": "Minen-Platz",
+	"blocked": "Gesperrt-Marker",
+}
 
 var cfg := {}
 var ids: Array = []
 var current_id := "hq"
 var _loading := false
 
+# Listeneinträge: { kind = "header"|"building"|"bspot", key = <id/bspot-key> }
+var _entries: Array = []
+
 var _preview: DesignPreview
+var _bld_group: VBoxContainer
+var _bspot_group: VBoxContainer
 var _w: SpinBox
-var _h: SpinBox
 var _ox: SpinBox
 var _oy: SpinBox
 var _ex: SpinBox
@@ -26,7 +38,6 @@ var _status: Label
 var _bspot_key := "flag"
 var _bspot_ox: SpinBox
 var _bspot_oy: SpinBox
-var _bspot_select: OptionButton
 
 
 func _ready() -> void:
@@ -47,7 +58,7 @@ func _ready() -> void:
 
 	var vp := get_viewport_rect().size
 	var top_y := 38.0
-	var list_w := 156.0
+	var list_w := 170.0
 	var side_w := 232.0
 
 	# Titel
@@ -57,24 +68,21 @@ func _ready() -> void:
 	title.add_theme_font_size_override("font_size", 15)
 	add_child(title)
 
-	# Gebäudeliste links
+	# Auswahl-Liste links: Gebäude + Bauplatz-Symbole, je mit Kategorie-Überschrift.
 	var list := ItemList.new()
 	list.position = Vector2(12, top_y)
 	list.size = Vector2(list_w, vp.y - top_y - 12)
-	for id in ids:
-		list.add_item(String(BuildingCatalog.get_def(id).get("name", id)))
+	_build_entries(list)
 	list.item_selected.connect(_on_pick)
 	add_child(list)
-	list.select(0)
 
 	# Vorschau Mitte
 	_preview = DesignPreview.new()
-	_preview.position = Vector2(180, top_y)
+	_preview.position = Vector2(196, top_y)
 	_preview.size = Vector2(maxf(260.0, vp.x - list_w - side_w - 64.0), vp.y - top_y - 12)
 	add_child(_preview)
 
-	# Regler rechts — in einem ScrollContainer, damit alle Regler (inkl. Bauplatz-
-	# Offset + Speichern-Button) auch bei vielen Einträgen erreichbar bleiben.
+	# Regler rechts in einem ScrollContainer.
 	var scroll := ScrollContainer.new()
 	scroll.position = Vector2(vp.x - side_w - 12.0, top_y)
 	scroll.size = Vector2(side_w, vp.y - top_y - 12)
@@ -85,58 +93,56 @@ func _ready() -> void:
 	panel.add_theme_constant_override("separation", 4)
 	scroll.add_child(panel)
 
-	_w = _spin(panel, "Breite", 6, 160, 1)
-	_h = _spin(panel, "Höhe", 6, 160, 1)
-	_ox = _spin(panel, "Bild-Versatz X (zur Flagge)", -60, 60, 1)
-	_oy = _spin(panel, "Bild-Versatz Y", -60, 60, 1)
-	_ex = _spin(panel, "Eingang X (Tür)", -60, 60, 1)
-	_ey = _spin(panel, "Eingang Y (Tür)", -80, 40, 1)
-	_tscale = _spin(panel, "Textur-Skalierung ×10", 5, 60, 1)  # /10
-	_usize = _spin(panel, "Einheiten-Höhe", 6, 64, 1)
+	# --- Gruppe Gebäude (nur sichtbar, wenn ein Gebäude gewählt ist) ---
+	_bld_group = VBoxContainer.new()
+	_bld_group.add_theme_constant_override("separation", 4)
+	panel.add_child(_bld_group)
 
-	# Vergleichsobjekt
+	# Eine Größe: das Sprite wird quadratisch & seitenverhältniserhaltend skaliert.
+	_w = _spin(_bld_group, "Größe (skaliert ganzes Objekt)", 6, 160, 1)
+	_ox = _spin(_bld_group, "Bild-Versatz X (zur Flagge)", -60, 60, 1)
+	_oy = _spin(_bld_group, "Bild-Versatz Y", -60, 60, 1)
+	_ex = _spin(_bld_group, "Eingang X (Tür)", -60, 60, 1)
+	_ey = _spin(_bld_group, "Eingang Y (Tür)", -80, 40, 1)
+	_tscale = _spin(_bld_group, "Textur-Skalierung ×10", 5, 60, 1)  # /10, global
+	_usize = _spin(_bld_group, "Einheiten-Höhe (global)", 6, 64, 1)
+
 	var clabel := Label.new()
 	clabel.text = "Vergleichsobjekt"
 	clabel.add_theme_font_size_override("font_size", 11)
-	panel.add_child(clabel)
+	_bld_group.add_child(clabel)
 	_compare = OptionButton.new()
 	_compare.custom_minimum_size = Vector2(206, 26)
 	_compare.add_item("— keins —")
 	for id in ids:
 		_compare.add_item(String(BuildingCatalog.get_def(id).get("name", id)))
 	_compare.item_selected.connect(_on_compare)
-	panel.add_child(_compare)
+	_bld_group.add_child(_compare)
 
 	var hint := Label.new()
-	hint.text = "Bild-Versatz verschiebt das Sprite.\nEingang = Weg-Ende an der Tür."
+	hint.text = "Bild-Versatz verschiebt das Sprite.\nEingang = Weg-Ende an der Tür.\nGröße skaliert das ganze Objekt."
 	hint.add_theme_font_size_override("font_size", 10)
-	panel.add_child(hint)
+	_bld_group.add_child(hint)
 
-	# --- Bauplatz-Icon-Offset (Leertaste-Menü) ---
-	var sep := HSeparator.new()
-	panel.add_child(sep)
+	# --- Gruppe Bauplatz-Symbol (nur sichtbar, wenn ein Symbol gewählt ist) ---
+	_bspot_group = VBoxContainer.new()
+	_bspot_group.add_theme_constant_override("separation", 4)
+	panel.add_child(_bspot_group)
+
 	var bspot_title := Label.new()
 	bspot_title.text = "Bauplatz-Icon Offset (Leertaste)"
 	bspot_title.add_theme_font_size_override("font_size", 12)
-	panel.add_child(bspot_title)
-
-	_bspot_select = OptionButton.new()
-	_bspot_select.custom_minimum_size = Vector2(206, 26)
-	for bt in ["flag", "road_flag", "castle", "house", "hut", "mine", "blocked"]:
-		_bspot_select.add_item(bt)
-	_bspot_select.item_selected.connect(_on_bspot_pick)
-	panel.add_child(_bspot_select)
-
-	_bspot_ox = _spin_bspot(panel, "Offset X", -60, 60, 1)
-	_bspot_oy = _spin_bspot(panel, "Offset Y", -60, 60, 1)
-
+	_bspot_group.add_child(bspot_title)
+	_bspot_ox = _spin_bspot(_bspot_group, "Offset X", -60, 60, 1)
+	_bspot_oy = _spin_bspot(_bspot_group, "Offset Y", -60, 60, 1)
 	var bspot_hint := Label.new()
 	bspot_hint.text = "Verschiebt das Icon vom Knotenmittelpunkt."
 	bspot_hint.add_theme_font_size_override("font_size", 10)
-	panel.add_child(bspot_hint)
+	_bspot_group.add_child(bspot_hint)
 
-	_select_bspot("flag")
-
+	# --- Immer sichtbar: Speichern / Zurück / Status ---
+	var sep := HSeparator.new()
+	panel.add_child(sep)
 	var save := Button.new()
 	save.text = "Speichern"
 	save.custom_minimum_size = Vector2(206, 28)
@@ -153,7 +159,52 @@ func _ready() -> void:
 	_status.add_theme_font_size_override("font_size", 11)
 	panel.add_child(_status)
 
-	_select(current_id)
+	# Startauswahl: erstes Gebäude.
+	var first := _first_index_of_kind("building")
+	list.select(first)
+	_on_pick(first)
+
+
+## Füllt _entries und die ItemList mit zwei Kategorien (Überschriften nicht wählbar).
+func _build_entries(list: ItemList) -> void:
+	_entries.clear()
+	_add_header(list, "— Gebäude —")
+	for id in ids:
+		_entries.append({ kind = "building", key = id })
+		list.add_item(String(BuildingCatalog.get_def(id).get("name", id)))
+	_add_header(list, "— Bauplatz-Symbole —")
+	for k in BSPOT_KEYS:
+		_entries.append({ kind = "bspot", key = k })
+		list.add_item(String(BSPOT_NAMES.get(k, k)))
+
+
+func _add_header(list: ItemList, text: String) -> void:
+	_entries.append({ kind = "header", key = "" })
+	var idx := list.add_item(text)
+	list.set_item_selectable(idx, false)
+	list.set_item_custom_fg_color(idx, Color(0.6, 0.7, 0.8))
+
+
+func _first_index_of_kind(kind: String) -> int:
+	for i in _entries.size():
+		if _entries[i].kind == kind:
+			return i
+	return 0
+
+
+func _on_pick(idx: int) -> void:
+	if idx < 0 or idx >= _entries.size():
+		return
+	var e: Dictionary = _entries[idx]
+	match e.kind:
+		"building":
+			_bld_group.visible = true
+			_bspot_group.visible = false
+			_select(String(e.key))
+		"bspot":
+			_bld_group.visible = false
+			_bspot_group.visible = true
+			_select_bspot(String(e.key))
 
 
 func _on_compare(idx: int) -> void:
@@ -181,10 +232,6 @@ func _spin(box: VBoxContainer, label: String, lo: float, hi: float, step: float)
 	return s
 
 
-func _on_pick(idx: int) -> void:
-	_select(ids[idx])
-
-
 func _select(id: String) -> void:
 	_preview.bspot_key = ""  # zurück zur Gebäude-Vorschau
 	current_id = id
@@ -192,7 +239,6 @@ func _select(id: String) -> void:
 	_loading = true
 	var dims := GameTheme.building_dims(BuildingCatalog.get_def(id).get("size", WorldState.BQ_HUT), id)
 	_w.value = dims.x
-	_h.value = dims.y
 	var bo := GameTheme.building_offset(id)
 	_ox.value = bo.x
 	_oy.value = bo.y
@@ -209,7 +255,8 @@ func _select(id: String) -> void:
 func _on_value_changed(_v: float) -> void:
 	if _loading:
 		return
-	cfg.get_or_add("building_sizes", {})[current_id] = [int(_w.value), int(_h.value)]
+	# Eine Größe: quadratisch, seitenverhältniserhaltend (building_dims liest den Skalar).
+	cfg.get_or_add("building_sizes", {})[current_id] = int(_w.value)
 	cfg.get_or_add("building_offset", {})[current_id] = [int(_ox.value), int(_oy.value)]
 	cfg.get_or_add("entrance", {})[current_id] = [int(_ex.value), int(_ey.value)]
 	cfg["texture_scale"] = _tscale.value / 10.0
@@ -236,11 +283,6 @@ func _spin_bspot(box: VBoxContainer, label: String, lo: float, hi: float, step: 
 	s.value_changed.connect(_on_bspot_changed)
 	row.add_child(s)
 	return s
-
-
-func _on_bspot_pick(idx: int) -> void:
-	var types := ["flag", "road_flag", "castle", "house", "hut", "mine", "blocked"]
-	_select_bspot(types[idx])
 
 
 func _select_bspot(key: String) -> void:

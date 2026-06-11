@@ -413,14 +413,17 @@ static func _size_key(size: int) -> String:
 	return "hut"
 
 
-## Zeichengröße eines Gebäudes (Platzhalter-Maße). Aus design.json oder Standard.
-## Pro Gebäude überschreibbar via "building_sizes": { "<def_id>": [w,h] }.
+## Zeichengröße eines Gebäudes. Das Sprite wird IMMER quadratisch (Breite=Höhe)
+## und seitenverhältniserhaltend gezeichnet — es zählt nur EIN Größenwert.
+## Pro Gebäude überschreibbar via "building_sizes": { "<def_id>": <größe> }.
+## Altformat [w,h] wird weiter gelesen (es zählt der erste Wert).
 static func building_dims(size: int, def_id := "") -> Vector2:
 	var cfg := _design()
 	var per: Dictionary = cfg.get("building_sizes", {})
 	if def_id != "" and per.has(def_id):
 		var b = per[def_id]
-		return Vector2(float(b[0]), float(b[1]))
+		var w := float(b[0]) if (b is Array and not (b as Array).is_empty()) else float(b)
+		return Vector2(w, w)
 	var sizes: Dictionary = cfg.get("sizes", {})
 	var key := _size_key(size)
 	if sizes.has(key):
