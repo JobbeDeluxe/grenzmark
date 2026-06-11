@@ -45,6 +45,17 @@ gewollt und Teil des Experiments. Die Entwicklung wird teils live gestreamt:
 - **Doku pflegen:** ROADMAP (erledigt abhaken / Neues ergänzen), bei Bugs die
   KNOWN_BUGS.txt aktualisieren.
 - **Sprache:** Code-Kommentare und Doku auf Deutsch (Projektsprache).
+- **Fremde Änderungen NIE verwerfen — hinterfragen!** Es können **mehrere Agenten
+  und Menschen gleichzeitig** an diesem Repo arbeiten (Live-Stream, paralleles
+  Testen, Design-Editor). Tauchen beim Commit Änderungen auf, die du **nicht selbst
+  gemacht** hast, dann lass sie **ungestaged** — wirf sie **niemals** mit
+  `git checkout -- <datei>` / `git restore` / `git reset --hard` weg. Solche
+  Änderungen sind, solange nie gestaged, **nicht aus git wiederherstellbar** und
+  können echte Nutzerarbeit sein (z. B. `assets/design.json` aus dem Design-Editor).
+  Beim selektiven Commit nur die **eigenen** Dateien gezielt `git add`en (kein
+  `git add -A`). Achtung: Ein Spiel-/Szene-Smoke-Run kann Asset-Dateien neu
+  schreiben (z. B. `assets/design.json` int→float, `assets/goods/*.png`) — das ist
+  **kein Freibrief zum Verwerfen**, sondern dem Menschen zu melden, der entscheidet.
 - **Commits (Windows-Falle!):** Auf Windows gibt es zwei getrennte Shells — eine
   **Bash**- und eine **PowerShell**-Umgebung. Die PowerShell-Here-String-Syntax
   `@'…'@` ist **nur** PowerShell und **funktioniert nicht im Bash-Tool**: dort
