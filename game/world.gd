@@ -2243,7 +2243,9 @@ func _save_game() -> void:
 		tree_growth = economy.tree_growth_state(),
 		buildings = [], flags = [], roads = [],
 		hq_stock = economy.hq_stock.duplicate(),
-		hq_people = economy.hq_people.duplicate(),
+		# Gesamtbevölkerung (Reserve + eingesetzte Träger/Arbeiter), Issue #9: beim
+		# Laden verteilt resync() daraus alles neu (Personen laufen wieder vom Lager los).
+		hq_people = economy.total_people(),
 		soldiers = economy.soldiers,
 	}
 	for i in state.buildings:
@@ -2345,8 +2347,9 @@ func _load_game() -> void:
 	economy = Economy.new(state)
 	economy._hq_inited = true
 	economy.hq_stock = data.hq_stock
-	# Personen-Inventar (S2-Lagermodell). Alt-Spielstände ohne Sektion bekommen die
-	# Standard-Startpersonen, damit das Lager nicht ohne Träger dasteht.
+	# Personen-Inventar (S2-Lagermodell, Issue #9). Gespeichert ist die GESAMT-
+	# bevölkerung; resync() unten setzt davon die eingesetzten Träger/Arbeiter wieder
+	# ab. Alt-Spielstände ohne Sektion bekommen die Standard-Startpersonen.
 	economy.hq_people = data.get("hq_people", Tuning.hq_start_people())
 	economy.soldiers = int(data.get("soldiers", 0))
 	var tree_growth = data.get("tree_growth", {})

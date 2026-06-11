@@ -394,10 +394,23 @@ Mögliche Lösungen (für später):
   das Gebiet.
 
 
-[2026-06-07] (OFFEN) Lager hält keine Bevölkerung (S2: Personen im HQ)
+[2026-06-11] (BEHOBEN) Lager hält keine Bevölkerung (S2: Personen im HQ)
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/9
 
-  In S2 sind Träger/Arbeiter eine endliche Bevölkerung, die aus dem Lager kommt und
-  bei Gebäudeabriss/Bedarf zurückkehrt. Aktuell sind Träger/Arbeiter „unendlich".
-  Größeres Feature (Bevölkerungssystem) — bewusst noch offen, separat planen.
+  Symptom: In S2 sind Träger/Arbeiter eine endliche Bevölkerung, die aus dem Lager
+  kommt und bei Gebäudeabriss/Bedarf zurückkehrt. Vorher waren Träger/Arbeiter
+  „unendlich" (hq_people existierte, wurde aber nie verbraucht).
+
+  Behoben (S2-Personalmodell, RTTR Inventory):
+  - Träger ziehen beim Besetzen einer Straße einen HELPER aus dem Lager
+    (economy._dispatch_carrier); ohne HELPER bleibt die Straße unbesetzt.
+  - Arbeiter ziehen ihren Beruf (BuildingCatalog.job_of); fehlt der Spezialist, wird
+    er aus HELPER + Werkzeug rekrutiert (economy._take_person). Bauarbeiter = BUILDER.
+  - Abriss/Straßenabriss/Bau-Ende geben die Person zurück (_return_person);
+    Spezialisten kehren als ihr Beruf zurück (Werkzeug bleibt verbraucht).
+  - Save/Load speichert die Gesamtbevölkerung (economy.total_people()); beim Laden
+    verteilt resync() daraus alles deterministisch neu.
+  Neuer Test _test_population_limit (670 Kern-Tests grün).
+  Noch offen (separat): Nachschub/Wachstum (HQ erzeugt mit der Zeit neue Siedler);
+  Personen aus zusätzlichen Lagerhäusern (#31); Esel/Eselzüchter.

@@ -52,6 +52,7 @@ class Carrier:
 	var carrying: Good = null
 	var active := false      # erst aktiv, wenn der Träger vom HQ angekommen ist
 	var dispatched := false  # Träger wurde schon vom HQ losgeschickt (Marsch läuft)
+	var has_person := false  # hält einen HELPER aus dem Lager (Issue #9, Rückgabe bei Abriss)
 
 
 class Marcher:
@@ -132,6 +133,8 @@ class BState:
 	var ph_total := 1.0                    # Gesamtticks der aktuellen Phase (Interpolation)
 	var staffed := false                   # Arbeiter ist vom HQ angekommen?
 	var worker_sent := false               # Arbeiter wurde schon angefordert?
+	var has_person := false                # hält eine Person aus dem Lager (Issue #9)
+	var person_job := -1                   # welcher Beruf (für Rückgabe bei Abriss)
 	var stopped := false                   # Produktion vom Spieler angehalten?
 	var prod_active := 0                   # aktive Arbeitsticks im Bewertungsfenster
 	var prod_total := 0                    # Gesamtticks im Bewertungsfenster
@@ -198,6 +201,8 @@ func resync() -> void:
 			var old: Carrier = carriers[r]
 			if old.carrying != null:
 				_spawn_stray(old)
+			if old.has_person:
+				_return_person(Jobs.HELPER, old.road.owner)  # Träger kehrt ins Lager zurück (#9)
 			carriers.erase(r)
 	# Unbesetzte Straßen werden NICHT mehr sofort alle gleichzeitig besetzt, sondern
 	# nach und nach in `_tick_dispatch()` (gestaffelt) — sonst marschieren bei vielen
@@ -235,11 +240,26 @@ func resync() -> void:
 			# Bereits fertige Gebäude (geladen/erobert) gelten als besetzt;
 			# frisch fertiggestellte holen ihren Arbeiter vom HQ.
 			bs.staffed = not b.under_construction
+			# Personalmodell (Issue #9): ein fertiges Spieler-Gebäude bindet beim ersten
+			# Erfassen (Laden/Eroberung) seinen Produktionsberuf aus dem Lager. Reicht das
+			# Personal nicht, bleibt es unbesetzt und fordert später nach. (Bei normal
+			# gebauten Gebäuden passiert das erst nach Bauende über _dispatch_worker.)
+			if bs.staffed and b.owner == 0:
+				var j0 := BuildingCatalog.job_of(b.def_id)
+				if j0 >= 0:
+					if _take_person(j0, 0):
+						bs.has_person = true
+						bs.person_job = j0
+					else:
+						bs.staffed = false
 			bstates[i] = bs
 		else:
 			bstates[i].bld = b
 	for i in bstates.keys():
 		if not state.buildings.has(i) or state.buildings[i].is_hq:
+			var bs_gone: BState = bstates[i]
+			if bs_gone.has_person:
+				_return_person(bs_gone.person_job, bs_gone.bld.owner)  # Arbeiter kehrt zurück (#9)
 			bstates.erase(i)
 
 	for fi in flag_goods.keys():
@@ -269,6 +289,61 @@ func _init_hq_stock() -> void:
 ## Personenbestand eines Berufs im HQ-Lager (S2-Personalmodell, Issue #9).
 func hq_people_count(job: int) -> int:
 	return int(hq_people.get(job, 0))
+
+
+## Entnimmt EINE Person des Berufs [job] aus dem Lager des Besitzers (Issue #9).
+## S2-Modell (RTTR Inventory): existiert der Spezialist im Lager, wird er genommen;
+## sonst wird er aus einem Träger (HELPER) + dem passenden Werkzeug rekrutiert
+## ([Jobs.tool_for]). Berufe ohne Werkzeug (Träger/Müller/Brauer/...) entstehen
+## direkt aus einem Träger. Reicht weder Spezialist noch Träger(+Werkzeug), kommt
+## false zurück → der Posten (Straße/Gebäude) bleibt unbesetzt und wird später erneut
+## versucht. Nur der Spieler (owner 0) hat ein Personen-Lager; Gegner (owner != 0)
+## sind im aktuellen Wirtschaftsmodell abstrakt (kein Pool, Issue #24) → immer true.
+func _take_person(job: int, owner: int) -> bool:
+	if owner != 0:
+		return true
+	if int(hq_people.get(job, 0)) > 0:
+		hq_people[job] = int(hq_people[job]) - 1
+		return true
+	# Spezialist fehlt → aus einem Träger (+ ggf. Werkzeug) rekrutieren.
+	if int(hq_people.get(Jobs.HELPER, 0)) <= 0:
+		return false
+	var tool := Jobs.tool_for(job)
+	if tool == -1:
+		hq_people[Jobs.HELPER] = int(hq_people[Jobs.HELPER]) - 1
+		return true
+	if int(hq_stock.get(tool, 0)) <= 0:
+		return false
+	hq_people[Jobs.HELPER] = int(hq_people[Jobs.HELPER]) - 1
+	hq_stock[tool] = int(hq_stock[tool]) - 1
+	return true
+
+
+## Gibt EINE Person des Berufs [job] ins Lager zurück (Straßen-/Gebäudeabriss,
+## Bauarbeiter-Rückkehr). Spezialisten kehren als ihr Beruf zurück — das Werkzeug
+## wurde bei der Rekrutierung verbraucht (S2/RTTR-Inventory). Gegner: no-op.
+func _return_person(job: int, owner: int) -> void:
+	if owner != 0 or job < 0:
+		return
+	hq_people[job] = int(hq_people.get(job, 0)) + 1
+
+
+## Gesamtbevölkerung des Spieler-Lagers = Reserve + alle eingesetzten Personen
+## (Träger auf Straßen, Arbeiter/Bauarbeiter in Gebäuden, inkl. der gerade vom Lager
+## anmarschierenden — diese hängen am Carrier/BState, nicht am Marcher). Für Save:
+## gespeichert wird die Gesamtzahl; beim Laden verteilt `resync()` daraus alles neu
+## (Träger/Arbeiter laufen wieder los) — deterministisch. (Issue #9)
+func total_people() -> Dictionary:
+	var tot: Dictionary = hq_people.duplicate()
+	for r in carriers:
+		var c: Carrier = carriers[r]
+		if c.has_person:
+			tot[Jobs.HELPER] = int(tot.get(Jobs.HELPER, 0)) + 1
+	for i in bstates:
+		var bs: BState = bstates[i]
+		if bs.has_person:
+			tot[bs.person_job] = int(tot.get(bs.person_job, 0)) + 1
+	return tot
 
 
 # --------------------------------------------------------------------------
@@ -614,7 +689,10 @@ func _apply_split(sp: Dictionary) -> void:
 	carriers.erase(old)
 	if not c.active:
 		# Träger war noch gar nicht da (marschiert noch vom HQ) → beide Teilstücke
-		# werden normal (gestaffelt) neu besetzt; nichts zu übernehmen.
+		# werden normal (gestaffelt) neu besetzt; nichts zu übernehmen. Seinen
+		# reservierten Träger gibt er dabei ins Lager zurück (#9).
+		if c.has_person:
+			_return_person(Jobs.HELPER, c.road.owner)
 		return
 	var k := int(sp.k)
 	var on_r1: bool = c.seg_pos <= float(k)
@@ -679,6 +757,12 @@ func _dispatch_carrier(c: Carrier) -> void:
 			best_end = endi
 	if best.is_empty():
 		return  # nicht mit HQ verbunden → unbesetzt lassen
+	# S2-Personalmodell (Issue #9): ein Träger braucht einen HELPER aus dem Lager.
+	# Ist keiner verfügbar, bleibt die Straße unbesetzt und wird später erneut versucht.
+	if not c.has_person:
+		if not _take_person(Jobs.HELPER, c.road.owner):
+			return
+		c.has_person = true
 	c.dispatched = true
 	if best.size() < 2:
 		_activate_carrier(c.road, best_end)  # HQ-Flagge ist schon das Straßenende
@@ -853,6 +937,17 @@ func _dispatch_worker(bs: BState) -> void:
 		# vom HQ kommen (statt unsichtbar aus dem Nichts zu erscheinen).
 		bs.worker_sent = false
 		return
+	# S2-Personalmodell (Issue #9): den passenden Beruf aus dem Lager holen
+	# (Baustelle = Bauarbeiter, fertiges Gebäude = Produktionsberuf). Fehlt das
+	# Personal, bleibt das Gebäude unbesetzt und wird später erneut angefordert.
+	if not bs.has_person:
+		var job := Jobs.BUILDER if bs.is_construction else BuildingCatalog.job_of(bs.bld.def_id)
+		if job >= 0:
+			if not _take_person(job, bs.bld.owner):
+				bs.worker_sent = false
+				return
+			bs.has_person = true
+			bs.person_job = job
 	bs.worker_sent = true
 	var m := Marcher.new()
 	m.purpose_worker = true
@@ -894,6 +989,12 @@ func _tick_construction(bs: BState) -> void:
 		bs.bld.under_construction = false
 		bs.is_construction = false
 		_dispatch_builder_return(bs)  # Bauarbeiter läuft sichtbar zurück zum HQ
+		# Bauarbeiter kehrt ins Lager zurück (#9); der Produktionsarbeiter wird gleich
+		# über _dispatch_worker frisch angefordert (eigener Berufsverbrauch).
+		if bs.has_person:
+			_return_person(bs.person_job, bs.bld.owner)
+			bs.has_person = false
+			bs.person_job = -1
 		bs.staffed = false      # Bauarbeiter geht; Produktionsarbeiter kommt danach
 		bs.worker_sent = false
 		bs.delivered.clear()

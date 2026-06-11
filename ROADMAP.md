@@ -406,8 +406,10 @@ Arbeitsliste, bis das Spiel „vollständig" ist (Ton/Musik kommt ganz zuletzt).
       Das ist gewollt, aber ein optionaler Klassikmodus wäre ein S2-näherer Ausbau.
 - [ ] Warenfluss ist noch zu HQ-zentriert; S2 verteilt zwischen Lagern und
       Gebäuden mit Prioritäten, Einzugsgebieten und lokalen Lagerbeständen.
-- [ ] Bevölkerung, Berufe und Werkzeuge begrenzen die Wirtschaft noch nicht echt.
-      Träger/Arbeiter entstehen aktuell funktional, statt als Personen aus Lagern.
+- [x] Bevölkerung, Berufe und Werkzeuge begrenzen die Wirtschaft (Issue #9):
+      Träger = HELPER, Arbeiter = Beruf (sonst HELPER + Werkzeug rekrutiert), Bau =
+      BUILDER; ohne Personal bleibt Straße/Gebäude unbesetzt, Abriss gibt zurück.
+      Noch offen: Nachschub/Wachstum neuer Siedler über die Zeit.
 - [ ] Gebäude-UI fehlt als S2-Hauptgefühl: Produktivität, Warenpuffer,
       Produktion stoppen, Abriss, Militärbesatzung, Prioritäten und Warnungen.
 - [ ] Geologe, Späher/Pionier, Planierer und Aussichtsturm/Spähturm fehlen als
@@ -421,9 +423,11 @@ Arbeitsliste, bis das Spiel „vollständig" ist (Ton/Musik kommt ganz zuletzt).
       Statistikseiten, Nachrichtenlog und Optionsmenüs fehlen.
 
 **Bevölkerung & Träger (Kern, hoch):**
-- [ ] Echte Einwohnerzahl: Träger/Arbeiter sind begrenzte Bevölkerung aus dem HQ
-      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/9)
-- [ ] Werkzeuge: Berufe brauchen passendes Werkzeug (Schreiner/Werkzeugmacher)
+- [x] Echte Einwohnerzahl: Träger/Arbeiter sind begrenzte Bevölkerung aus dem HQ
+      (Issue #9) — ohne Personal bleibt Straße/Gebäude unbesetzt, Abriss gibt zurück.
+- [x] Werkzeuge: Berufe brauchen passendes Werkzeug zur Rekrutierung (HELPER +
+      Werkzeug → Spezialist). Offen bleibt der Nachschub über Werkzeugmacher-Kette.
+- [ ] Nachschub/Wachstum: HQ/Lager erzeugt mit der Zeit neue Siedler (S2-Bevölkerung)
 - [ ] Esel/Eselzüchter: Esel als Träger auf stark genutzten Straßen
 - [ ] Straßen-Ausbau zu „Eselstraßen"; mehrere Träger bei Stau
 

@@ -27,6 +27,7 @@ func _initialize() -> void:
 	_test_building_spacing()
 	_test_road_and_route()
 	_test_economy()
+	_test_population_limit()
 	_test_stop_finishes_cycle()
 	_test_productivity_and_building_info()
 	_test_military()
@@ -191,6 +192,86 @@ func _test_economy() -> void:
 	state.remove_at(road.nodes[1])
 	eco.resync()
 	_check(eco.carriers.is_empty(), "Träger nach Straßen-Abriss entfernt")
+
+
+## Issue #9: Träger und Arbeiter kommen aus dem begrenzten Personen-Lager des HQ.
+## Ohne verfügbares Personal bleibt eine Straße/ein Gebäude unbesetzt; Abriss gibt
+## die Person zurück; Spezialisten werden aus Träger + Werkzeug rekrutiert und kehren
+## als Beruf zurück. Save zählt die Gesamtbevölkerung (Reserve + Eingesetzte).
+func _test_population_limit() -> void:
+	# --- Träger-Begrenzung: künstlich genau 1 HELPER im Lager ---
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(20, 20, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_check(hq != null, "Pop: HQ platzierbar")
+	if hq == null:
+		return
+	eco.resync()
+	eco.hq_people = { Jobs.HELPER: 1 }
+
+	# Zwei Straßen direkt vom HQ in verschiedene Richtungen (bleiben beide verbunden).
+	state.place_flag(20, 14)
+	state.place_flag(14, 20)
+	var r1 := state.build_road(hq.flag_pos, Vector2i(20, 14))
+	var r2 := state.build_road(hq.flag_pos, Vector2i(14, 20))
+	_check(r1 != null and r2 != null, "Pop: zwei Straßen ab HQ baubar")
+	if r1 == null or r2 == null:
+		return
+	eco.resync()
+	for t in 500:
+		eco.tick()
+	var active := 0
+	for r in eco.carriers:
+		if eco.carriers[r].active:
+			active += 1
+	_check(active == 1, "Pop: nur 1 von 2 Straßen besetzt (1 HELPER im Lager)")
+	_check(eco.hq_people_count(Jobs.HELPER) == 0, "Pop: HELPER-Pool aufgebraucht")
+	# Save-Sicht: der eingesetzte Träger zählt zur Gesamtbevölkerung.
+	_check(int(eco.total_people().get(Jobs.HELPER, 0)) == 1,
+		"Pop: total_people() zählt den eingesetzten Träger mit")
+
+	# Die besetzte Straße abreißen → HELPER kehrt zurück → die andere wird besetzt.
+	var busy: WorldState.Road = r1 if (eco.carriers.has(r1) and eco.carriers[r1].active) else r2
+	var idle: WorldState.Road = r2 if busy == r1 else r1
+	_check(busy.nodes.size() >= 3, "Pop: besetzte Straße hat Zwischenknoten")
+	state.remove_at(busy.nodes[1])
+	eco.resync()
+	_check(eco.hq_people_count(Jobs.HELPER) == 1, "Pop: HELPER nach Straßen-Abriss zurück im Lager")
+	for t in 500:
+		eco.tick()
+	_check(eco.carriers.has(idle) and eco.carriers[idle].active,
+		"Pop: bisher unbesetzte Straße wird nach Abriss besetzt")
+	_check(eco.hq_people_count(Jobs.HELPER) == 0, "Pop: HELPER wieder im Einsatz")
+
+	# --- Spezialist-Rekrutierung: Holzfäller = HELPER + AXT, Rückgabe als Beruf ---
+	var map2 := _flat_map(40, 40)
+	var st2 := WorldState.new(map2)
+	var eco2 := Economy.new(st2)
+	var hq2 := st2.place_building(20, 20, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_check(hq2 != null, "Pop: HQ #2 platzierbar")
+	if hq2 == null:
+		return
+	eco2.resync()
+	eco2.hq_people = { Jobs.HELPER: 1 }
+	eco2.hq_stock = { Goods.AXE: 1 }
+	var wc := st2.place_building(20, 16, WorldState.BQ_HUT, false, "woodcutter", 0, false)
+	_check(wc != null, "Pop: Holzfäller-Hütte platzierbar")
+	if wc == null:
+		return
+	st2.build_road(hq2.flag_pos, wc.flag_pos)
+	eco2.resync()
+	var wbi := st2.map.idx(wc.pos.x, wc.pos.y)
+	_check(eco2.bstates.has(wbi) and eco2.bstates[wbi].staffed, "Pop: Holzfäller besetzt")
+	_check(eco2.hq_people_count(Jobs.HELPER) == 0, "Pop: HELPER für Spezialist verbraucht")
+	_check(int(eco2.hq_stock.get(Goods.AXE, 0)) == 0, "Pop: Werkzeug (Axt) für Spezialist verbraucht")
+
+	# Abriss gibt den Spezialisten als BERUF zurück (Werkzeug bleibt verbraucht).
+	st2.remove_at(wc.pos)
+	eco2.resync()
+	_check(eco2.hq_people_count(Jobs.WOODCUTTER) == 1, "Pop: Holzfäller kehrt als Beruf ins Lager zurück")
+	_check(eco2.hq_people_count(Jobs.HELPER) == 0 and int(eco2.hq_stock.get(Goods.AXE, 0)) == 0,
+		"Pop: weder HELPER noch Werkzeug kehren zurück (Werkzeug bleibt verbraucht)")
 
 
 ## Issue #14: "Stop" blockiert nur den nächsten Arbeitsgang, friert den laufenden
