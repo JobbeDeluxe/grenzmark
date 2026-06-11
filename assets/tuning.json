@@ -50,5 +50,8 @@
   "hq_start_people": {
     "helper": 30
   },
-  "hq_start_soldiers": 8
+  "hq_start_soldiers": 8,
+  "_nachschub_hinweis": "Traeger-Nachschub (Issue #33): das HQ-Lager schiebt alle helper_produce_ticks Ticks einen Traeger nach, bis helper_cap erreicht ist (darueber Abbau). 150 Ticks ~ 5 s bei 30 Hz, Analogon zu RTTR 150 Game-Frames.",
+  "helper_produce_ticks": 150,
+  "helper_cap": 100
 }

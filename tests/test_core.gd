@@ -28,6 +28,7 @@ func _initialize() -> void:
 	_test_road_and_route()
 	_test_economy()
 	_test_population_limit()
+	_test_population_growth()
 	_test_stop_finishes_cycle()
 	_test_productivity_and_building_info()
 	_test_military()
@@ -209,6 +210,9 @@ func _test_population_limit() -> void:
 		return
 	eco.resync()
 	eco.hq_people = { Jobs.HELPER: 1 }
+	# Träger-Nachschub (#33) für diesen Test einfrieren — hier geht es gezielt um das
+	# Verhalten bei leerem Pool, nicht um das Wiederauffüllen.
+	eco._helper_timer = 1_000_000_000
 
 	# Zwei Straßen direkt vom HQ in verschiedene Richtungen (bleiben beide verbunden).
 	state.place_flag(20, 14)
@@ -272,6 +276,39 @@ func _test_population_limit() -> void:
 	_check(eco2.hq_people_count(Jobs.WOODCUTTER) == 1, "Pop: Holzfäller kehrt als Beruf ins Lager zurück")
 	_check(eco2.hq_people_count(Jobs.HELPER) == 0 and int(eco2.hq_stock.get(Goods.AXE, 0)) == 0,
 		"Pop: weder HELPER noch Werkzeug kehren zurück (Werkzeug bleibt verbraucht)")
+
+
+## Issue #33: Das HQ-Lager schiebt Träger nach (RTTR ProduceHelperEvent): füllt den
+## Reservebestand bis zur Obergrenze auf, stoppt dort und baut Überbevölkerung ab.
+func _test_population_growth() -> void:
+	var map := _flat_map(24, 24)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	eco.ai_enabled = false
+	var hq := state.place_building(12, 12, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_check(hq != null, "Wachstum: HQ platzierbar")
+	if hq == null:
+		return
+	eco.resync()
+	var cap := Tuning.helper_cap()
+
+	# Reserve künstlich leeren → ein Takt später muss das Lager nachschieben.
+	eco.hq_people = { Jobs.HELPER: 0 }
+	eco._helper_timer = 0
+	eco.tick()
+	_check(eco.hq_people_count(Jobs.HELPER) == 1, "Wachstum: Lager schiebt einen Träger nach")
+
+	# Über genug Takte wächst der Bestand bis zur Obergrenze und stoppt dort.
+	for t in (cap + 5) * Tuning.helper_produce_ticks():
+		eco.tick()
+	_check(eco.hq_people_count(Jobs.HELPER) == cap,
+		"Wachstum: Bestand erreicht Obergrenze (%d) und stoppt" % cap)
+
+	# Über der Obergrenze wird abgebaut (Überbevölkerung).
+	eco.hq_people[Jobs.HELPER] = cap + 5
+	eco._helper_timer = 0
+	eco.tick()
+	_check(eco.hq_people_count(Jobs.HELPER) == cap + 4, "Wachstum: Überbevölkerung wird abgebaut")
 
 
 ## Issue #14: "Stop" blockiert nur den nächsten Arbeitsgang, friert den laufenden

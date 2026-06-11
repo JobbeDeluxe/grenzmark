@@ -164,6 +164,7 @@ var _hq_inited := false
 var _soldier_timer := SOLDIER_TICKS
 var _promo_timer := PROMO_TICKS
 var _cata_timer := CATAPULT_TICKS
+var _helper_timer := 0               # Träger-Nachschub des HQ-Lagers (Issue #33)
 var _growing_trees: Dictionary = {} # map idx -> Restticks bis zur nächsten Baumstufe
 var _rng := RandomNumberGenerator.new()  # seeded → deterministisch (Lockstep-tauglich)
 
@@ -284,6 +285,7 @@ func _init_hq_stock() -> void:
 	hq_stock = Tuning.hq_start_goods()
 	hq_people = Tuning.hq_start_people()
 	soldiers = Tuning.hq_start_soldiers()  # Anfangsbesatzung, hält Militärgebäude sofort
+	_helper_timer = Tuning.helper_produce_ticks()  # erster Träger-Nachschub nach einem Takt
 
 
 ## Personenbestand eines Berufs im HQ-Lager (S2-Personalmodell, Issue #9).
@@ -346,6 +348,29 @@ func total_people() -> Dictionary:
 	return tot
 
 
+## Träger-Nachschub des HQ-Lagers (Issue #33). Wie im Original (RTTR
+## nobBaseWarehouse::HandleProduceHelperEvent) regelt das Lager seinen Träger-
+## Reservebestand auf eine Obergrenze ein: alle [Tuning.helper_produce_ticks] Ticks
+## einen HELPER nachschieben, solange unter [Tuning.helper_cap]; darüber abbauen. So
+## versiegt die Bevölkerung nicht (eingesetzte Träger werden nachproduziert), ist
+## aber rate-begrenzt. Deterministisch (fester Takt, kein Zufall) → lockstep-tauglich.
+## Nur das Spieler-Lager (owner 0) hat einen Personen-Pool. Bei Mehr-Lager (#31)
+## läuft das später pro Lager → Obergrenze skaliert mit der Lageranzahl wie im Original.
+func _tick_helper_production() -> void:
+	if hq_flag < 0:
+		return  # kein Spieler-Lager (kein/zerstörtes HQ) → kein Nachschub
+	if _helper_timer > 0:
+		_helper_timer -= 1
+		return
+	_helper_timer = Tuning.helper_produce_ticks()
+	var cap := Tuning.helper_cap()
+	var have := int(hq_people.get(Jobs.HELPER, 0))
+	if have < cap:
+		hq_people[Jobs.HELPER] = have + 1
+	elif have > cap:
+		hq_people[Jobs.HELPER] = have - 1
+
+
 # --------------------------------------------------------------------------
 #  Ein Tick
 # --------------------------------------------------------------------------
@@ -358,6 +383,7 @@ func tick() -> void:
 	_tick_promotions()
 	_tick_catapults()
 	_tick_house_carrier()
+	_tick_helper_production()
 	for i in state.buildings:
 		if bstates.has(i):
 			_tick_building(bstates[i])

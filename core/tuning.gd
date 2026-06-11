@@ -123,6 +123,18 @@ static func hq_start_soldiers() -> int:
 	return int(_num("hq_start_soldiers", 8))
 
 
+## Takt des Träger-Nachschubs (Issue #33): alle N Ticks schiebt das HQ-Lager einen
+## Träger nach (bei 30 Hz ist 150 ≈ 5 s, Analogon zu RTTR 150 Game-Frames).
+static func helper_produce_ticks() -> int:
+	return maxi(1, int(_num("helper_produce_ticks", 150)))
+
+
+## Obergrenze des Träger-Reservebestands im HQ-Lager (Issue #33). Wie RTTR: das
+## Lager füllt bis hierher auf und baut darüber ab (~100 pro Lager).
+static func helper_cap() -> int:
+	return maxi(0, int(_num("helper_cap", 100)))
+
+
 ## tuning.json[json_key] (String-ID -> Anzahl) zu { enum_id: Anzahl } auflösen.
 ## Fehlt/leer/kein Dictionary -> Kopie der Standardwerte. Unbekannte IDs werden
 ## ignoriert (vorwärtskompatibel).
