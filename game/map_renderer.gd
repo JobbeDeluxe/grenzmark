@@ -20,12 +20,19 @@ var _terrain_layer: Node2D   # zeichnet Terrain einmalig; nie neu zeichnen da Te
 var fog_enabled := false        # Nebel des Krieges an/aus (zum Testen)
 var show_build_spots := false   # Bauplätze einblenden (Leertaste)
 
-# Bauplatz-Overlay-Cache (#30): Der Ganzkarten-Scan mit bis zu 5 BQ-Checks pro Zelle
-# ist teuer (~0,5 s auf 96×96). Er hängt aber NUR an der Struktur (Gebäude/Flaggen/
-# Straßen/Territorium/Karten-Objekte), nicht an jedem Redraw. Wir merken uns die zu
-# zeichnenden Spots und berechnen sie nur neu, wenn sich die Struktur-Signatur ändert.
-var _spot_cache: Array = []     # [{ p: Vector2, bq: int, road: bool }]
-var _spot_cache_sig := -1
+# Bauplatz-Overlay-Cache (#30): Der Territoriums-Scan (BQ pro Zelle) ist O(Territorium)
+# und würde beim Platzieren in EINEM Frame laufen → spürbarer Hitch, der mit dem Reich
+# wächst. Lösung: Die Neuberechnung wird über mehrere Frames BUDGETIERT (SPOT_BUDGET
+# Zellen/Frame); das fertige _spot_cache bleibt sichtbar, bis die neue Liste komplett ist
+# (atomarer Tausch). So bleibt jeder Frame billig, egal wie groß das Territorium ist.
+# Neu berechnet wird nur, wenn sich die Struktur-Signatur ändert.
+const SPOT_BUDGET := 64
+var _spot_cache: Array = []     # fertige, gezeichnete Spots [{ p, bq, road }]
+var _spot_target_sig := -1      # Signatur, auf die hin (neu) gebaut wird
+var _spot_build: Array = []     # im Aufbau befindliche Liste
+var _spot_keys: Array = []      # zu scannende Knoten-Indizes (Snapshot)
+var _spot_pos := 0              # Scan-Cursor
+var _spot_building := false
 
 
 func setup(world_state: WorldState) -> void:
@@ -40,6 +47,14 @@ func setup(world_state: WorldState) -> void:
 	add_child(_terrain_layer)
 	_terrain_layer.queue_redraw()
 	queue_redraw()
+
+
+func _process(_delta: float) -> void:
+	# Läuft ein budgetierter Bauplatz-Aufbau, Redraws erzwingen, damit er zügig fertig
+	# wird (statt an den unregelmäßigen dirty-Redraws zu hängen). Nur wenn das Overlay
+	# sichtbar ist — sonst pausiert der Aufbau, bis es wieder eingeblendet wird.
+	if _spot_building and show_build_spots:
+		queue_redraw()
 
 
 func _draw() -> void:
@@ -142,10 +157,18 @@ func _occlude_node(p: Vector2, halfw: float, top: float, bottom: float) -> void:
 
 ## Bauplatz-Anzeige (Leertaste): Symbole je effektiver Bauqualität.
 func _draw_build_spots() -> void:
-	var sig := _structure_sig()
-	if sig != _spot_cache_sig:
-		_recompute_build_spots()
-		_spot_cache_sig = sig
+	# Strukturänderung erkannt → Neuaufbau anstoßen, ABER nur wenn gerade keiner läuft.
+	# So läuft ein Aufbau immer zu Ende (kein Verwerfen bei häufigen Änderungen, z. B.
+	# Bäume); ist die Struktur danach wieder anders, startet der nächste Frame einen
+	# frischen Aufbau. Garantiert Fortschritt, höchstens ein Zyklus Verzug.
+	if not _spot_building:
+		var sig := _structure_sig()
+		if sig != _spot_target_sig:
+			_spot_target_sig = sig
+			_begin_spot_rebuild()
+	if _spot_building:
+		_step_spot_rebuild(SPOT_BUDGET)
+	# Immer die fertige Liste zeichnen (während eines Aufbaus die bisherige).
 	for it in _spot_cache:
 		var p: Vector2 = it.p
 		if it.road:
@@ -164,31 +187,47 @@ func _structure_sig() -> int:
 		+ state.roads.size() * 101 + state.territory.size() * 7 + state.map.objects.size()
 
 
-## Bauplatz-Liste neu berechnen. Bauplätze liegen ausschließlich im eigenen Territorium
-## (can_place_building/_flag/_road_flag verlangen es), darum reicht ein Scan über die
-## Territoriumsknoten (statt der ganzen Karte). Vor dem HQ (kein Territorium) fällt es
-## auf den Ganzkarten-Scan zurück.
-func _recompute_build_spots() -> void:
-	_spot_cache.clear()
-	var map := state.map
+## Startet einen budgetierten Neuaufbau. Bauplätze liegen ausschließlich im eigenen
+## Territorium (can_place_* verlangt es) → es reicht, dessen Knoten zu scannen. Vor dem
+## HQ (kein Territorium) Fallback auf die ganze Karte.
+func _begin_spot_rebuild() -> void:
+	_spot_build = []
+	_spot_pos = 0
+	_spot_building = true
 	if state.territory.is_empty():
-		for y in map.height:
-			for x in map.width:
-				_collect_build_spot(x, y)
+		_spot_keys = range(state.map.width * state.map.height)
 	else:
-		for ti in state.territory:
-			_collect_build_spot(int(ti) % map.width, int(ti) / map.width)
+		_spot_keys = state.territory.keys()
+
+
+## Verarbeitet bis zu [param budget] Knoten pro Aufruf (= pro Frame). Ist der Scan
+## fertig, wird die neue Liste atomar sichtbar. _process() erzwingt währenddessen
+## Redraws, damit der Aufbau zügig durchläuft.
+func _step_spot_rebuild(budget: int) -> void:
+	var map := state.map
+	var n := _spot_keys.size()
+	var done := 0
+	while _spot_pos < n and done < budget:
+		var idx := int(_spot_keys[_spot_pos])
+		_collect_build_spot(idx % map.width, idx / map.width)
+		_spot_pos += 1
+		done += 1
+	if _spot_pos >= n:
+		_spot_cache = _spot_build
+		_spot_build = []
+		_spot_keys = []
+		_spot_building = false
 
 
 func _collect_build_spot(x: int, y: int) -> void:
 	var p := state.map.node_world(x, y)
 	if state.can_place_road_flag(x, y):
-		_spot_cache.append({ p = p, bq = WorldState.BQ_FLAG, road = true })
+		_spot_build.append({ p = p, bq = WorldState.BQ_FLAG, road = true })
 		return
 	var bq := state.actual_build_spot_bq(x, y)
 	if bq < WorldState.BQ_FLAG:
 		return
-	_spot_cache.append({ p = p, bq = bq, road = false })
+	_spot_build.append({ p = p, bq = bq, road = false })
 
 
 func _node_in_player_area(x: int, y: int) -> bool:

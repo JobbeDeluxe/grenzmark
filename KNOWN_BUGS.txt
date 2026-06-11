@@ -34,16 +34,25 @@ Status: OFFEN | IN ARBEIT | BEHOBEN
   daraus abgeleitet. Ergebnis identisch (Test _test_build_spot_bq_equivalence vergleicht
   zellenweise gegen die alte Kaskade).
 
+  Restposten (User: noch ~0,3 s, und skaliert mit dem Reich): Auch der reine
+  Territoriums-Scan lief in EINEM Frame und wuchs mit dem Territorium (38 ms bei 271,
+  72 ms bei 817 Knoten). Analyse (tests/bench_place_path.gd): der synchrone Klick-Pfad
+  (place_building + resync) ist nur ~8 ms; recompute_visibility (67 ms) läuft NICHT
+  beim Platzieren (inkrementelles _reveal, der erste Fix ist intakt). Der Hitch steckte
+  allein im Build-Spot-Redraw.
+  Gelöst durch BUDGETIERTEN Aufbau: der Renderer scannt nur SPOT_BUDGET (64) Knoten
+  pro Frame und verteilt den Aufbau über mehrere Frames; das fertige Overlay bleibt
+  sichtbar bis die neue Liste komplett ist (atomarer Tausch, _process erzwingt Redraws).
+  → Pro Frame ~9 ms, KONSTANT egal wie groß das Reich (mehr Territorium = mehr Frames,
+  nicht teurere Frames). Platzieren ist instant; das Overlay zieht in ~0,1 s nach.
+
   Messung (tests/bench_buildspots.gd, 96×96, Territorium 271 Knoten):
     (a) Vollkarte (alt)        = 538 ms
-    (b) Territorium-Scan       =  83 ms → 38 ms (nach Einpass-BQ)
-    (c) Cache-Treffer          =  ~0 ms   (laufender Betrieb)
-  Pro Platzierung also ~14× schneller als zuvor; im Betrieb kein Scan. Tests
-  _test_build_spots_within_territory + _test_build_spot_bq_equivalence. 693 Kern-Tests
-  grün, Smoke-Test grün.
-
-  Offen (Folgearbeit, falls bei sehr großem Reich noch spürbar): regional inkrementell
-  nachziehen statt das ganze Territorium neu zu scannen (nur die Zellen um die Änderung).
+    (b) Territorium, 1 Frame   = 38 ms  (nach Einpass-BQ)
+    (c) Cache-Treffer          = ~0 ms  (laufender Betrieb)
+    (d) budgetiert, 64/Frame   = ~9 ms/Frame  <-- realer Hitch, reichunabhängig
+  Tests _test_build_spots_within_territory + _test_build_spot_bq_equivalence. 693
+  Kern-Tests grün, Smoke-Test grün.
 
 
 [2026-06-11] (TEILWEISE) find_route baute den Flaggengraphen bei jedem Aufruf neu

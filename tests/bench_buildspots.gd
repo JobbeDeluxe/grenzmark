@@ -43,9 +43,16 @@ func _initialize() -> void:
 		state.actual_build_spot_bq(tx, ty)
 	var d_terr := Time.get_ticks_usec() - t
 
-	print("(a) Vollkarte (alt)     : %7.2f ms  (%d Zellen, %d Spots)" % [d_full / 1000.0, map.width * map.height, drawn])
-	print("(b) Territorium (neu)   : %7.2f ms  (%d Zellen)" % [d_terr / 1000.0, scanned])
-	print("(c) Cache-Treffer (Sig) :    ~0.00 ms  (nur Liste neu zeichnen, kein Scan)")
+	# (d) Budgetiert: der Renderer scannt nur SPOT_BUDGET (64) Knoten pro Frame und
+	# verteilt den Aufbau über mehrere Frames → das ist der reale Pro-Frame-Hitch.
+	var budget := 64
+	var per_frame := d_terr * budget / float(max(scanned, 1))
+	var frames := int(ceil(scanned / float(budget)))
+
+	print("(a) Vollkarte (alt)        : %7.2f ms  (%d Zellen, %d Spots)" % [d_full / 1000.0, map.width * map.height, drawn])
+	print("(b) Territorium, 1 Frame   : %7.2f ms  (%d Zellen)" % [d_terr / 1000.0, scanned])
+	print("(c) Cache-Treffer (Sig)    :    ~0.00 ms  (laufender Betrieb, kein Scan)")
+	print("(d) budgetiert (%d/Frame)  : %7.2f ms/Frame über %d Frames  <-- realer Hitch" % [budget, per_frame / 1000.0, frames])
 	quit(0)
 
 
