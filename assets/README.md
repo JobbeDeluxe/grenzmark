@@ -164,8 +164,9 @@ field_ripe`). Die Werte stehen in `assets/tuning.json` (`field_growth_stage_tick
 nicht hartcodiert.
 
 Feld-PNGs sollten flach am Boden liegen, kachel-/clusterfähig wirken und den
-Knoten nicht wie ein hohes Gebäude verdecken. Ideale Quellgröße: ca. 48×32 bis
-64×48 px mit Transparenz, leicht dimetrisch, Unterkante am Bodenkontakt.
+Knoten nicht wie ein hohes Gebäude verdecken. Als finale Spiel-Assets dürfen sie
+deutlich höher aufgelöst sein als Waren-Icons; aktuell liegen sie mit 512×384 px
+und Transparenz vor, leicht dimetrisch, Unterkante am Bodenkontakt.
 
 ### Bauplatz & 2-stufiger Baufortschritt (`assets/construction/`)
 Der Bau läuft in **zwei sichtbaren Stufen**:

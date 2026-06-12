@@ -28,6 +28,10 @@ transparent background, same footprint and camera angle for every growth stage,
 single ground patch, no building, no farmer, no text, no border
 ```
 
+Aktuelle v2-Quelle: `field_growth_source_v2.png` / `field_growth_alpha_v2.png`.
+Die finalen Feld-PNGs werden daraus groß ausgeschnitten und liegen in
+`assets/objects/` als 512×384-PNGs, damit sie beim Zoomen nicht verwaschen wirken.
+
 Recherche-Stand für die Mechanik:
 
 - S2/10th-Quellen beschreiben das Feld als gesät -> gewachsen -> reif -> geerntet.
@@ -51,9 +55,9 @@ Seit dem S2-näheren Warenmodell sind die zwölf Werkzeuge eigene Waren. Die
 fertigen Spiel-Assets liegen unter `assets/goods/<nummer>.png`; in diesem Ordner
 können Quellbilder, Previews und Prompt-Ergebnisse gesammelt werden.
 
-Die aktuellen Platzhalter dürfen nicht beim generischen Werkzeug-Icon bleiben.
-Jedes Werkzeug braucht ein eigenes lesbares Motiv, damit Lager-/Inventarfenster
-und Warenleisten eindeutig bleiben:
+Die alten Platzhalter in `assets/goods/19.png` bis `30.png` wurden durch
+`tool_icons_alpha_v3_clean.png` ersetzt. Jedes Werkzeug braucht ein eigenes
+lesbares Motiv, damit Lager-/Inventarfenster und Warenleisten eindeutig bleiben:
 
 | Ziel-Datei | Bedeutung | Prompt-Kern |
 |---|---|---|
