@@ -317,13 +317,16 @@ func base_offset(size: int) -> float:
 	return _bld_dims(size).x * 0.5 + 6.0
 
 
-# Dichter Original-Warenhaufen: feste Offset-Tabelle (relativ zum Flaggenknoten),
-# Füll-Reihenfolge von unten/Fuß nach oben. Bis FLAG_CAP (8) Positionen, leicht
-# überlappend rund um den Flaggenfuß. KEIN RNG → lockstep-deterministisch.
+# Dichter Original-Warenhaufen rund um den Flaggenfuß (#38).
+# Übernommen aus RTTR `noFlag::Draw` (WARES_POS): die Waren liegen in einem flachen
+# Fächer abwechselnd links/rechts der Flagge, leicht nach hinten ansteigend — NICHT
+# als vertikaler Stapel, der den Pfahl überdeckt. Werte sind die Original-Offsets
+# (Anker = Unterkante/Mitte der Ware am Flaggenfuß), ~×1.15 auf den größeren
+# Grenzmark-Knoten (64 vs. 56 px) skaliert. Reihenfolge = Waren-Index; gezeichnet
+# wird hinten→vorne (Index hoch→0), Index 0 liegt vorn auf. KEIN RNG → deterministisch.
 const GOODS_HEAP: Array[Vector2] = [
-	Vector2(-4, -5), Vector2(3, -5), Vector2(-11, -5),     # untere Reihe (Fuß)
-	Vector2(-8, -11), Vector2(-1, -11), Vector2(-15, -10), # mittlere Reihe
-	Vector2(-5, -16), Vector2(2, -16),                     # Spitze
+	Vector2(0, 0), Vector2(-5, 0), Vector2(3, -1), Vector2(-8, -1),
+	Vector2(7, -2), Vector2(-12, -2), Vector2(10, -6), Vector2(-15, -6),
 ]
 const GOOD_ICON_DENSE := 9.0   # Haufen-Icons minimal größer („satter", #38)
 const GOOD_ICON_GRID := 8.0
@@ -342,20 +345,20 @@ func _draw_goods() -> void:
 		var node := map.node_world(x, y)
 		var n := mini(queue.size(), Economy.FLAG_CAP)
 		if dense:
-			# Hinten (oben) zuerst zeichnen, damit vordere (untere) Waren korrekt
-			# überlappen: die ersten n Heap-Plätze nach y sortiert ausgeben.
-			var order := range(n)
-			order.sort_custom(func(a, b): return GOODS_HEAP[a].y < GOODS_HEAP[b].y)
-			for k in order:
+			# Wie im Original von hinten (höchster Index) nach vorne (Index 0) zeichnen,
+			# damit die vorderen Waren die hinteren korrekt überlappen. Offset ist die
+			# Unterkante/Mitte der Ware → top-left = Anker − (Icon/2, Icon).
+			var anchor := Vector2(GOOD_ICON_DENSE * 0.5, GOOD_ICON_DENSE)
+			for k in range(n - 1, -1, -1):
 				var gt: int = (queue[k] as Economy.Good).type
-				var pos := node + GOODS_HEAP[k]
+				var pos := node + GOODS_HEAP[k] - anchor
 				var tex := GameTheme.good_texture(gt)
 				if tex != null:
 					draw_texture_rect(tex, Rect2(pos, Vector2(GOOD_ICON_DENSE, GOOD_ICON_DENSE)), false)
 				else:
 					draw_rect(Rect2(pos, Vector2(5, 5)), GameTheme.good_color(gt))
-			# Haufen reicht links/oben über den Knoten hinaus → Okklusionsbox anpassen.
-			_occlude_box(node.y, node.x - 18.0, node.y - 40.0, node.x + 16.0, node.y + 6.0)
+			# Fächer reicht seitlich über den Knoten hinaus → Okklusionsbox anpassen.
+			_occlude_box(node.y, node.x - 22.0, node.y - 40.0, node.x + 18.0, node.y + 4.0)
 		else:
 			var base := node + Vector2(6, -2)
 			for k in n:
