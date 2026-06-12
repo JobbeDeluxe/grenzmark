@@ -85,9 +85,10 @@ func _dir6(v: Vector2) -> int:
 var _occluders: Array = []   # Gebäude/Bäume mit Sprite (für Y-Occlusion); gecacht
 var _occ_dirty := true        # neu aufbauen? (von World bei Karten-Änderung gesetzt)
 
-const BUILDING_SIDE_CLEAR_DEPTH := 44.0
+const BUILDING_SIDE_CLEAR_DEPTH := 22.0
 const BUILDING_RIGHT_OCCLUSION_MAX := 30.0
 const BUILDING_RIGHT_OCCLUSION_FACTOR := 0.32
+const BUILDING_RIGHT_DEPTH_SLOPE := 0.85
 
 
 ## Von World aufgerufen, wenn sich die statische Karte ändert (Bau/Abriss/Baum).
@@ -212,7 +213,9 @@ func _is_building_side_lane_clear(o: Dictionary, ref_y: float, center_x: float) 
 	var depth := float(o.base.y) - ref_y
 	if depth > float(o.get("clear_depth", 0.0)):
 		return false
-	return center_x > float(o.base.x) + float(o.get("right_core", 999999.0))
+	var side_x := float(o.base.x) + float(o.get("right_core", 999999.0)) \
+		+ depth * BUILDING_RIGHT_DEPTH_SLOPE
+	return center_x > side_x
 
 
 ## Geist-Vorschau des gewählten Gebäudes am Mauszeiger (Stufe 8):
