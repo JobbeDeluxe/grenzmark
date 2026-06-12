@@ -10,6 +10,7 @@ const MAP_H := 96
 const MAP_SEED := 1337
 const TICK_HZ := 30.0
 const SAVE_PATH := "user://settlers_save.dat"
+const BUILD_TILE_SIZE := Vector2(92, 108)
 
 enum { MODE_SELECT, MODE_FLAG, MODE_ROAD, MODE_BUILD, MODE_DELETE }
 
@@ -911,7 +912,7 @@ func _build_columns_for_width(content_scale: float) -> int:
 	if _build_panel == null:
 		return 4
 	var usable := maxf(_panel_size(_build_panel).x - 32.0 * UISkin.ui_scale(), 120.0)
-	var cell := (80.0 * UISkin.ui_scale() * content_scale) + 6.0 * UISkin.ui_scale()
+	var cell := (BUILD_TILE_SIZE.x * UISkin.ui_scale() * content_scale) + 6.0 * UISkin.ui_scale()
 	return clampi(int(floor(usable / maxf(cell, 1.0))), 2, 6)
 
 
@@ -941,6 +942,15 @@ func _rescale_build_buttons(root: Node, content_scale: float) -> void:
 			btn.custom_minimum_size = base * UISkin.ui_scale() * content_scale
 			btn.add_theme_font_size_override("font_size",
 				maxi(8, roundi(12.0 * UISkin.ui_scale() * content_scale)))
+		if child is Control and child.has_meta("base_min_size"):
+			var ctrl := child as Control
+			var base_min: Vector2 = ctrl.get_meta("base_min_size")
+			ctrl.custom_minimum_size = base_min * UISkin.ui_scale() * content_scale
+		if child is Label and child.has_meta("base_font_size"):
+			var lab := child as Label
+			var font_size := int(lab.get_meta("base_font_size"))
+			lab.add_theme_font_size_override("font_size",
+				maxi(8, roundi(float(font_size) * UISkin.ui_scale() * content_scale)))
 		_rescale_build_buttons(child, content_scale)
 
 
@@ -1714,13 +1724,7 @@ func _show_category(cat: String) -> void:
 	for id in BuildingCatalog.menu_order():
 		if _building_in_group(id, cat) and _building_allowed_by_filter(id):
 			var cb := _build_from_spot.bind(id) if build_window_spot.x >= 0 else _select_building.bind(id)
-			var tex := GameTheme.building_texture(id)
-			# S2-artige Icon-Kacheln: nur das Gebäude-Bild (hoch statt breit-flach,
-			# damit Sprites nicht gestaucht werden), Name im Tooltip. Nur ohne
-			# eigene Grafik fällt das Kürzel als Beschriftung zurück.
-			var label := "" if tex != null else GameTheme.building_label(id)
-			_build_icon_button(_build_row, label, cb,
-				_building_tooltip(id), tex, Vector2(80, 84), content_scale)
+			_build_building_button(_build_row, id, cb, content_scale)
 	if _build_row.get_child_count() == 0:
 		var empty := Label.new()
 		empty.text = "Keine passenden Gebäude in dieser Kategorie."
@@ -1811,6 +1815,72 @@ func _tbutton(row: Container, text: String, cb: Callable) -> Button:
 	btn.text = text
 	UISkin.apply_button(btn)
 	btn.pressed.connect(cb)
+	row.add_child(btn)
+	return btn
+
+
+func _build_building_button(row: Container, id: String, cb: Callable, content_scale := 1.0) -> Button:
+	var d := BuildingCatalog.get_def(id)
+	var name := String(d.get("name", id))
+	var btn := Button.new()
+	btn.text = ""
+	btn.tooltip_text = _building_tooltip(id)
+	UISkin.apply_button(btn)
+	btn.custom_minimum_size = BUILD_TILE_SIZE * UISkin.ui_scale() * content_scale
+	btn.set_meta("base_size", BUILD_TILE_SIZE)
+	btn.pressed.connect(cb)
+
+	var box := VBoxContainer.new()
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.set_anchors_preset(Control.PRESET_FULL_RECT)
+	box.offset_left = 5
+	box.offset_top = 4
+	box.offset_right = -5
+	box.offset_bottom = -4
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 2)
+	btn.add_child(box)
+
+	var tex := GameTheme.building_texture(id)
+	if tex != null:
+		var icon := TextureRect.new()
+		icon.texture = tex
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		icon.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		icon.custom_minimum_size = Vector2(76, 66) * UISkin.ui_scale() * content_scale
+		icon.set_meta("base_min_size", Vector2(76, 66))
+		box.add_child(icon)
+	else:
+		var fallback := Label.new()
+		fallback.text = GameTheme.building_label(id)
+		fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		UISkin.apply_label(fallback, false, 16)
+		fallback.set_meta("base_font_size", 16)
+		fallback.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		box.add_child(fallback)
+
+	var label := Label.new()
+	label.text = name
+	label.tooltip_text = name
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.clip_text = true
+	label.max_lines_visible = 2
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.custom_minimum_size = Vector2(BUILD_TILE_SIZE.x - 10, 28) \
+		* UISkin.ui_scale() * content_scale
+	label.set_meta("base_min_size", Vector2(BUILD_TILE_SIZE.x - 10, 28))
+	label.set_meta("base_font_size", 9)
+	UISkin.apply_label(label, false, 9)
+	box.add_child(label)
+
 	row.add_child(btn)
 	return btn
 

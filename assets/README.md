@@ -325,7 +325,7 @@ Stand nach Original-Angleichung (mittlere Häuser, Minen und Festung verkleinert
 
 | Gebäude | Kat. | Skalar | gez. px | **Kacheln breit** | Orig-Äquiv px (×7⁄8) |
 |---|---|---|---|---|---|
-| hq | CASTLE | 58 | 149 | 2,32 | 130 |
+| hq | CASTLE | 54 | 139 | 2,17 | 121 |
 | fortress | CASTLE | 84 | 160 | 2,49 | 140 |
 | farm | CASTLE | 69 | 131 | 2,05 | 115 |
 | pigfarm | CASTLE | 68 | 129 | 2,02 | 113 |
@@ -343,7 +343,7 @@ Stand nach Original-Angleichung (mittlere Häuser, Minen und Festung verkleinert
 | ironmine | MINE | 36 | 68 | 1,07 | 60 |
 | goldmine | MINE | 36 | 68 | 1,07 | 60 |
 | granitemine | MINE | 36 | 68 | 1,07 | 60 |
-| storehouse | HOUSE | 40* | 76 | 1,19 | 66 |
+| storehouse | HOUSE | 58 | 110 | 1,72 | 96 |
 | woodcutter | HUT | 37 | 70 | 1,10 | 62 |
 | forester / quarry / fishery / hunter / guardhouse | HUT | 34* | 65 | 1,01 | 57 |
 | catapult | HOUSE | 31 | 59 | 0,92 | 52 |
