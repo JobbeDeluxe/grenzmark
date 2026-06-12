@@ -1061,7 +1061,36 @@ func _test_farm_fields() -> void:
 	var sow := eco._find_farm_target(farm_pos)
 	_check(sow.x >= 0, "Farm: findet freien Ackerplatz im leeren Wiesen-Umfeld")
 	_check(WorldState.hex_distance(farm_pos, sow) <= Economy.FARM_RADIUS,
-		"Farm: Saatplatz liegt im Original-Radius 2")
+		"Farm: Saatplatz liegt im Arbeitsradius (FARM_RADIUS)")
+
+	# #7/#26: Auf offener Wiese müssen rund um den Hof viele Felder gleichzeitig
+	# möglich sein (nicht nur die 3 aus dem zu kleinen Radius). Gierig nicht-benachbarte
+	# Saatplätze im Radius zählen — Burg-Fußabdruck kostet den inneren Bereich.
+	var sim_map := _flat_map(40, 40)
+	var sim_state := WorldState.new(sim_map)
+	var sim_eco := Economy.new(sim_state)
+	var sim_farm := sim_state.place_building(20, 20, WorldState.BQ_CASTLE, false, "farm", 0, false)
+	sim_eco.resync()
+	var placed: Array[Vector2i] = []
+	for r in range(1, Economy.FARM_RADIUS + 1):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var fx: int = sim_farm.pos.x + dx
+				var fy: int = sim_farm.pos.y + dy
+				if not sim_map.in_bounds(fx, fy):
+					continue
+				if WorldState.hex_distance(sim_farm.pos, Vector2i(fx, fy)) != r:
+					continue
+				if not sim_eco._is_field_spot(fx, fy):
+					continue
+				var ok := true
+				for q in placed:
+					if WorldState.hex_distance(Vector2i(fx, fy), q) <= 1:
+						ok = false
+				if ok:
+					placed.append(Vector2i(fx, fy))
+	_check(placed.size() >= 6,
+		"Farm: viele gleichzeitige Felder auf offener Wiese (>=6, ist %d)" % placed.size())
 
 	# Säen: Feld entsteht, aber KEIN Getreide-Ertrag.
 	bs.worker_target = sow

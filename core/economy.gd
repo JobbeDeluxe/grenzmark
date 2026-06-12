@@ -24,7 +24,13 @@ const OUT_CAP := 4             # Ausgangspuffer eines Gebäudes
 const PROD_WINDOW := 1800      # rollendes Bewertungsfenster (Ticks) für die Produktivität %
 const RES_RADIUS := 6          # Suchradius für Baum/Stein/Pflanzplatz
 const ORE_RADIUS := 4          # Suchradius für Erz / Wasser
-const FARM_RADIUS := 2         # Suchradius für Bauernhof-Felder (RTTR GetWorkRadius=2)
+const FARM_RADIUS := 3         # Suchradius für Bauernhof-Felder. RTTR nutzt GetWorkRadius=2,
+                               # dort steht das Gebäude aber auf EINEM Knoten. Grenzmarks
+                               # Burg-Bauernhof belegt 4 Knoten (pos + 3 Extensions) + Flagge;
+                               # die „kein Feld neben Gebäude"-Regel sperrt damit fast den ganzen
+                               # inneren Radius-2-Bereich (nur ~3 gleichzeitige Felder). Radius 3
+                               # gleicht den größeren Fußabdruck aus → ~8 gleichzeitige Felder,
+                               # originalnah „viele Felder". (#7/#26)
 const SOLDIER_TICKS := 120     # Ticks, um aus einem Schwert einen Soldaten zu machen
 const MARCH_SPEED := 0.07      # Tempo marschierender Soldaten (Segmente/Tick)
 const ATTACK_SPEED := 1.3      # Tempo angreifender Soldaten (Weltpixel/Tick)
