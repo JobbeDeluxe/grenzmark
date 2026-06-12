@@ -466,6 +466,16 @@ Mögliche Lösungen (für später):
   Sprite-Größe bleibt per design.json einstellbar (texture_scale), falls weiter
   verkleinert gewünscht.
 
+[2026-06-12] (ZURÜCKGENOMMEN) road_margin_blocked entfernt (#37)
+------------------------------------------------------------------------
+  Der obige Sperrkranz war NICHT originaltreu und zog die Bebauung künstlich
+  auseinander (Wege „blockiert", Gebäude zu weit auseinander). RTTR/S2 lässt
+  Straßen direkt an Gebäuden entlanglaufen; nur die belegten Gebäude-/Burg-
+  Extension-Knoten sind tabu (= RTTR noExtension, BlockingManner::Single).
+  road_margin_blocked/_adjacent_to_building/_building_blocks_road_margin entfernt.
+  Falls Straßen sichtbar den Sprite-Fuß kreuzen, über Sprite-Anker/-Offset
+  (Design-Editor) lösen statt die Spiel-Logik zu sperren.
+
 
 [2026-06-07] (BEHOBEN) Bauhilfe zeigte baubare Punkte außerhalb des Gebiets
 ------------------------------------------------------------------------

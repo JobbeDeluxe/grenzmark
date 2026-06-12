@@ -56,7 +56,7 @@ func _initialize() -> void:
 	_test_material_after_split()
 	_test_material_after_road_removed()
 	_test_carrier_kept_on_split()
-	_test_road_avoids_building()
+	_test_road_runs_adjacent_to_building()
 	_test_road_preview_matches_build()
 	_test_territory_closest_wins()
 	_test_military_min_distance()
@@ -1589,24 +1589,30 @@ func _test_carrier_kept_on_split() -> void:
 	_check(active_after >= 1, "Bestehender Träger bleibt nach Teilung sofort aktiv")
 
 
-## Straßen-Zwischenknoten dürfen nicht direkt an einem Gebäude liegen
-## (Fußabdruck wie in S2 — sonst kreuzt die Straße das Gebäude-Sprite).
-func _test_road_avoids_building() -> void:
+## Originaltreu (RTTR/S2, #37): Straßen dürfen DICHT an Gebäuden entlanglaufen.
+## Tabu sind nur die belegten Gebäude-/Extension-Knoten selbst — KEIN kosmetischer
+## Sperrkranz um Häuser/Burgen mehr (der hat die Bebauung künstlich auseinandergezogen).
+func _test_road_runs_adjacent_to_building() -> void:
 	var map := _flat_map(40, 40)
 	var state := WorldState.new(map)
 	var hq := state.place_building(20, 20, WorldState.BQ_CASTLE, true, "hq", 9, false)
-	var hut := state.place_building(15, 15, WorldState.BQ_HUT, false, "woodcutter", 0, false)
-	_check(hut != null, "Kleines Gebäude für Straßenabstand-Test platzierbar")
-	if hut != null:
-		var hn := map.neighbor(hut.pos.x, hut.pos.y, Grid.E)
-		_check(not state.road_margin_blocked(hn.x, hn.y),
-			"Kleines Gebäude blockt umliegende Straßenknoten nicht")
+	var house := state.place_building(15, 15, WorldState.BQ_HOUSE, false, "sawmill", 0, false)
+	_check(house != null, "Haus für Straßen-Dichte-Test platzierbar")
+	if house == null:
+		return
+	# Ein freier Knoten DIREKT neben dem Haus ist jetzt für Straßen nutzbar
+	# (früher durch den Margin-Ring gesperrt).
+	var adj := map.neighbor(house.pos.x, house.pos.y, Grid.NE)
+	_check(state._occ(adj.x, adj.y) == WorldState.OBJ_NONE and state.node_walkable(adj.x, adj.y),
+		"Knoten direkt neben Haus ist für Straßen frei/begehbar (kein Sperrkranz)")
+	# Straße bleibt planbar — und KEIN Zwischenknoten liegt auf einem belegten
+	# Gebäude-/Extension-Knoten (Burg-Extensions bleiben tabu).
 	state.place_flag(24, 26)
 	var path := state.plan_road(hq.flag_pos, Vector2i(24, 26))
-	_check(not path.is_empty(), "Straße trotz Gebäude-Umweg planbar")
+	_check(not path.is_empty(), "Straße planbar")
 	for k in range(1, path.size() - 1):
-		_check(not state._adjacent_to_building(path[k].x, path[k].y),
-			"Kein Straßen-Zwischenknoten direkt am Gebäude")
+		_check(state._occ(path[k].x, path[k].y) == WorldState.OBJ_NONE,
+			"Straße läuft nicht über belegte Gebäude-/Extension-Knoten")
 
 
 ## #23: Die Vorschau (plan_road) muss exakt den Pfad liefern, den der Bau

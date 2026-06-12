@@ -637,29 +637,6 @@ func _remove_road(r: Road) -> void:
 const ROAD_SEARCH_CAP := 6000   # max. A*-Knoten beim Straßenplanen (Freeze-Schutz)
 
 
-## Mittlere/große Gebäude bekommen einen Straßen-Sperrkranz, damit Wege nicht
-## sichtbar durch den Sprite-Fuß laufen. Kleine Hütten blocken nur ihren Knoten.
-func _building_blocks_road_margin(b: Building) -> bool:
-	return b.size >= BQ_HOUSE or b.is_hq
-
-
-## Ist dieser freie Knoten für Straßen durch einen nahen Gebäude-Fuß blockiert?
-## Die Eingangsflagge selbst ist OBJ_FLAG (kein Gebäude) und bleibt nutzbar.
-func road_margin_blocked(x: int, y: int) -> bool:
-	for dir in Grid.DIRS:
-		var n := map.neighbor(x, y, dir)
-		if n.x < 0:
-			continue
-		var b: Building = buildings.get(map.idx(n.x, n.y), null)
-		if b != null and _building_blocks_road_margin(b):
-			return true
-	return false
-
-
-func _adjacent_to_building(x: int, y: int) -> bool:
-	return road_margin_blocked(x, y)
-
-
 func can_place_road_flag(x: int, y: int, owner := 0) -> bool:
 	if not map.in_bounds(x, y) or _occ(x, y) != OBJ_ROAD:
 		return false
@@ -736,10 +713,9 @@ func plan_road(from: Vector2i, to: Vector2i, owner := -1) -> Array[Vector2i]:
 				var area := owner_territory(road_owner)
 				if not area.is_empty() and not in_owner_territory(road_owner, n.x, n.y):
 					continue
-				# Straßen laufen nicht direkt an mittleren/großen Gebäuden entlang,
-				# sonst kreuzen sie sichtbar den Sprite-Fußabdruck.
-				if road_margin_blocked(n.x, n.y):
-					continue
+				# Kein kosmetischer Sperrkranz mehr (#37): Straßen dürfen — wie in S2/RTTR —
+				# direkt an Gebäuden entlanglaufen. Nur die belegten Gebäude-/Extension-
+				# Knoten selbst sind tabu (oben über _occ != OBJ_NONE schon ausgeschlossen).
 			else:
 				# Ziel: begehbar; entweder frei (neue Flagge) oder bestehende Flagge.
 				if not node_walkable(n.x, n.y):
