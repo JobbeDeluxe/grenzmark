@@ -85,6 +85,10 @@ func _dir6(v: Vector2) -> int:
 var _occluders: Array = []   # Gebäude/Bäume mit Sprite (für Y-Occlusion); gecacht
 var _occ_dirty := true        # neu aufbauen? (von World bei Karten-Änderung gesetzt)
 
+const BUILDING_SIDE_CLEAR_DEPTH := 44.0
+const BUILDING_RIGHT_OCCLUSION_MAX := 30.0
+const BUILDING_RIGHT_OCCLUSION_FACTOR := 0.32
+
 
 ## Von World aufgerufen, wenn sich die statische Karte ändert (Bau/Abriss/Baum).
 func invalidate_occluders() -> void:
@@ -129,7 +133,15 @@ func _collect_occluders() -> void:
 		if b.is_hq:
 			sc *= GameTheme.hq_scale()
 		var sz := GameTheme.building_dims(b.size, b.def_id).x * sc
-		_occluders.append({ base = basep, tex = tex, w = sz, h = sz })
+		_occluders.append({
+			base = basep,
+			tex = tex,
+			w = sz,
+			h = sz,
+			kind = "building",
+			right_core = minf(sz * BUILDING_RIGHT_OCCLUSION_FACTOR, BUILDING_RIGHT_OCCLUSION_MAX),
+			clear_depth = BUILDING_SIDE_CLEAR_DEPTH,
+		})
 	for i in map.objects:
 		if int(map.objects[i]) != MapData.MO_TREE:
 			continue
@@ -171,6 +183,8 @@ func _occlude_box(ref_y: float, left: float, top: float, right: float, bottom: f
 	for o in _occluders:
 		if o.base.y <= ref_y:
 			continue  # Okkluder steht hinter/neben → Objekt bleibt davor
+		if _is_building_side_lane_clear(o, ref_y, (left + right) * 0.5):
+			continue
 		var ox: float = o.base.x - o.w * 0.5
 		var oy: float = o.base.y - o.h
 		var ow: float = o.w
@@ -190,6 +204,15 @@ func _occlude_box(ref_y: float, left: float, top: float, right: float, bottom: f
 		var rh := (iy1 - iy0) / oh * th
 		draw_texture_rect_region(o.tex, Rect2(ix0, iy0, ix1 - ix0, iy1 - iy0),
 			Rect2(rx, ry, rw, rh))
+
+
+func _is_building_side_lane_clear(o: Dictionary, ref_y: float, center_x: float) -> bool:
+	if String(o.get("kind", "")) != "building":
+		return false
+	var depth := float(o.base.y) - ref_y
+	if depth > float(o.get("clear_depth", 0.0)):
+		return false
+	return center_x > float(o.base.x) + float(o.get("right_core", 999999.0))
 
 
 ## Geist-Vorschau des gewählten Gebäudes am Mauszeiger (Stufe 8):

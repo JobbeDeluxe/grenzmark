@@ -54,167 +54,164 @@
   },
   "building_offset": {
     "bakery": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "brewery": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "catapult": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "coalmine": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "farm": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "fortress": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "goldmine": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "granitemine": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "hq": [
       20,
       22
     ],
     "ironmine": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "mill": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "mint": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "pigfarm": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "sawmill": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "slaughterhouse": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "smelter": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "smithy": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "toolmaker": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "watchtower": [
-      0,
-      0
+      0.0,
+      0.0
     ],
     "well": [
-      0,
-      0
+      0.0,
+      0.0
     ]
   },
   "building_sizes": {
     "_hinweis": "Einzelne Gebaeude individuell groesser/kleiner (ueberschreibt sizes).",
     "bakery": [
-      47,
-      36
+      47.0,
+      36.0
     ],
     "brewery": [
-      48,
-      36
+      48.0,
+      36.0
     ],
     "catapult": [
-      31,
-      36
+      31.0,
+      36.0
     ],
     "coalmine": [
-      36,
-      26
+      36.0,
+      26.0
     ],
     "farm": [
-      69,
-      46
+      69.0,
+      46.0
     ],
     "fortress": [
-      84,
-      46
+      84.0,
+      46.0
     ],
     "goldmine": [
-      36,
-      26
+      36.0,
+      26.0
     ],
     "granitemine": [
-      36,
-      26
+      36.0,
+      26.0
     ],
-    "hq": [
-      58,
-      51
-    ],
+    "hq": 54,
     "ironmine": [
-      36,
-      26
+      36.0,
+      26.0
     ],
     "mill": [
-      50,
-      36
+      50.0,
+      36.0
     ],
     "mint": [
-      46,
-      36
+      46.0,
+      36.0
     ],
     "pigfarm": [
-      68,
-      46
+      68.0,
+      46.0
     ],
     "sawmill": [
-      47,
-      36
+      47.0,
+      36.0
     ],
     "slaughterhouse": [
-      48,
-      36
+      48.0,
+      36.0
     ],
     "smelter": [
-      47,
-      36
+      47.0,
+      36.0
     ],
     "smithy": [
-      46,
-      36
+      46.0,
+      36.0
     ],
     "toolmaker": [
-      45,
-      36
+      45.0,
+      36.0
     ],
     "watchtower": [
-      50,
-      36
+      50.0,
+      36.0
     ],
     "well": [
-      20,
-      30
+      20.0,
+      30.0
     ],
     "woodcutter": [
       37.0,
@@ -224,88 +221,88 @@
   "entrance": {
     "_hinweis": "Tuer relativ zum Gebaeudeknoten in Pixeln. 'default' gilt fuer alle, je def_id ueberschreibbar.",
     "bakery": [
-      0,
-      -6
+      0.0,
+      -6.0
     ],
     "brewery": [
-      0,
-      -6
+      0.0,
+      -6.0
     ],
     "catapult": [
-      0,
-      -6
+      0.0,
+      -6.0
     ],
     "coalmine": [
-      0,
-      -14
+      0.0,
+      -14.0
     ],
     "default": [
       0.0,
       -6.0
     ],
     "farm": [
-      42,
-      -30
+      42.0,
+      -30.0
     ],
     "fortress": [
-      0,
-      -6
+      0.0,
+      -6.0
     ],
     "goldmine": [
-      -8,
-      -20
+      -8.0,
+      -20.0
     ],
     "granitemine": [
-      -10,
-      -9
+      -10.0,
+      -9.0
     ],
     "hq": [
       -15,
       12
     ],
     "ironmine": [
-      0,
-      -10
+      0.0,
+      -10.0
     ],
     "mill": [
-      -8,
-      -18
+      -8.0,
+      -18.0
     ],
     "mint": [
-      0,
-      -6
+      0.0,
+      -6.0
     ],
     "pigfarm": [
-      0,
-      -6
+      0.0,
+      -6.0
     ],
     "sawmill": [
-      0,
-      -6
+      0.0,
+      -6.0
     ],
     "slaughterhouse": [
-      0,
-      -6
+      0.0,
+      -6.0
     ],
     "smelter": [
-      0,
-      -6
+      0.0,
+      -6.0
     ],
     "smithy": [
-      0,
-      -6
+      0.0,
+      -6.0
     ],
     "toolmaker": [
-      0,
-      -6
+      0.0,
+      -6.0
     ],
     "watchtower": [
-      -23,
-      -9
+      -23.0,
+      -9.0
     ],
     "well": [
-      0,
-      -6
+      0.0,
+      -6.0
     ]
   },
   "flag_size": [
