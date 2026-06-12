@@ -274,6 +274,7 @@ func _apply_start_options() -> void:
 		renderer.queue_redraw()
 	if economy != null:
 		economy.ai_enabled = UISkin.option_bool("start_ai", true)
+	_sync_hover_context()
 
 
 func _cycle_ai() -> void:
@@ -1116,6 +1117,7 @@ func _update_settings_text() -> void:
 func _toggle_build_spots() -> void:
 	renderer.show_build_spots = not renderer.show_build_spots
 	UISkin.set_option_bool("start_build_spots", renderer.show_build_spots)
+	_sync_hover_context()
 	renderer.queue_redraw()
 	_update_labels()
 
@@ -1843,6 +1845,7 @@ func _select_building(id: String) -> void:
 	_clear_preview()
 	if unit_renderer != null:
 		unit_renderer.build_preview_id = id
+	_sync_hover_context()
 	_update_labels()
 
 
@@ -2065,7 +2068,16 @@ func _set_mode(m: int) -> void:
 	_clear_preview()
 	if unit_renderer != null:
 		unit_renderer.build_preview_id = ""   # Geist-Vorschau nur im Bau-Modus
+	_sync_hover_context()
 	_update_labels()
+
+
+func _sync_hover_context() -> void:
+	if unit_renderer == null:
+		return
+	var build_context := mode == MODE_FLAG or mode == MODE_ROAD or mode == MODE_BUILD \
+		or (renderer != null and renderer.show_build_spots)
+	unit_renderer.show_hover_build_marker = build_context
 
 
 func _update_hover() -> void:

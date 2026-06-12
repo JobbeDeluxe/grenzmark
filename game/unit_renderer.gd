@@ -14,6 +14,7 @@ var road_start := Vector2i(-1, -1)
 var preview_path: Array[Vector2i] = []
 var preview_ok := false
 var build_preview_id := ""   # im Bau-Modus: Geist dieses Gebäudes am Mauszeiger
+var show_hover_build_marker := false # Bauplatz-Badge nur in explizitem Baukontext
 var _anim_time := 0.0
 var _font: Font = ThemeDB.fallback_font
 
@@ -430,16 +431,15 @@ func _draw_hover() -> void:
 	if not state.map.in_bounds(hover.x, hover.y):
 		return
 	var p := state.map.node_world(hover.x, hover.y)
-	var road_flag := state.can_place_road_flag(hover.x, hover.y)
-	var build_bq := state.actual_build_spot_bq(hover.x, hover.y)
-	var shown_bq := build_bq if build_bq != WorldState.BQ_NOTHING else (WorldState.BQ_FLAG if road_flag else WorldState.BQ_NOTHING)
-	var shown_as_road_flag := road_flag and build_bq == WorldState.BQ_NOTHING
-	var d := PackedVector2Array([
-		p + Vector2(0, -11), p + Vector2(16, 0),
-		p + Vector2(0, 11), p + Vector2(-16, 0),
-	])
-	draw_polyline(d + PackedVector2Array([d[0]]), Color(1, 1, 1, 0.88), 2.0)
-	_draw_hover_build_marker(p, shown_bq, shown_as_road_flag)
+	if show_hover_build_marker:
+		var road_flag := state.can_place_road_flag(hover.x, hover.y)
+		var build_bq := state.actual_build_spot_bq(hover.x, hover.y)
+		var shown_bq := build_bq if build_bq != WorldState.BQ_NOTHING \
+			else (WorldState.BQ_FLAG if road_flag else WorldState.BQ_NOTHING)
+		var shown_as_road_flag := road_flag and build_bq == WorldState.BQ_NOTHING
+		_draw_hover_build_marker(p, shown_bq, shown_as_road_flag)
+	else:
+		draw_circle(p, 2.0, Color(1.0, 1.0, 1.0, 0.72))
 	if state.map.in_bounds(road_start.x, road_start.y):
 		var sp := state.map.node_world(road_start.x, road_start.y)
 		draw_circle(sp, 7.0, Color(0.3, 0.6, 1.0, 0.85))
