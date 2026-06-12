@@ -321,29 +321,35 @@ skalenunabhängig, daran orientieren.
 (`gez. Breite = Skalar × texture_scale`; aktuell `texture_scale = 1,9`, HQ × `hq_scale 1,35`.
 Kachel = 64 px. „Orig-Äquiv" = dieselbe Dichte im 56-px-Original.)
 
+Stand nach Original-Angleichung (mittlere Häuser, Minen und Festung verkleinert):
+
 | Gebäude | Kat. | Skalar | gez. px | **Kacheln breit** | Orig-Äquiv px (×7⁄8) |
 |---|---|---|---|---|---|
 | hq | CASTLE | 58 | 149 | 2,32 | 130 |
-| fortress | CASTLE | 97 | 184 | 2,88 | 161 |
+| fortress | CASTLE | 84 | 160 | 2,49 | 140 |
 | farm | CASTLE | 69 | 131 | 2,05 | 115 |
 | pigfarm | CASTLE | 68 | 129 | 2,02 | 113 |
-| mill | HOUSE | 64 | 122 | 1,90 | 106 |
-| slaughterhouse | HOUSE | 64 | 122 | 1,90 | 106 |
-| brewery | HOUSE | 59 | 112 | 1,75 | 98 |
-| bakery | HOUSE | 55 | 104 | 1,63 | 91 |
-| smelter | HOUSE | 54 | 103 | 1,60 | 90 |
-| watchtower | HOUSE | 53 | 101 | 1,57 | 88 |
-| sawmill | HOUSE | 53 | 101 | 1,57 | 88 |
-| smithy | HOUSE | 50 | 95 | 1,48 | 83 |
-| coalmine | MINE | 50 | 95 | 1,48 | 83 |
-| mint | HOUSE | 49 | 93 | 1,45 | 81 |
-| toolmaker | HOUSE | 46 | 87 | 1,37 | 76 |
-| goldmine | MINE | 43 | 82 | 1,28 | 71 |
-| ironmine | MINE | 43 | 82 | 1,28 | 71 |
-| granitemine | MINE | 43 | 82 | 1,28 | 71 |
+| mill | HOUSE | 50 | 95 | 1,48 | 83 |
+| watchtower | HOUSE | 50 | 95 | 1,48 | 83 |
+| slaughterhouse | HOUSE | 48 | 91 | 1,42 | 80 |
+| brewery | HOUSE | 48 | 91 | 1,42 | 80 |
+| bakery | HOUSE | 47 | 89 | 1,40 | 78 |
+| smelter | HOUSE | 47 | 89 | 1,40 | 78 |
+| sawmill | HOUSE | 47 | 89 | 1,40 | 78 |
+| smithy | HOUSE | 46 | 87 | 1,37 | 76 |
+| mint | HOUSE | 46 | 87 | 1,37 | 76 |
+| toolmaker | HOUSE | 45 | 86 | 1,34 | 75 |
+| coalmine | MINE | 36 | 68 | 1,07 | 60 |
+| ironmine | MINE | 36 | 68 | 1,07 | 60 |
+| goldmine | MINE | 36 | 68 | 1,07 | 60 |
+| granitemine | MINE | 36 | 68 | 1,07 | 60 |
+| storehouse | HOUSE | 40* | 76 | 1,19 | 66 |
 | woodcutter | HUT | 37 | 70 | 1,10 | 62 |
+| forester / quarry / fishery / hunter / guardhouse | HUT | 34* | 65 | 1,01 | 57 |
 | catapult | HOUSE | 31 | 59 | 0,92 | 52 |
 | well | HUT | 20 | 38 | 0,59 | 33 |
+
+\* nutzt die Kategorie-Default-Größe (`sizes`), kein eigener `building_sizes`-Eintrag.
 
 **4) Einordnung & Empfehlung (Dichte)** — Original-Anhaltswerte relativ zum Knoten:
 
