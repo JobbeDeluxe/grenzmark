@@ -336,9 +336,14 @@ func effective_bq(x: int, y: int) -> int:
 				cap = BQ_HOUSE
 				break
 	if cap == BQ_CASTLE:
-		# b) Kein Gebäude im Umkreis von 2 Knoten.
+		# b) Kein Gebäude im Distanz-2-RING (genau Distanz 2), wie RTTR.
+		#    RTTR BQCalculator prüft hierfür nur GetNeighbour2() (die 12 Knoten auf
+		#    Distanz 2) auf BlockingManner::Building — NICHT die direkten Nachbarn.
+		#    Distanz 1 ist bereits durch (a) (W/NW/NE-Extensions) bzw. Belegung/
+		#    Flaggenregeln abgedeckt; ein Haus direkt an E/SW/SE darf eine Burg also
+		#    stehen lassen (mehr Original-Dichte, vgl. #37).
 		for i in buildings:
-			if hex_distance(Vector2i(x, y), buildings[i].pos) <= 2:
+			if hex_distance(Vector2i(x, y), buildings[i].pos) == 2:
 				cap = BQ_HOUSE
 				break
 	return cap
