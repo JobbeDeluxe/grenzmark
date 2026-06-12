@@ -284,6 +284,92 @@ Statt die JSON von Hand zu editieren, gibt es ein **DEV-Menü mit Live-Vorschau*
 So tunst du jedes Gebäude einzeln, ohne Code und ohne die Datei manuell zu öffnen.
 Jedes Gebäude ist damit individuell in Größe **und** Eingangspunkt einstellbar.
 
+### Original-Maßstab & Größen-Referenz (S2 ↔ Grenzmark)
+Orientierung für eigene PNGs, damit die Bebauung so **dicht** wirkt wie im Original.
+Quelle der Original-Werte: Return-to-the-Roots (`s25client`), die Open-Source-
+Reimplementierung von Die Siedler 2.
+
+> Die **exakten** Pixelmaße einzelner Original-Sprites stecken in den geschützten
+> LST-Grafikdateien und sind **nicht** im Quellcode. Authentisch belegbar — und für
+> die Dichte entscheidend — ist die **Karten-Geometrie**, also das Verhältnis
+> „Sprite-Größe ↔ Knotenabstand". Genau das steht hier. Eigene Assets baut Grenzmark
+> ohnehin selbst (frei lizenziert) — entscheidend ist die **Proportion**, nicht die
+> absolute Pixelzahl.
+
+**1) Karten-Geometrie — der Maßstab für ALLES**
+
+| | Knoten X | Knoten Y | px/Höhenstufe | ungerade Zeile versetzt |
+|---|---|---|---|---|
+| **Original S2** (RTTR `gameData/MapConsts.h`) | **TR_W = 56** | **TR_H = 28** | 5 | +28 |
+| **Grenzmark** (`core/grid.gd`) | TILE_W = 64 | TILE_H = 32 | 4 | +32 |
+
+Verhältnis Grenzmark/Original = 64⁄56 = 32⁄28 = **8⁄7 ≈ 1,143**. Ein Original-Sprite von
+*N* px entspricht in Grenzmark *N×8⁄7* px bei gleicher Dichte (umgekehrt: Grenzmark-px ×
+7⁄8 = „Original-Äquivalent"). **Die wichtige Größe ist „Kacheln breit" = gez. px ⁄ 64** —
+skalenunabhängig, daran orientieren.
+
+**2) Anker & Fußabdruck**
+- Gebäude steht auf **einem** Knoten; Eingangsflagge am **SE-Nachbarn**.
+- Tür-Anker (RTTR `gameData/DoorConsts.h`): Punkt, an dem der Träger in der Tür
+  verschwindet, liegt je Gebäude/Volk bei Y ≈ **−13 … +19 px** relativ zum Knoten.
+  Faustregel: **Sprite-Unterkante ≈ am Knoten**, Sprite wächst nach **oben** (etwas links).
+- Belegte Knoten: HUT/HOUSE/MINE = **1 Knoten**; CASTLE (HQ, Bauernhof, Schweinezucht,
+  Festung) = **4 Knoten** (eigener + W/NW/NE) — **originaltreu** (RTTR `noExtension`,
+  `BlockingManner::Single`); das große Sprite überdeckt genau diese oben-links-Knoten.
+
+**3) Gebäude — Ist-Größen in Grenzmark**
+(`gez. Breite = Skalar × texture_scale`; aktuell `texture_scale = 1,9`, HQ × `hq_scale 1,35`.
+Kachel = 64 px. „Orig-Äquiv" = dieselbe Dichte im 56-px-Original.)
+
+| Gebäude | Kat. | Skalar | gez. px | **Kacheln breit** | Orig-Äquiv px (×7⁄8) |
+|---|---|---|---|---|---|
+| hq | CASTLE | 58 | 149 | 2,32 | 130 |
+| fortress | CASTLE | 97 | 184 | 2,88 | 161 |
+| farm | CASTLE | 69 | 131 | 2,05 | 115 |
+| pigfarm | CASTLE | 68 | 129 | 2,02 | 113 |
+| mill | HOUSE | 64 | 122 | 1,90 | 106 |
+| slaughterhouse | HOUSE | 64 | 122 | 1,90 | 106 |
+| brewery | HOUSE | 59 | 112 | 1,75 | 98 |
+| bakery | HOUSE | 55 | 104 | 1,63 | 91 |
+| smelter | HOUSE | 54 | 103 | 1,60 | 90 |
+| watchtower | HOUSE | 53 | 101 | 1,57 | 88 |
+| sawmill | HOUSE | 53 | 101 | 1,57 | 88 |
+| smithy | HOUSE | 50 | 95 | 1,48 | 83 |
+| coalmine | MINE | 50 | 95 | 1,48 | 83 |
+| mint | HOUSE | 49 | 93 | 1,45 | 81 |
+| toolmaker | HOUSE | 46 | 87 | 1,37 | 76 |
+| goldmine | MINE | 43 | 82 | 1,28 | 71 |
+| ironmine | MINE | 43 | 82 | 1,28 | 71 |
+| granitemine | MINE | 43 | 82 | 1,28 | 71 |
+| woodcutter | HUT | 37 | 70 | 1,10 | 62 |
+| catapult | HOUSE | 31 | 59 | 0,92 | 52 |
+| well | HUT | 20 | 38 | 0,59 | 33 |
+
+**4) Einordnung & Empfehlung (Dichte)** — Original-Anhaltswerte relativ zum Knoten:
+
+| Klasse | Beispiele | Original ≈ Kacheln breit |
+|---|---|---|
+| Kleine Hütte | Holzfäller, Förster, Brunnen | ~1,0 – 1,2 |
+| Mittleres Haus | Sägewerk, Mühle, Schmelze | ~1,3 – 1,6 |
+| Großes Gebäude | Bauernhof, Festung, HQ | ~2,0 – 2,6 |
+
+→ Grenzmark liegt v. a. bei **mittleren Häusern leicht über** dem Original (Sägewerk 1,57
+statt ~1,3–1,5). Wer **dichter** will: mittlere Häuser ~10–20 % kleiner (Skalar/Design-
+Editor oder global `texture_scale`). **Achtung:** kleinere Gebäude → **Figuren ggf. auch
+kleiner** (`unit_size`), sonst wirken die Menschen im Verhältnis zu groß.
+
+**5) Flaggen, Figuren, Waren, Objekte**
+
+| Element | Ist in Grenzmark | ≈ Kacheln | Original / Hinweis |
+|---|---|---|---|
+| Spielflagge / Bauplatz-Icon | 30 px | ~0,47 | Original-Flagge ~0,4–0,5 Knoten hoch. |
+| Figur (Träger/Arbeiter/Soldat) | `unit_size = 18` px hoch | ~0,28 | Original ~0,4–0,5 Knoten (≈ 22–28 px) — etwas größer wäre originalnäher. |
+| Ware am Flaggenknoten | 8×8 px | ~0,13 | Aktuell 4er-Raster; Original: dicht ums Flaggenkreuz gestapelt (Issue #38). |
+| Feld (Acker) | 48×30 px Default | ~0,75 × 0,94 | Im Design-Editor frei skalierbar (`object_sizes`). |
+
+**Quellen (RTTR s25client):** `gameData/MapConsts.h` (Geometrie), `gameData/DoorConsts.h`
+(Anker), `world/BQCalculator.h` + `nodeObjs/noExtension.h` (Fußabdruck/Blockierung).
+
 ### Hauptmenü-Hintergrund austauschen
 Das Hauptmenü lädt optional `assets/ui/main_menu_background.png`. Du kannst die
 Datei jederzeit durch ein eigenes PNG ersetzen; das Bild wird bildschirmfüllend
