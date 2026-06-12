@@ -870,6 +870,31 @@ func _activate_carrier(road: WorldState.Road, end: int) -> void:
 	c.state = C_IDLE
 
 
+## Nächstgelegenes erreichbares Lager von Flagge [from_flag] aus, das [pred] erfüllt
+## (#31). Distanz = Hop-Zahl der gecachten [find_route]-Polylinie; bei Gleichstand
+## gewinnt der kleinere Lager-Index (deterministisch, lockstep-tauglich). Gibt `null`
+## zurück, wenn kein passendes Lager erreichbar ist. Mit nur einem Lager (HQ) liefert
+## das stets das HQ, sofern erreichbar und [pred] erfüllt.
+func _nearest_storage(from_flag: int, owner: int, pred: Callable) -> Storage:
+	var w := state.map.width
+	var from_pos := Vector2i(from_flag % w, from_flag / w)
+	var best: Storage = null
+	var best_cost := INF
+	for st in storages:
+		if st.flag_idx < 0 or st.owner != owner:
+			continue
+		if not pred.call(st):
+			continue
+		var route := state.find_route(from_pos, Vector2i(st.flag_idx % w, st.flag_idx / w))
+		if route.is_empty():
+			continue
+		var cost := float(route.size())
+		if cost < best_cost:
+			best_cost = cost
+			best = st
+	return best
+
+
 ## Flaggenposition des HQ eines Besitzers (nicht der Gebäudeknoten!).
 func _hq_flag_pos(owner := 0) -> Vector2i:
 	for i in state.buildings:
@@ -1278,21 +1303,23 @@ func _request_inputs(bs: BState) -> void:
 			_request_from_hq(bs, g, desired - have)
 
 
+## Fordert [amount] Stück Ware [g] aus dem nächstgelegenen Lager an, das sie auf
+## Vorrat hat (#31). Pro Stück wird neu das nächste passende Lager gewählt — leert
+## sich das nähere, übernimmt automatisch das nächstweitere. Mit nur einem Lager
+## (HQ) ist das identisch zum bisherigen Verhalten.
 func _request_from_hq(bs: BState, g: int, amount: int) -> void:
 	for k in amount:
-		if hq_flag < 0 or hq_stock.get(g, 0) <= 0:
+		var st := _nearest_storage(bs.flag_idx, 0, func(s: Storage) -> bool:
+			return int(s.stock.get(g, 0)) > 0 and s.outbox.size() < FLAG_CAP)
+		if st == null:
 			return
-		if _next_hop(hq_flag, bs.flag_idx) < 0:
-			return
-		if hq_outbox.size() >= FLAG_CAP:
-			return
-		hq_stock[g] = hq_stock[g] - 1
+		st.stock[g] = int(st.stock[g]) - 1
 		bs.incoming[g] = bs.incoming.get(g, 0) + 1
-		# Ware wartet im HQ; der Tür-Träger bringt sie zur Flagge hinaus.
+		# Ware wartet im Lager; dessen Tür-Träger bringt sie zur Flagge hinaus.
 		var good := Good.new()
 		good.type = g
 		good.dest = bs.flag_idx
-		hq_outbox.append(good)
+		st.outbox.append(good)
 
 
 # --- Produktion ---
@@ -1485,19 +1512,22 @@ func _find_water_edge(center: Vector2i) -> Vector2i:
 	return Vector2i(-1, -1)
 
 
+## Schickt fertige Ausgangswaren ins nächstgelegene erreichbare Lager (#31). Mit
+## nur einem Lager (HQ) ist das Ziel immer das HQ — identisch zum bisherigen Verhalten.
 func _ship_outputs(bs: BState) -> void:
 	var output: int = bs.def.get("output", -1)
 	if output == -1:
 		return
 	while bs.out_stock > 0:
-		if hq_flag < 0 or _next_hop(bs.flag_idx, hq_flag) < 0:
-			return
 		var q: Array = flag_goods.get(bs.flag_idx, [])
 		if q.size() >= FLAG_CAP:
 			return
+		var st := _nearest_storage(bs.flag_idx, 0, func(_s: Storage) -> bool: return true)
+		if st == null:
+			return
 		var good := Good.new()
 		good.type = output
-		good.dest = hq_flag
+		good.dest = st.flag_idx
 		_push_good(bs.flag_idx, good)
 		bs.out_stock -= 1
 
@@ -1946,36 +1976,45 @@ func _push_good(flag_idx: int, g: Good) -> void:
 const HOUSE_SPEED := 0.045
 
 
+## Tür↔Flagge-Träger jedes Lagers (#31). Jedes Lager (HQ = #0, plus baubare
+## Lagerhäuser) hat seinen eigenen Träger, der seine Ausgangswaren (outbox) zur
+## Flagge bringt und dort ankommende Eingänge (dest == eigene Flagge) ins Lager holt.
 func _tick_house_carrier() -> void:
-	if hq_house == null or hq_flag < 0:
-		return
-	var h := hq_house
+	for st in storages:
+		if st.house == null or st.flag_idx < 0:
+			continue
+		_tick_one_house_carrier(st)
+
+
+func _tick_one_house_carrier(st: Storage) -> void:
+	var fi := st.flag_idx
+	var h := st.house
 	match h.state:
 		H_IDLE:  # an der Tür
-			if not hq_outbox.is_empty() and goods_on_flag(hq_flag) < FLAG_CAP:
-				h.carrying = hq_outbox.pop_front()
+			if not st.outbox.is_empty() and goods_on_flag(fi) < FLAG_CAP:
+				h.carrying = st.outbox.pop_front()
 				h.state = H_OUT
-			elif _has_hq_incoming():
+			elif _has_incoming_at(fi):
 				h.state = H_FETCH
 		H_OUT:   # Ware Tür → Flagge
 			h.t = minf(h.t + HOUSE_SPEED, 1.0)
 			if h.t >= 1.0:
-				_push_good(hq_flag, h.carrying)
+				_push_good(fi, h.carrying)
 				h.carrying = null
-				var g = _take_hq_incoming()
+				var g = _take_incoming_at(fi)
 				h.carrying = g
 				h.state = H_IN if g != null else H_RETURN
 		H_FETCH: # leer Tür → Flagge, um Eingang zu holen
 			h.t = minf(h.t + HOUSE_SPEED, 1.0)
 			if h.t >= 1.0:
-				var g = _take_hq_incoming()
+				var g = _take_incoming_at(fi)
 				h.carrying = g
 				h.state = H_IN if g != null else H_RETURN
 		H_IN:    # Ware Flagge → Tür (ins Lager)
 			h.t = maxf(h.t - HOUSE_SPEED, 0.0)
 			if h.t <= 0.0:
 				if h.carrying != null:
-					hq_stock[h.carrying.type] = hq_stock.get(h.carrying.type, 0) + 1
+					st.stock[h.carrying.type] = st.stock.get(h.carrying.type, 0) + 1
 				h.carrying = null
 				h.state = H_IDLE
 		H_RETURN: # leer Flagge → Tür
@@ -1984,18 +2023,19 @@ func _tick_house_carrier() -> void:
 				h.state = H_IDLE
 
 
-## Erste an der HQ-Flagge wartende Ware, die ins Lager soll (dest == HQ-Flagge).
-func _has_hq_incoming() -> bool:
-	for g in flag_goods.get(hq_flag, []):
-		if g.dest == hq_flag:
+## Erste an Flagge [flag_idx] wartende Ware, die in genau dieses Lager soll
+## (dest == eigene Flagge).
+func _has_incoming_at(flag_idx: int) -> bool:
+	for g in flag_goods.get(flag_idx, []):
+		if g.dest == flag_idx:
 			return true
 	return false
 
 
-func _take_hq_incoming():
-	var q: Array = flag_goods.get(hq_flag, [])
+func _take_incoming_at(flag_idx: int):
+	var q: Array = flag_goods.get(flag_idx, [])
 	for k in q.size():
-		if q[k].dest == hq_flag:
+		if q[k].dest == flag_idx:
 			var g = q[k]
 			q.remove_at(k)
 			return g
