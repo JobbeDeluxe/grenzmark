@@ -98,7 +98,7 @@ Das Skelett, auf dem alles aufbaut.
       normale Gebäude regeln den letzten Schritt selbst (Ware liegt an der Flagge).
 - [x] Kein Fallback-Träger mehr: ohne HQ-Verbindung bleibt die Straße unbesetzt
       (Träger kommt, sobald sie ans Netz angeschlossen ist)
-- [ ] Tür-Träger auch für zusätzliche Lagerhäuser (sobald Mehr-Lager existiert)
+- [x] Tür-Träger auch für zusätzliche Lagerhäuser (#31: eigener HouseCarrier je Lager)
 - [x] Bauanimation: Gebäude wächst sichtbar aus dem Boden (Gerüst → fertig)
 - [x] 2-stufiger Bau: Stufe 1 = Holzkonstruktion (Holzanteil), Stufe 2 = fertiger
       Bau mit Stein. Ohne Stein gleichmäßig halbiert. Eigene PNGs einbindbar
@@ -442,11 +442,14 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
       baut nur ihr passendes Mineral ab. Offen: Erz im Normalspiel unterirdisch
       statt sichtbar führen; Sichtbarkeit später über Geologen/Debug.
       (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/19)
-- [ ] Lagerhaus / Vorratshaus (zweites Lager) — braucht Mehr-Lager-System
+- [x] Lagerhaus / Vorratshaus (zweites Lager) — Stufe 1 (Kern) fertig
       (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/31)
-      Stufe-1-Fundament gelegt: Economy hält jetzt eine `storages`-Liste (HQ = Lager
-      #0, `Storage`-Klasse), die `hq_*`-Felder sind delegierende Aliase darauf.
-      Offen: baubares zweites Lager + „nächstes Lager gewinnt"-Routing.
+      `storehouse` baubar (Kategorie „lager", mittlerer Bauplatz, Bretter+Steine);
+      Economy führt eine `storages`-Liste (HQ = Lager #0). Waren-Routing bedient das
+      NÄCHSTE Lager (`_nearest_storage`, Hop-Distanz der gecachten `find_route`);
+      eigener Tür-Träger je Lager; Save/Load der Lagerhaus-Bestände; Abriss räumt das
+      Lager ab (Restbestand → HQ). Offen (Stufe 2/3): Ein-/Auslagern-Stopp je Ware,
+      Warenausgleich, Personen/Soldaten aus jedem Lager.
 - [ ] Eselzüchter (→ Esel) — braucht Esel-auf-Straßen-System
 - [ ] Waffenschmiede mit Schwert UND Schild (statt nur Schwert)
 - [ ] Hafen + Werft (Schiffe/Boote)

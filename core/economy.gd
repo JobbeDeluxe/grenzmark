@@ -275,6 +275,14 @@ func resync() -> void:
 				if hq_house == null:
 					hq_house = HouseCarrier.new()
 			continue
+		# Fertiges Lagerhaus (#31): als zusätzliches Lager führen (eigener Bestand +
+		# Tür-Träger), NICHT als Produzent/Konsument. Während des Baus läuft es noch über
+		# den normalen Baustellen-Pfad (fordert Bretter/Steine an).
+		if b.owner == 0 and not b.under_construction and _is_storage_def(b.def_id):
+			_register_storage(i, b)
+			if bstates.has(i):
+				bstates.erase(i)
+			continue
 		flag_to_building[state.map.idx(b.flag_pos.x, b.flag_pos.y)] = i
 		if int(BuildingCatalog.get_def(b.def_id).get("influence", 0)) > 0:
 			b.capacity = _capacity_for(b.size)
@@ -309,6 +317,19 @@ func resync() -> void:
 			if bs_gone.has_person:
 				_return_person(bs_gone.person_job, bs_gone.bld.owner)  # Arbeiter kehrt zurück (#9)
 			bstates.erase(i)
+
+	# Verschwundene Lagerhäuser (#31): Lager, deren Gebäude weg ist, aus der Liste nehmen
+	# (HQ = #0 bleibt immer). Restbestand UND noch nicht ausgelieferte outbox-Waren ins
+	# HQ-Lager übernehmen, damit beim Abriss keine Ware verloren geht.
+	for si in range(storages.size() - 1, 0, -1):
+		var st := storages[si]
+		if st.idx < 0 or not state.buildings.has(st.idx) \
+				or state.buildings[st.idx].is_hq or state.buildings[st.idx].under_construction:
+			for g in st.stock:
+				storages[0].stock[g] = int(storages[0].stock.get(g, 0)) + int(st.stock[g])
+			for good in st.outbox:
+				storages[0].stock[good.type] = int(storages[0].stock.get(good.type, 0)) + 1
+			storages.remove_at(si)
 
 	for fi in flag_goods.keys():
 		if not state.flags.has(fi):
@@ -461,6 +482,36 @@ func _init_tree_growth_from_map() -> void:
 		var stage := int(state.map.tree_stage[key])
 		if stage < MapData.TREE_BIG:
 			_growing_trees[i] = float(Tuning.tree_growth_ticks(stage))
+
+
+## Bestände der zusätzlichen Lagerhäuser (alle Lager außer HQ #0) für Save/Load (#31).
+## Schlüssel ist die Flaggenposition (stabil über Lade-Vorgänge), Wert der Warenbestand.
+## Das HQ-Lager wird weiter separat über hq_stock gesichert (abwärtskompatibel).
+func extra_storages_state() -> Array:
+	var w := state.map.width
+	var out: Array = []
+	for i in range(1, storages.size()):
+		var st := storages[i]
+		out.append({
+			flag = Vector2i(st.flag_idx % w, st.flag_idx / w),
+			stock = st.stock.duplicate(),
+		})
+	return out
+
+
+## Spielt die mit [extra_storages_state] gesicherten Bestände zurück. Muss NACH resync()
+## laufen, weil resync() die Lager erst aus den geladenen Gebäuden anlegt.
+func restore_extra_storages(arr: Array) -> void:
+	for entry in arr:
+		var pos: Vector2i = entry.get("flag", Vector2i(-1, -1))
+		var fidx := state.map.idx(pos.x, pos.y)
+		if fidx == hq_flag:
+			continue
+		for st in storages:
+			if st.flag_idx == fidx:
+				var sd: Dictionary = entry.get("stock", {})
+				st.stock = sd.duplicate()
+				break
 
 
 func tree_growth_state() -> Dictionary:
@@ -870,6 +921,31 @@ func _activate_carrier(road: WorldState.Road, end: int) -> void:
 	c.state = C_IDLE
 
 
+## Ist [def_id] ein Lager-Gebäude (HQ oder baubares Lagerhaus)? Kategorie "lager".
+func _is_storage_def(def_id: String) -> bool:
+	return String(BuildingCatalog.get_def(def_id).get("category", "")) == "lager"
+
+
+## Meldet ein fertiges Lagerhaus als zusätzliches Lager an (#31): eigener Tür-Träger,
+## eigener (anfangs leerer) Bestand. Idempotent — ein bereits registriertes Lager
+## (gleiche Flagge) wird nur aufgefrischt, nicht doppelt angelegt.
+func _register_storage(idx: int, b: WorldState.Building) -> void:
+	var fidx := state.map.idx(b.flag_pos.x, b.flag_pos.y)
+	for st in storages:
+		if st.flag_idx == fidx:
+			st.idx = idx
+			st.owner = b.owner
+			if st.house == null:
+				st.house = HouseCarrier.new()
+			return
+	var ns := Storage.new()
+	ns.flag_idx = fidx
+	ns.idx = idx
+	ns.owner = b.owner
+	ns.house = HouseCarrier.new()
+	storages.append(ns)
+
+
 ## Nächstgelegenes erreichbares Lager von Flagge [from_flag] aus, das [pred] erfüllt
 ## (#31). Distanz = Hop-Zahl der gecachten [find_route]-Polylinie; bei Gleichstand
 ## gewinnt der kleinere Lager-Index (deterministisch, lockstep-tauglich). Gibt `null`
@@ -1221,6 +1297,14 @@ func _tick_construction(bs: BState) -> void:
 			_return_person(bs.person_job, bs.bld.owner)
 			bs.has_person = false
 			bs.person_job = -1
+		# Fertiges Lagerhaus wird sofort ein aktives Lager (#31): eigener Tür-Träger
+		# und Bestand, kein Produktionsarbeiter. Der bstate entfällt (kein Produzent/
+		# Konsument). Ohne diesen Hook würde das Lager erst beim nächsten resync greifen.
+		if bs.bld.owner == 0 and not bs.bld.is_hq and _is_storage_def(bs.bld.def_id):
+			_register_storage(bs.idx, bs.bld)
+			bstates.erase(bs.idx)
+			dirty = true
+			return
 		bs.staffed = false      # Bauarbeiter geht; Produktionsarbeiter kommt danach
 		bs.worker_sent = false
 		bs.delivered.clear()

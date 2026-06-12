@@ -21,6 +21,15 @@ static func defs() -> Dictionary:
 			inputs = {}, output = -1, work = 0, resource = "",
 			influence = 9, category = "lager",
 		},
+		# Baubares zweites Lager (#31): zusätzlicher Lager- und Verteilknoten, um Waren
+		# näher an die Verbraucher zu bringen. Kein Einfluss (rein logistisch), eigener
+		# Tür↔Flagge-Träger; das Mehr-Lager-Routing in [Economy] beliefert das nächste Lager.
+		"storehouse": {
+			id = "storehouse", name = "Lagerhaus", size = M,
+			cost = { Goods.BOARDS: 3, Goods.STONE: 3 },
+			inputs = {}, output = -1, work = 0, resource = "",
+			influence = 0, category = "lager",
+		},
 		"woodcutter": {
 			id = "woodcutter", name = "Holzfäller", size = H,
 			cost = { Goods.BOARDS: 2 }, inputs = {}, output = Goods.WOOD,
@@ -171,6 +180,7 @@ static func defs() -> Dictionary:
 ## Reihenfolge der Bau-Menü-Einträge (ohne HQ, das wird automatisch gesetzt).
 static func menu_order() -> Array:
 	return [
+		"storehouse",
 		"woodcutter", "forester", "sawmill", "quarry",
 		"well", "farm", "mill", "bakery", "fishery", "hunter",
 		"pigfarm", "slaughterhouse",

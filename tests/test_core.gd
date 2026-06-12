@@ -35,6 +35,7 @@ func _initialize() -> void:
 	_test_population_limit()
 	_test_population_growth()
 	_test_storage_list()
+	_test_storehouse_routing()
 	_test_stop_finishes_cycle()
 	_test_productivity_and_building_info()
 	_test_military()
@@ -220,6 +221,67 @@ func _test_storage_list() -> void:
 	eco.storages[0].stock[Goods.BOARDS] = 5
 	_check(int(eco.hq_stock.get(Goods.BOARDS, 0)) == 5,
 		"Lager: storages[0].stock über hq_stock sichtbar")
+
+
+## #31: Ein fertiges Lagerhaus wird als zweites Lager geführt; das Waren-Routing
+## bedient stets das NÄCHSTE Lager. Abriss räumt das Lager ab (Restbestand → HQ).
+func _test_storehouse_routing() -> void:
+	var map := _flat_map(30, 30)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(15, 22, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	# Lagerhaus fertig (nicht im Bau) zwischen HQ und Produzent.
+	var store := state.place_building(15, 14, WorldState.BQ_HOUSE, false, "storehouse", 0, false)
+	# Produzent (Sägewerk) nahe am Lagerhaus.
+	var saw := state.place_building(15, 8, WorldState.BQ_HOUSE, false, "sawmill", 0, false)
+	_check(hq != null and store != null and saw != null, "Lagerhaus: Gebäude platzierbar")
+	if hq == null or store == null or saw == null:
+		return
+	# Kette HQ — Lagerhaus — Sägewerk: das Sägewerk ist näher am Lagerhaus als am HQ.
+	var r1 := state.build_road(hq.flag_pos, store.flag_pos)
+	var r2 := state.build_road(store.flag_pos, saw.flag_pos)
+	_check(r1 != null and r2 != null, "Lagerhaus: Straßenkette baubar")
+	if r1 == null or r2 == null:
+		return
+	eco.resync()
+	# Das fertige Lagerhaus ist als zweites Lager registriert (eigener Tür-Träger).
+	_check(eco.storages.size() == 2, "Lagerhaus: als zweites Lager registriert")
+	var sf := state.map.idx(store.flag_pos.x, store.flag_pos.y)
+	var s2 = null
+	for st in eco.storages:
+		if st.flag_idx == sf:
+			s2 = st
+	_check(s2 != null and s2.house != null, "Lagerhaus: eigener Tür-Träger")
+	if s2 == null:
+		return
+
+	# Ausgangswaren des Sägewerks gehen ins NÄCHSTE Lager (= Lagerhaus, nicht HQ).
+	var sidx := state.map.idx(saw.pos.x, saw.pos.y)
+	var bs = eco.bstates.get(sidx)
+	_check(bs != null, "Lagerhaus: Sägewerk hat bstate")
+	if bs == null:
+		return
+	bs.out_stock = 1
+	eco._ship_outputs(bs)
+	var q: Array = eco.flag_goods.get(bs.flag_idx, [])
+	_check(q.size() == 1 and q[0].dest == sf,
+		"Lagerhaus: Ausgang geht zum nächsten Lager (Lagerhaus)")
+
+	# Eingang anfordern: kommt aus dem nächsten Lager mit Vorrat (= Lagerhaus, nicht HQ).
+	eco.hq_stock[Goods.WOOD] = 5
+	s2.stock[Goods.WOOD] = 5
+	eco._request_from_hq(bs, Goods.WOOD, 1)
+	_check(int(s2.stock.get(Goods.WOOD, 0)) == 4 and int(eco.hq_stock.get(Goods.WOOD, 0)) == 5,
+		"Lagerhaus: Eingang kommt aus dem nächsten Lager")
+	_check(s2.outbox.size() == 1 and s2.outbox[0].dest == bs.flag_idx,
+		"Lagerhaus: angeforderte Ware liegt in dessen outbox")
+
+	# Abriss: Lager raus aus der Liste, Restbestand (Bestand 4 + outbox 1) wandert ins HQ.
+	state.remove_at(store.pos)
+	eco.resync()
+	_check(eco.storages.size() == 1, "Lagerhaus: nach Abriss wieder nur ein Lager")
+	_check(int(eco.hq_stock.get(Goods.WOOD, 0)) == 10,
+		"Lagerhaus: Restbestand ins HQ übernommen (5 + 4 + 1)")
 
 
 ## #30 (Renderer): Das Bauplatz-Overlay scannt nur noch das eigene Territorium statt

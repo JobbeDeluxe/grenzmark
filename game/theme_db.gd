@@ -71,6 +71,7 @@ static func building_color(def_id: String) -> Color:
 static func building_label(def_id: String) -> String:
 	match def_id:
 		"hq": return "HQ"
+		"storehouse": return "La"
 		"woodcutter": return "Hf"
 		"forester": return "Fö"
 		"sawmill": return "Sä"

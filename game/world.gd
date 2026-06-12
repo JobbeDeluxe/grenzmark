@@ -2253,6 +2253,8 @@ func _save_game() -> void:
 		# Laden verteilt resync() daraus alles neu (Personen laufen wieder vom Lager los).
 		hq_people = economy.total_people(),
 		soldiers = economy.soldiers,
+		# Bestände der baubaren Lagerhäuser (#31); HQ-Lager steckt in hq_stock.
+		extra_storages = economy.extra_storages_state(),
 	}
 	for i in state.buildings:
 		var b: WorldState.Building = state.buildings[i]
@@ -2385,6 +2387,11 @@ func _load_game() -> void:
 	_apply_ai()
 	_apply_start_options()
 	economy.resync()
+	# Lagerhaus-Bestände (#31) zurückspielen — erst nach resync(), das die Lager aus
+	# den geladenen Gebäuden anlegt. Alt-Spielstände ohne Sektion bleiben unberührt.
+	var extra_storages = data.get("extra_storages", [])
+	if extra_storages is Array:
+		economy.restore_extra_storages(extra_storages)
 	# Geladene Gebäude/Straßen werden direkt erzeugt (umgehen das inkrementelle
 	# Aufdecken) — daher hier einmalig die Sichtbarkeit voll aufbauen (Issue #30).
 	state.recompute_visibility()
