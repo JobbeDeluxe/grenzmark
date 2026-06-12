@@ -14,6 +14,15 @@ const BSPOT_NAMES := {
 	"blocked": "Gesperrt-Marker",
 }
 
+# Karten-Objekte (Felder etc.) — frei skalierbar über design.json "object_sizes".
+const OBJ_KEYS := ["field_seed", "field_young", "field_growing", "field_ripe",
+	"field_cut", "field_withered"]
+const OBJ_NAMES := {
+	"field_seed": "Feld – Saat", "field_young": "Feld – jung",
+	"field_growing": "Feld – wachsend", "field_ripe": "Feld – reif",
+	"field_cut": "Feld – Stoppel", "field_withered": "Feld – verdorrt",
+}
+
 var cfg := {}
 var ids: Array = []
 var current_id := "hq"
@@ -38,6 +47,11 @@ var _status: Label
 var _bspot_key := "flag"
 var _bspot_ox: SpinBox
 var _bspot_oy: SpinBox
+
+var _obj_group: VBoxContainer
+var _obj_key := "field_ripe"
+var _obj_w: SpinBox
+var _obj_h: SpinBox
 
 
 func _ready() -> void:
@@ -140,6 +154,21 @@ func _ready() -> void:
 	bspot_hint.add_theme_font_size_override("font_size", 10)
 	_bspot_group.add_child(bspot_hint)
 
+	# --- Gruppe Karten-Objekt (nur sichtbar, wenn ein Objekt gewählt ist) ---
+	_obj_group = VBoxContainer.new()
+	_obj_group.add_theme_constant_override("separation", 4)
+	panel.add_child(_obj_group)
+	var obj_title := Label.new()
+	obj_title.text = "Objekt-Größe (Breite × Höhe)"
+	obj_title.add_theme_font_size_override("font_size", 12)
+	_obj_group.add_child(obj_title)
+	_obj_w = _spin_obj(_obj_group, "Breite (px)", 6, 160, 1)
+	_obj_h = _spin_obj(_obj_group, "Höhe (px)", 4, 160, 1)
+	var obj_hint := Label.new()
+	obj_hint.text = "Skaliert das Objekt-Sprite (z. B. Felder).\nZur Orientierung: eine Kachel ist 64×32."
+	obj_hint.add_theme_font_size_override("font_size", 10)
+	_obj_group.add_child(obj_hint)
+
 	# --- Immer sichtbar: Speichern / Zurück / Status ---
 	var sep := HSeparator.new()
 	panel.add_child(sep)
@@ -176,6 +205,10 @@ func _build_entries(list: ItemList) -> void:
 	for k in BSPOT_KEYS:
 		_entries.append({ kind = "bspot", key = k })
 		list.add_item(String(BSPOT_NAMES.get(k, k)))
+	_add_header(list, "— Karten-Objekte —")
+	for k in OBJ_KEYS:
+		_entries.append({ kind = "object", key = k })
+		list.add_item(String(OBJ_NAMES.get(k, k)))
 
 
 func _add_header(list: ItemList, text: String) -> void:
@@ -200,11 +233,18 @@ func _on_pick(idx: int) -> void:
 		"building":
 			_bld_group.visible = true
 			_bspot_group.visible = false
+			_obj_group.visible = false
 			_select(String(e.key))
 		"bspot":
 			_bld_group.visible = false
 			_bspot_group.visible = true
+			_obj_group.visible = false
 			_select_bspot(String(e.key))
+		"object":
+			_bld_group.visible = false
+			_bspot_group.visible = false
+			_obj_group.visible = true
+			_select_object(String(e.key))
 
 
 func _on_compare(idx: int) -> void:
@@ -234,6 +274,7 @@ func _spin(box: VBoxContainer, label: String, lo: float, hi: float, step: float)
 
 func _select(id: String) -> void:
 	_preview.bspot_key = ""  # zurück zur Gebäude-Vorschau
+	_preview.obj_key = ""
 	current_id = id
 	_preview.current_id = id
 	_loading = true
@@ -288,6 +329,7 @@ func _spin_bspot(box: VBoxContainer, label: String, lo: float, hi: float, step: 
 func _select_bspot(key: String) -> void:
 	_bspot_key = key
 	_preview.bspot_key = key
+	_preview.obj_key = ""
 	_loading = true
 	var off := GameTheme.build_spot_offset(key)
 	_bspot_ox.value = off.x
@@ -300,6 +342,46 @@ func _on_bspot_changed(_v: float) -> void:
 	if _loading:
 		return
 	cfg.get_or_add("build_spot_offsets", {})[_bspot_key] = [int(_bspot_ox.value), int(_bspot_oy.value)]
+	GameTheme._cfg = cfg
+	GameTheme._cfg_loaded = true
+	_preview.queue_redraw()
+	_status.text = "ungespeichert *"
+
+
+func _spin_obj(box: VBoxContainer, label: String, lo: float, hi: float, step: float) -> SpinBox:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	box.add_child(row)
+	var l := Label.new()
+	l.text = label
+	l.custom_minimum_size = Vector2(112, 0)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.add_theme_font_size_override("font_size", 10)
+	row.add_child(l)
+	var s := SpinBox.new()
+	s.min_value = lo; s.max_value = hi; s.step = step
+	s.custom_minimum_size = Vector2(84, 24)
+	s.value_changed.connect(_on_obj_changed)
+	row.add_child(s)
+	return s
+
+
+func _select_object(key: String) -> void:
+	_obj_key = key
+	_preview.bspot_key = ""
+	_preview.obj_key = key
+	_loading = true
+	var sz := GameTheme.object_draw_size(key)
+	_obj_w.value = roundf(sz.x)
+	_obj_h.value = roundf(sz.y)
+	_loading = false
+	_preview.queue_redraw()
+
+
+func _on_obj_changed(_v: float) -> void:
+	if _loading:
+		return
+	cfg.get_or_add("object_sizes", {})[_obj_key] = [int(_obj_w.value), int(_obj_h.value)]
 	GameTheme._cfg = cfg
 	GameTheme._cfg_loaded = true
 	_preview.queue_redraw()

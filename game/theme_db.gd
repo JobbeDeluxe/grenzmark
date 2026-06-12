@@ -244,6 +244,14 @@ static func tree_sprite(type_name: String, stage: int) -> Dictionary:
 
 
 static func object_draw_size(name: String) -> Vector2:
+	# Design-Override (design.json -> "object_sizes": { name: [w, h] }) gewinnt immer.
+	# Damit lassen sich Karten-Objekte (v. a. Felder) im Design-Editor frei skalieren,
+	# ohne Code zu ändern.
+	var override: Dictionary = _design().get("object_sizes", {})
+	if override.has(name):
+		var v = override[name]
+		if v is Array and v.size() >= 2:
+			return Vector2(float(v[0]), float(v[1]))
 	var tree_h := _tree_draw_height(name)
 	if tree_h > 0.0:
 		return _texture_draw_size(name, tree_h, _tree_fallback_size(name))
@@ -255,7 +263,8 @@ static func object_draw_size(name: String) -> Vector2:
 		"stone_stage2": return Vector2(44, 34)
 		"stone_stage3": return Vector2(58, 44)
 		"ore": return Vector2(32, 27)
-		"field_seed", "field_young", "field_growing", "field_ripe", "field_cut", "field_withered": return Vector2(30, 18)
+		# Felder decken ~eine Kachel ab (TILE 64×32) — vorher 30×18 war deutlich zu klein.
+		"field_seed", "field_young", "field_growing", "field_ripe", "field_cut", "field_withered": return Vector2(48, 30)
 	return Vector2(28, 28)
 
 

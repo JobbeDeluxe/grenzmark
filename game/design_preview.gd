@@ -11,6 +11,7 @@ const PZ := 2.4  # Vorschau-Zoom
 var current_id := "hq"
 var compare_id := ""  # optionales Vergleichsobjekt
 var bspot_key := ""   # wenn gesetzt: Bauplatz-Vorschau statt Gebäude-Vorschau
+var obj_key := ""     # wenn gesetzt: Karten-Objekt-Vorschau (z. B. Feld)
 
 
 func _draw() -> void:
@@ -18,6 +19,9 @@ func _draw() -> void:
 	var origin := Vector2(size.x * 0.42, size.y * 0.62)
 	if bspot_key != "":
 		_draw_bspot_preview(origin)
+		return
+	if obj_key != "":
+		_draw_object_preview(origin)
 		return
 	var def := BuildingCatalog.get_def(current_id)
 	if def.is_empty():
@@ -98,3 +102,33 @@ func _draw_bspot_preview(origin: Vector2) -> void:
 	draw_string(ThemeDB.fallback_font, origin + Vector2(-60, 46) * PZ,
 		"Knoten · Offset (%.0f, %.0f)" % [off.x / PZ, off.y / PZ],
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.8, 0.8, 0.8))
+
+
+## Karten-Objekt-Vorschau: Kachel-Raute (64×32) als Größenreferenz + das Objekt-
+## Sprite mittig auf dem Knoten, in der aktuell eingestellten Größe.
+func _draw_object_preview(origin: Vector2) -> void:
+	# Kachel-Raute zur Orientierung (eine Bodenkachel ist TILE_W×TILE_H).
+	var hw := Grid.TILE_W * 0.5 * PZ
+	var hh := Grid.TILE_H * 0.5 * PZ
+	var tile := PackedVector2Array([
+		origin + Vector2(0, -hh), origin + Vector2(hw, 0),
+		origin + Vector2(0, hh), origin + Vector2(-hw, 0),
+	])
+	draw_colored_polygon(tile, Color(0.22, 0.34, 0.18))
+	draw_polyline(tile + PackedVector2Array([tile[0]]), Color(1, 1, 1, 0.35), 1.5)
+	draw_circle(origin, 3.0, Color(1, 1, 1, 0.5))  # Knotenmittelpunkt
+
+	# Objekt-Sprite mittig (Felder werden im Spiel mittig auf dem Knoten gezeichnet).
+	var sz := GameTheme.object_draw_size(obj_key) * PZ
+	var tex := GameTheme.object_texture(obj_key)
+	if tex != null:
+		draw_texture_rect(tex, Rect2(origin.x - sz.x * 0.5, origin.y - sz.y * 0.5, sz.x, sz.y), false)
+	else:
+		var r := Rect2(origin.x - sz.x * 0.5, origin.y - sz.y * 0.5, sz.x, sz.y)
+		draw_rect(r, Color(0.42, 0.32, 0.18))
+		draw_rect(r, Color(0, 0, 0, 0.6), false, 1.5)
+
+	var base := GameTheme.object_draw_size(obj_key)
+	draw_string(ThemeDB.fallback_font, origin + Vector2(-hw, hh + 22.0),
+		"%s · %.0f × %.0f px (Kachel 64×32)" % [obj_key, base.x, base.y],
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.85, 0.85, 0.85))
