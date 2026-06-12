@@ -144,6 +144,8 @@ func _build_settings_panel(box: Container) -> void:
 	_checkbox(inner, "KI-Gegner aktiv", "start_ai", true)
 	# Im Original gibt es keine dauerhafte Warenleiste oben — daher abwählbar (Standard: aus).
 	_checkbox(inner, "Warenleiste oben anzeigen", "show_resource_bar", false)
+	# Waren an Flaggen: dicht gestapelt (Original) oder als übersichtliches Raster (#38).
+	_checkbox(inner, "Waren dicht stapeln (Original)", "goods_cluster_layout", true)
 
 	var editor_btn := _button(inner, "Design-Editor", _on_editor)
 	editor_btn.custom_minimum_size = Vector2(160, 34) * UISkin.ui_scale()

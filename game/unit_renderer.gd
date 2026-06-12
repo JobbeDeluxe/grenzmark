@@ -317,8 +317,22 @@ func base_offset(size: int) -> float:
 	return _bld_dims(size).x * 0.5 + 6.0
 
 
+# Dichter Original-Warenhaufen: feste Offset-Tabelle (relativ zum Flaggenknoten),
+# Füll-Reihenfolge von unten/Fuß nach oben. Bis FLAG_CAP (8) Positionen, leicht
+# überlappend rund um den Flaggenfuß. KEIN RNG → lockstep-deterministisch.
+const GOODS_HEAP: Array[Vector2] = [
+	Vector2(-4, -5), Vector2(3, -5), Vector2(-11, -5),     # untere Reihe (Fuß)
+	Vector2(-8, -11), Vector2(-1, -11), Vector2(-15, -10), # mittlere Reihe
+	Vector2(-5, -16), Vector2(2, -16),                     # Spitze
+]
+const GOOD_ICON_DENSE := 9.0   # Haufen-Icons minimal größer („satter", #38)
+const GOOD_ICON_GRID := 8.0
+
+
 func _draw_goods() -> void:
 	var map := state.map
+	# Darstellung wählbar (#38): Standard „Dicht (Original)", alternativ altes Raster.
+	var dense := UISkin.option_bool("goods_cluster_layout", true)
 	for fi in economy.flag_goods:
 		var queue: Array = economy.flag_goods[fi]
 		if queue.is_empty():
@@ -326,17 +340,34 @@ func _draw_goods() -> void:
 		var x := int(fi) % map.width
 		var y := int(fi) / map.width
 		var node := map.node_world(x, y)
-		var base := node + Vector2(6, -2)
-		for k in mini(queue.size(), Economy.FLAG_CAP):
-			var good_type: int = (queue[k] as Economy.Good).type
-			var off := Vector2(9.0 * (k % 4), -9.0 * (k / 4))
-			var tex := GameTheme.good_texture(good_type)
-			if tex != null:
-				draw_texture_rect(tex, Rect2(base + off, Vector2(8, 8)), false)
-			else:
-				draw_rect(Rect2(base + off, Vector2(5, 5)), GameTheme.good_color(good_type))
-		# Waren liegen am Flaggenknoten — davorstehende Bäume müssen sie verdecken.
-		_occlude_box(node.y, node.x - 2.0, node.y - 40.0, node.x + 42.0, node.y + 4.0)
+		var n := mini(queue.size(), Economy.FLAG_CAP)
+		if dense:
+			# Hinten (oben) zuerst zeichnen, damit vordere (untere) Waren korrekt
+			# überlappen: die ersten n Heap-Plätze nach y sortiert ausgeben.
+			var order := range(n)
+			order.sort_custom(func(a, b): return GOODS_HEAP[a].y < GOODS_HEAP[b].y)
+			for k in order:
+				var gt: int = (queue[k] as Economy.Good).type
+				var pos := node + GOODS_HEAP[k]
+				var tex := GameTheme.good_texture(gt)
+				if tex != null:
+					draw_texture_rect(tex, Rect2(pos, Vector2(GOOD_ICON_DENSE, GOOD_ICON_DENSE)), false)
+				else:
+					draw_rect(Rect2(pos, Vector2(5, 5)), GameTheme.good_color(gt))
+			# Haufen reicht links/oben über den Knoten hinaus → Okklusionsbox anpassen.
+			_occlude_box(node.y, node.x - 18.0, node.y - 40.0, node.x + 16.0, node.y + 6.0)
+		else:
+			var base := node + Vector2(6, -2)
+			for k in n:
+				var gt: int = (queue[k] as Economy.Good).type
+				var off := Vector2(9.0 * (k % 4), -9.0 * (k / 4))
+				var tex := GameTheme.good_texture(gt)
+				if tex != null:
+					draw_texture_rect(tex, Rect2(base + off, Vector2(GOOD_ICON_GRID, GOOD_ICON_GRID)), false)
+				else:
+					draw_rect(Rect2(base + off, Vector2(5, 5)), GameTheme.good_color(gt))
+			# Waren liegen am Flaggenknoten — davorstehende Bäume müssen sie verdecken.
+			_occlude_box(node.y, node.x - 2.0, node.y - 40.0, node.x + 42.0, node.y + 4.0)
 
 
 func _draw_carriers() -> void:
