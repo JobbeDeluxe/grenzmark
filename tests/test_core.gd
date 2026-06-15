@@ -19,6 +19,7 @@ func _initialize() -> void:
 	_test_start_territory_stone_guarantee()
 	_test_ore_types()
 	_test_ore_deposit_mining()
+	_test_mine_food()
 	_test_fishery_fish()
 	_test_farm_fields()
 	_test_catalog_complete()
@@ -1124,6 +1125,63 @@ func _test_ore_deposit_mining() -> void:
 	_check(map.ore_deposit_amount_at(10, 8) == 0, "Vorkommen nach 3 Schlägen erschöpft")
 	_check(eco._find_deposit(Vector2i(10, 10), MapData.ORE_IRON, Economy.ORE_RADIUS).x < 0,
 		"Erschöpftes Vorkommen wird nicht mehr gefunden")
+
+
+## Minen verbrauchen eine ODER-Nahrung wie im Original: Fisch, Fleisch oder Brot.
+## Der reine Erzabbau-Test oben nutzt _do_resource_action direkt und bleibt bewusst
+## frei von Nahrungslogik; hier wird nur Eingang/Verbrauch/Nachforderung geprüft.
+func _test_mine_food() -> void:
+	var map := _flat_map(20, 20)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var group := [Goods.FISH, Goods.MEAT, Goods.BREAD]
+	var bs := Economy.BState.new()
+	bs.def = { food_inputs = group, resource = "ore", output = Goods.COAL }
+
+	_check(not eco._has_inputs(bs), "Mine: ohne Nahrung startet kein Zyklus")
+	bs.delivered[Goods.BREAD] = 1
+	_check(eco._has_inputs(bs), "Mine: Brot reicht als ODER-Nahrung")
+	eco._consume_inputs(bs)
+	_check(int(bs.delivered.get(Goods.BREAD, 0)) == 0,
+		"Mine: ein Zyklus verbraucht genau eine Nahrungseinheit")
+
+	bs.delivered.clear()
+	bs.delivered[Goods.FISH] = 1
+	_check(eco._has_inputs(bs), "Mine: Fisch reicht als ODER-Nahrung")
+	bs.delivered.clear()
+	bs.delivered[Goods.MEAT] = 1
+	_check(eco._has_inputs(bs), "Mine: Fleisch reicht als ODER-Nahrung")
+
+	bs.delivered.clear()
+	bs.delivered[Goods.BEER] = 1
+	_check(not eco._has_inputs(bs),
+		"Mine: Bier zählt standardmäßig nicht als Original-Nahrung")
+	eco.set_mines_accept_beer(true)
+	_check(eco._has_inputs(bs), "Mine: Hausregel erlaubt Bier als Minennahrung")
+	eco._consume_inputs(bs)
+	_check(int(bs.delivered.get(Goods.BEER, 0)) == 0,
+		"Mine: Hausregel-Bier wird als eine Nahrungseinheit verbraucht")
+
+	var hq_flag := state.place_flag(4, 10)
+	var mine_flag := state.place_flag(10, 10)
+	_check(hq_flag != null and mine_flag != null, "Mine: Testflaggen platzierbar")
+	if hq_flag == null or mine_flag == null:
+		return
+	_check(state.build_road(hq_flag.pos, mine_flag.pos) != null,
+		"Mine: Teststraße für Nahrungsanforderung baubar")
+	eco.hq_flag = map.idx(hq_flag.pos.x, hq_flag.pos.y)
+	eco.hq_stock = { Goods.MEAT: 1, Goods.BREAD: 1 }
+	eco.hq_outbox.clear()
+	var req := Economy.BState.new()
+	req.def = { food_inputs = group, resource = "ore", output = Goods.COAL }
+	req.flag_idx = map.idx(mine_flag.pos.x, mine_flag.pos.y)
+	eco._request_inputs(req)
+	_check(int(req.incoming.get(Goods.MEAT, 0)) == 1
+			and int(req.incoming.get(Goods.BREAD, 0)) == 1,
+		"Mine: fordert bis zum Nahrungspuffer verschiedene verfügbare Sorten an")
+	_check(eco.hq_outbox.size() == 2 and int(eco.hq_stock.get(Goods.MEAT, 0)) == 0
+			and int(eco.hq_stock.get(Goods.BREAD, 0)) == 0,
+		"Mine: angeforderte Nahrung wird aus dem Lager ausgelagert")
 
 
 ## Endliche Fischbestände (Issue #6), original-getreu an RTTR nofFisher: Fisch ist

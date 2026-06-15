@@ -619,6 +619,11 @@ func _build_ui() -> void:
 	_tbutton(scale_actions, "UI klein", _set_ui_scale.bind("klein"))
 	_tbutton(scale_actions, "UI mittel", _set_ui_scale.bind("mittel"))
 	_tbutton(scale_actions, "UI gross", _set_ui_scale.bind("gross"))
+	var rules_actions := HBoxContainer.new()
+	rules_actions.add_theme_constant_override("separation", 4)
+	settings_box.add_child(rules_actions)
+	var beer_btn := _tbutton(rules_actions, "Bier→Minen", _toggle_mines_beer)
+	beer_btn.tooltip_text = "Hausregel: Minen nehmen auch Bier als Nahrung (Original: nur Fisch/Fleisch/Brot)."
 	_update_settings_text()
 
 	_build_tools_panel()
@@ -1391,6 +1396,8 @@ func _update_settings_text() -> void:
 			"AN" if UISkin.option_bool("start_ai", true) else "AUS",
 			"AN" if UISkin.option_bool("show_resource_bar", false) else "AUS",
 		] + \
+		"Hausregel: Bier als Minennahrung %s\n\n" % \
+			("AN" if (economy != null and economy.mines_accept_beer) else "AUS") + \
 		"Anpassbar:\n" + \
 		"- assets/ui.json: UI-Farben, Randabstaende, Panel-/Button-Groessen\n" + \
 		"- assets/design.json: Gebaeude-/Flaggen-/Bauplatzgroessen und Eingange\n" + \
@@ -1413,6 +1420,15 @@ func _toggle_fog() -> void:
 	UISkin.set_option_bool("start_fog", renderer.fog_enabled)
 	renderer.queue_redraw()
 	_flash("Nebel " + ("AN" if renderer.fog_enabled else "AUS"))
+
+
+## Hausregel: Minen nehmen zusätzlich Bier als Nahrung (Original: nur Fisch/Fleisch/Brot).
+func _toggle_mines_beer() -> void:
+	if economy == null:
+		return
+	economy.set_mines_accept_beer(not economy.mines_accept_beer)
+	_update_settings_text()
+	_flash("Bier als Minennahrung " + ("AN" if economy.mines_accept_beer else "AUS"))
 
 
 ## Optionale obere Warenleiste ein-/ausblenden (im Original nicht dauerhaft da).
@@ -2633,6 +2649,7 @@ func _save_game() -> void:
 		tool_orders = economy.tool_orders.duplicate(),
 		recruiting_ratio = economy.recruiting_ratio,
 		recruit_accum = economy._recruit_accum,
+		mines_accept_beer = economy.mines_accept_beer,
 		# Bestände der baubaren Lagerhäuser (#31); HQ-Lager steckt in hq_stock.
 		extra_storages = economy.extra_storages_state(),
 	}
@@ -2763,6 +2780,7 @@ func _load_game() -> void:
 		economy.tool_orders = to
 	economy.recruiting_ratio = clampi(int(data.get("recruiting_ratio", economy.recruiting_ratio)), 0, 10)
 	economy._recruit_accum = int(data.get("recruit_accum", 0))
+	economy.mines_accept_beer = bool(data.get("mines_accept_beer", false))
 	var tree_growth = data.get("tree_growth", {})
 	if tree_growth is Dictionary:
 		economy.restore_tree_growth(tree_growth)

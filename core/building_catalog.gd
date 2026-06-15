@@ -7,7 +7,8 @@ extends RefCounted
 ##
 ## Felder eines Defs:
 ##   id, name, size (WorldState.BQ_*), cost {good:n}, inputs {good:n},
-##   output (Goods.* oder -1), work (Ticks), resource ("","tree","plant_tree",
+##   food_inputs [good, ...] als ODER-Nahrung (Minen), output (Goods.* oder -1),
+##   work (Ticks), resource ("","tree","plant_tree",
 ##   "stone","ore","water"), influence (0 = nicht militärisch), category
 
 static func defs() -> Dictionary:
@@ -109,25 +110,25 @@ static func defs() -> Dictionary:
 		},
 		"coalmine": {
 			id = "coalmine", name = "Kohlemine", size = MINE,
-			cost = { Goods.BOARDS: 2 }, inputs = { Goods.BREAD: 1 },
+			cost = { Goods.BOARDS: 2 }, food_inputs = [Goods.FISH, Goods.MEAT, Goods.BREAD],
 			output = Goods.COAL, work = 150, resource = "ore",
 			mineral = MapData.ORE_COAL, influence = 0, category = "bergbau",
 		},
 		"ironmine": {
 			id = "ironmine", name = "Eisenmine", size = MINE,
-			cost = { Goods.BOARDS: 2 }, inputs = { Goods.BREAD: 1 },
+			cost = { Goods.BOARDS: 2 }, food_inputs = [Goods.FISH, Goods.MEAT, Goods.BREAD],
 			output = Goods.IRON_ORE, work = 150, resource = "ore",
 			mineral = MapData.ORE_IRON, influence = 0, category = "bergbau",
 		},
 		"goldmine": {
 			id = "goldmine", name = "Goldmine", size = MINE,
-			cost = { Goods.BOARDS: 2 }, inputs = { Goods.BREAD: 1 },
+			cost = { Goods.BOARDS: 2 }, food_inputs = [Goods.FISH, Goods.MEAT, Goods.BREAD],
 			output = Goods.GOLD_ORE, work = 170, resource = "ore",
 			mineral = MapData.ORE_GOLD, influence = 0, category = "bergbau",
 		},
 		"granitemine": {
 			id = "granitemine", name = "Granitmine", size = MINE,
-			cost = { Goods.BOARDS: 2 }, inputs = { Goods.BREAD: 1 },
+			cost = { Goods.BOARDS: 2 }, food_inputs = [Goods.FISH, Goods.MEAT, Goods.BREAD],
 			output = Goods.STONE, work = 160, resource = "ore",
 			mineral = MapData.ORE_GRANITE, influence = 0, category = "bergbau",
 		},

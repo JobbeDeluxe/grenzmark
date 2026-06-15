@@ -21,6 +21,7 @@ const CARRIER_SPEED := 0.05    # Segmente pro Tick
 const FLAG_CAP := 8            # max. Waren, die auf einer Flagge warten
 const BUILD_TIME := 150        # Ticks Bau, sobald alle Materialien da sind
 const OUT_CAP := 4             # Ausgangspuffer eines Gebäudes
+const FOOD_BUFFER := 2         # Nahrungs-Sollbestand eines Gebäudes mit food_inputs (Minen)
 const PROD_WINDOW := 1800      # rollendes Bewertungsfenster (Ticks) für die Produktivität %
 const RES_RADIUS := 6          # Suchradius für Baum/Stein/Pflanzplatz
 const ORE_RADIUS := 4          # Suchradius für Erz / Wasser
@@ -207,6 +208,8 @@ var soldiers := 0                    # ausgebildete Soldaten im HQ (Reserve)
 var tool_priority: Dictionary = {}   # Werkzeug-Gut -> Gewicht 0..10 (Werkzeugmacher)
 var tool_orders: Dictionary = {}     # Werkzeug-Gut -> noch offene Bestellmenge (Vorrang)
 var recruiting_ratio := 10           # Soldaten-Rekrutierungsrate 0..10 (RTTR MilSetting 0)
+var mines_accept_beer := false       # Hausregel: Minen nehmen zusätzlich Bier als Nahrung
+                                     # (Original: nur Fisch/Fleisch/Brot). Default aus.
 var ai_enabled := true               # Gegner-KI aktiv? (zum Testen abschaltbar)
 var ai: AIBase = null                # austauschbare Gegner-KI (Plugin)
 var marchers: Array[Marcher] = []    # gerade marschierende Soldaten
@@ -262,6 +265,10 @@ func set_tool_order(tool_good: int, count: int) -> void:
 
 func set_recruiting_ratio(ratio: int) -> void:
 	recruiting_ratio = clampi(ratio, 0, 10)
+
+
+func set_mines_accept_beer(on: bool) -> void:
+	mines_accept_beer = on
 
 
 # --------------------------------------------------------------------------
@@ -1446,6 +1453,42 @@ func _request_inputs(bs: BState) -> void:
 		var have: int = bs.delivered.get(g, 0) + bs.incoming.get(g, 0)
 		if have < desired:
 			_request_from_hq(bs, g, desired - have)
+	# Nahrungsgruppe (ODER): bis zum Sollbestand auffüllen, egal welche Sorte.
+	var group := _food_group(bs)
+	if not group.is_empty():
+		var have_food := 0
+		for g in group:
+			have_food += int(bs.delivered.get(g, 0)) + int(bs.incoming.get(g, 0))
+		if have_food < FOOD_BUFFER:
+			_request_food(bs, group, FOOD_BUFFER - have_food)
+
+
+## Fordert [amount] Nahrungseinheiten an: pro Stück das nächste Lager, das IRGENDEINE
+## Sorte aus der Gruppe vorrätig hat (Gruppenreihenfolge entscheidet die Sorte).
+func _request_food(bs: BState, group: Array, amount: int) -> void:
+	for _k in amount:
+		var st := _nearest_storage(bs.flag_idx, 0, func(s: Storage) -> bool:
+			if s.outbox.size() >= FLAG_CAP:
+				return false
+			for fg in group:
+				if int(s.stock.get(fg, 0)) > 0:
+					return true
+			return false)
+		if st == null:
+			return
+		var picked := -1
+		for fg in group:
+			if int(st.stock.get(fg, 0)) > 0:
+				picked = int(fg)
+				break
+		if picked < 0:
+			return
+		st.stock[picked] = int(st.stock[picked]) - 1
+		bs.incoming[picked] = int(bs.incoming.get(picked, 0)) + 1
+		var good := Good.new()
+		good.type = picked
+		good.dest = bs.flag_idx
+		st.outbox.append(good)
 
 
 ## Fordert [amount] Stück Ware [g] aus dem nächstgelegenen Lager an, das sie auf
@@ -1616,11 +1659,35 @@ func _worker_walk_ticks(bs: BState, target: Vector2i) -> float:
 	return maxf(a.distance_to(b) / maxf(Tuning.worker_speed(bs.bld.def_id, resource), 0.1), 1.0)
 
 
+## Nahrungsgruppe eines Gebäudes (ODER-Eingang, RTTR WaresNeeded): EINE Einheit aus
+## der Gruppe sättigt. Minen: Fisch/Fleisch/Brot; optionale Hausregel ergänzt Bier.
+## Leer, wenn das Gebäude keine food_inputs hat.
+func _food_group(bs: BState) -> Array:
+	var fg = bs.def.get("food_inputs", null)
+	if not (fg is Array) or (fg as Array).is_empty():
+		return []
+	var group: Array = (fg as Array).duplicate()
+	if mines_accept_beer and not group.has(Goods.BEER):
+		group.append(Goods.BEER)
+	return group
+
+
+## Vorrätige Nahrung (Summe über die Gruppe) im Eingangslager des Gebäudes.
+func _food_available(bs: BState) -> int:
+	var n := 0
+	for g in _food_group(bs):
+		n += int(bs.delivered.get(g, 0))
+	return n
+
+
 func _has_inputs(bs: BState) -> bool:
 	var inputs: Dictionary = bs.def.get("inputs", {})
 	for g in inputs:
 		if bs.delivered.get(g, 0) < int(inputs[g]):
 			return false
+	# Nahrungsgruppe (ODER): mindestens eine Einheit aus der Gruppe muss da sein.
+	if not _food_group(bs).is_empty() and _food_available(bs) < 1:
+		return false
 	return true
 
 
@@ -1628,6 +1695,19 @@ func _consume_inputs(bs: BState) -> void:
 	var inputs: Dictionary = bs.def.get("inputs", {})
 	for g in inputs:
 		bs.delivered[g] = bs.delivered.get(g, 0) - int(inputs[g])
+	# Nahrungsgruppe: EINE Einheit verbrauchen, deterministisch aus der best-bevorrateten
+	# Sorte (Gleichstand → Gruppenreihenfolge).
+	var group := _food_group(bs)
+	if not group.is_empty():
+		var best_g := -1
+		var best_n := 0
+		for g in group:
+			var n := int(bs.delivered.get(g, 0))
+			if n > best_n:
+				best_n = n
+				best_g = g
+		if best_g >= 0:
+			bs.delivered[best_g] = int(bs.delivered[best_g]) - 1
 
 
 ## Knoten, zu dem der Arbeiter für diesen Produktionszyklus laufen muss.
@@ -2359,6 +2439,8 @@ func building_status(bld: WorldState.Building) -> String:
 	var inputs: Dictionary = bs.def.get("inputs", {})
 	for g in inputs:
 		s += "  %s %d/%d" % [Goods.name_of(g), bs.delivered.get(g, 0), int(inputs[g]) * 2]
+	if not _food_group(bs).is_empty():
+		s += "  Nahrung %d/%d" % [mini(_food_available(bs), FOOD_BUFFER), FOOD_BUFFER]
 	if _is_producer(bs):
 		s += "  → Ausgang %d" % _out_total(bs)
 	if int(bs.def.get("influence", 0)) > 0:
@@ -2396,6 +2478,19 @@ func building_info(bld: WorldState.Building) -> Dictionary:
 	for g in inputs:
 		var want := int(inputs[g]) * 2  # Sollbestand = doppelter Rezeptbedarf (Puffer)
 		info.inputs.append({good = g, have = mini(bs.delivered.get(g, 0), want), want = want})
+	# Nahrungsgruppe als EINE Zeile (Icon = best-bevorratete Sorte, sonst erste).
+	var fgroup := _food_group(bs)
+	if not fgroup.is_empty():
+		var total := 0
+		var rep := int(fgroup[0])
+		var best := -1
+		for g in fgroup:
+			var n := int(bs.delivered.get(g, 0))
+			total += n
+			if n > best:
+				best = n
+				rep = int(g)
+		info.inputs.append({good = rep, have = mini(total, FOOD_BUFFER), want = FOOD_BUFFER})
 	var prod := _is_producer(bs)
 	if prod:
 		var total := _out_total(bs)
