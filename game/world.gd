@@ -799,6 +799,9 @@ func _window_header_input(panel: PanelContainer, drag: Dictionary, ev: InputEven
 func _window_panel_input(on_close: Callable, ev: InputEvent) -> void:
 	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_RIGHT and ev.pressed:
 		on_close.call()
+		# Event verschlucken, sonst läuft der Rechtsklick weiter zu right_click_tap und
+		# schließt zusätzlich ein zweites Fenster (Schließen nur das Fenster unter der Maus).
+		get_viewport().set_input_as_handled()
 
 
 ## Skaliert das Fenster über den Griff unten rechts (Breite/Höhe per Maus ziehen).
@@ -1113,12 +1116,30 @@ func _build_tools_panel() -> void:
 	_tools_panel.visible = false
 	var box := _add_window_chrome(_tools_panel, "Werkzeug-Produktion", _toggle_tools_settings)
 
-	var hint := Label.new()
-	hint.text = "Regler = Häufigkeit (gewichtet). Sofort-Bestellung wird mit Vorrang produziert."
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.mouse_filter = Control.MOUSE_FILTER_PASS
-	UISkin.apply_label(hint, true, 10)
-	box.add_child(hint)
+	var px0 := UISkin.layout_num("good_icon_size", 18)
+	# Spaltenüberschriften: erklären Regler (laufende Produktion) vs. Bestellung (sofort).
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 3)
+	header.mouse_filter = Control.MOUSE_FILTER_PASS
+	box.add_child(header)
+	var hspacer := Control.new()
+	hspacer.custom_minimum_size = Vector2(px0 + 77, 0)  # über Icon + Name
+	header.add_child(hspacer)
+	var h_prio := Label.new()
+	h_prio.text = "Priorität – laufende Produktion (gewichtet)"
+	h_prio.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h_prio.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UISkin.apply_label(h_prio, true, 9)
+	header.add_child(h_prio)
+	var h_order := Label.new()
+	h_order.text = "Sofort"
+	h_order.custom_minimum_size = Vector2(80, 0)
+	h_order.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	h_order.tooltip_text = "Sofort-Bestellung: einmalige feste Menge, wird mit Vorrang produziert."
+	UISkin.apply_label(h_order, true, 9)
+	header.add_child(h_order)
+	var hsep := HSeparator.new()
+	box.add_child(hsep)
 
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -1417,8 +1438,17 @@ func _toggle_pause() -> void:
 
 
 ## Rechtsklick (ohne Schwenk) = universeller Abbrechen/Schließen wie in S2.
+## Rechtsklick auf der KARTE (nicht über einem Fenster — dort schließt das gui_input
+## des Fensters bereits gezielt). Hier nur Kontextmenüs/Modus abbrechen, damit nicht
+## irgendein Verwaltungsfenster fern der Maus geschlossen wird.
 func _on_right_click_cancel() -> void:
-	_escape_or_select()
+	if _flag_menu != null and _flag_menu.visible:
+		_close_flag_menu()
+		return
+	if _road_menu != null and _road_menu.visible:
+		_close_road_menu()
+		return
+	_set_mode(MODE_SELECT)
 
 
 func _escape_or_select() -> void:

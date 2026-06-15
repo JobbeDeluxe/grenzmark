@@ -333,8 +333,10 @@ GitHub-Arbeitspakete:
       Bestellung mit +/−) und „Militär" (Rekrutierungsrate-Regler mit −/+). Mausrad
       scrollt nur den Inhalt (Slider scrollable=false). Einstiege je Fenster:
       Verwaltung → „Werkzeuge"/„Militaer" UND der Button im Werkzeugmacher- bzw.
-      Schmiede-Fenster. Verwaltungs-/Settings-Fenster bleiben jetzt parallel offen
-      (kein gegenseitiges Schließen mehr; Schließen per Toggle/X/Rechtsklick). Issue #41.
+      Schmiede-Fenster. Spaltenüberschriften erklären Priorität (laufende Produktion)
+      vs. Sofort-Bestellung. Verwaltungs-/Settings-Fenster bleiben parallel offen;
+      Schließen per Toggle/X oder Rechtsklick — und der Rechtsklick schließt NUR das
+      Fenster unter der Maus (nicht mehr ein beliebiges fernes Fenster). Issue #41.
 - [ ] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion); **Verteilungs-
       Einstellungen** (Warenverteilung mehrerer Abnehmer) stehen noch aus.
 - [ ] **Nachrichten-/Ereignisleiste** (Angriff, „Gebäude fertig", „Lager voll" …).
