@@ -129,13 +129,15 @@ func _collect_occluders() -> void:
 		var tex := GameTheme.building_texture(b.def_id, b.owner)
 		if tex == null:
 			continue
-		var basep := map.node_world(b.pos.x, b.pos.y) + GameTheme.building_offset(b.def_id)
+		var node := map.node_world(b.pos.x, b.pos.y)
+		var basep := node + GameTheme.building_offset(b.def_id)
 		var sc := GameTheme.texture_scale()
 		if b.is_hq:
 			sc *= GameTheme.hq_scale()
 		var sz := GameTheme.building_dims(b.size, b.def_id).x * sc
 		_occluders.append({
 			base = basep,
+			foot = node,   # Bodenknoten OHNE building_offset → Tiefen-/Seiten-Anker (#39)
 			tex = tex,
 			w = sz,
 			h = sz,
@@ -210,10 +212,15 @@ func _occlude_box(ref_y: float, left: float, top: float, right: float, bottom: f
 func _is_building_side_lane_clear(o: Dictionary, ref_y: float, center_x: float) -> bool:
 	if String(o.get("kind", "")) != "building":
 		return false
-	var depth := float(o.base.y) - ref_y
+	# Anker ist der BODENKNOTEN (ohne building_offset), nicht das optisch nach
+	# rechts/unten verschobene Sprite. Sonst schiebt ein versetztes Sprite (HQ:
+	# +20/+22) seine Okklusion künstlich über die östliche Straße und verschluckt
+	# dort laufende Träger (#39). Für Gebäude ohne Offset ist foot == base.
+	var foot: Vector2 = o.get("foot", o.base)
+	var depth := foot.y - ref_y
 	if depth > float(o.get("clear_depth", 0.0)):
 		return false
-	var side_x := float(o.base.x) + float(o.get("right_core", 999999.0)) \
+	var side_x := foot.x + float(o.get("right_core", 999999.0)) \
 		+ depth * BUILDING_RIGHT_DEPTH_SLOPE
 	return center_x > side_x
 

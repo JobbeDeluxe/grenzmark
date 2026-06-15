@@ -4,6 +4,35 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-15] (IN ARBEIT, braucht GUI-Gegenprobe) Träger verschwinden östlich am HQ
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/39
+
+  Symptom: Nur am HQ verschwanden Träger, die rechts/östlich daran vorbeilaufen
+  (andere Gebäude waren laut User in Ordnung).
+
+  Ursache: Die Seiten-Okklusions-Heuristik (_is_building_side_lane_clear) nutzte den
+  optisch verschobenen Sprite-Anker `base` als Tiefen-/Seiten-Referenz. Das HQ hat als
+  EINZIGES Gebäude einen building_offset (design.json: +20 x / +22 y). Dadurch lag
+  base 20 px rechts und 22 px unter dem Bodenknoten:
+    - depth (base.y - foot) wurde künstlich ~22 → riss am clear_depth-Limit ab,
+    - side_x (base.x + right_core + depth*slope) rutschte auf node.x+~68,
+      knapp RECHTS des Ost-Straßenknotens (node.x+TILE_W=+64) → Träger galt als
+      „dahinter" und wurde von der HQ-Wand übermalt.
+
+  Fix (rein im Renderer, game/unit_renderer.gd):
+  - Okkluder speichern zusätzlich `foot` = Bodenknoten OHNE building_offset.
+  - _is_building_side_lane_clear rechnet Tiefe und side_x gegen `foot` statt `base`.
+    → Für das HQ ist der Ost-Knoten jetzt klar im Freigabe-Band (side_x ~node.x+49,
+      Träger bei node.x+64 bleibt sichtbar). Für alle Gebäude ohne Offset ist
+      foot == base → bitgenau unverändert.
+
+  Verifikation: 735 Kern-Tests grün, Smoke-Test Exit 0. Sichtprüfung nur in der GUI
+  möglich (headless nicht screenshotbar) → bitte im Spiel gegenprüfen:
+  Träger rechts/östlich am HQ bleiben sichtbar; Träger WIRKLICH hinter dem HQ werden
+  weiterhin verdeckt. Danach Issue #39 schließen.
+
+
 [2026-06-11] (BEHOBEN) ~0,5–1 s Freeze beim Platzieren — Bauplatz-Overlay scannte
                        die ganze Karte
 ------------------------------------------------------------------------
