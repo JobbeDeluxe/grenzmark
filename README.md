@@ -26,13 +26,14 @@ erstellt hat.
 
 ## Eindruck
 
-Das erste Bild zeigt einen aktuellen Spielstand aus dem laufenden Prototyp.
+Die ersten Bilder zeigen aktuelle Spielstände aus dem laufenden Prototyp.
 Darunter folgen austauschbare Asset- und Design-Previews. Im Spiel werden die
 eigentlichen PNGs aus den Asset-Ordnern geladen; fehlen Dateien, zeichnet Godot
 vorläufige Platzhalter.
 
 <p align="center">
-  <img src="docs/screenshots/ingame-preview-2026-06-15.png" alt="Aktuelles Ingame-Bild" width="96%">
+  <img src="docs/screenshots/ingame-preview-2026-06-15.png" alt="Aktuelles Ingame-Bild mit Hauptquartier und Küste" width="48%">
+  <img src="docs/screenshots/ingame-economy-2026-06-16.png" alt="Aktuelles Ingame-Bild mit Wirtschaft, Wegen und Bergwerk" width="48%">
 </p>
 
 <p align="center">
