@@ -498,7 +498,9 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [ ] Soldaten-Ränge mit Stufen (Gefreiter→General), Beförderung sichtbar
 - [ ] Angriff mit wählbarer Soldatenzahl; Gebäude-Belagerung
 - [ ] Gebäudegrößen-Ausbau (kleines→großes Militärgebäude)
-- [ ] Schilde + Schwerter + Bier nötig, um Soldaten im HQ zu rekrutieren
+- [ ] Schilde + Schwerter + Bier (+ Träger) nötig, um Soldaten im HQ zu rekrutieren
+      — aktuell macht 1 Schwert schon einen Soldaten (RTTR: min(Schwert,Schild,Bier,Helper))
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/41)
 
 **Wasser & See (mittel):**
 - [ ] Häfen, Werften, Schiffe; Warentransport über Wasser
