@@ -328,11 +328,13 @@ GitHub-Arbeitspakete:
       Raster (gedimmt bei 0) plus **Bevölkerung/Berufe**-Liste (aus `hq_people`)
       und Soldaten-Reserve, statt der bisherigen Textliste.
 - [ ] **Minikarte** in gerahmtem Panel; Umschalter für Overlays (Gebiet, Bauplätze, Nebel).
-- [x] **Werkzeug-/Militär-Einstellungsfenster** (2026-06-15): eigenes Reglerfenster
-      mit Werkzeug-Prioritäten (12 Regler) + Bestellmengen (SpinBox/Bestellpfeile) und
-      Rekrutierungsrate-Regler. Zwei Einstiege: System → „Werkzeug/Militär" und ein
-      „Einstellungen"-Button im Schmiede-/Werkzeugmacher-Fenster. Liest/schreibt die
-      `economy`-Settings (set_tool_priority/-order/-recruiting_ratio). Issue #41.
+- [x] **Werkzeug- und Militär-Einstellungsfenster** (2026-06-15, getrennt wie im
+      Original): „Werkzeug-Produktion" (12 Prioritäts-Regler mit ◄/►-Schritt + Sofort-
+      Bestellung mit +/−) und „Militär" (Rekrutierungsrate-Regler mit −/+). Mausrad
+      scrollt nur den Inhalt (Slider scrollable=false). Einstiege je Fenster:
+      Verwaltung → „Werkzeuge"/„Militaer" UND der Button im Werkzeugmacher- bzw.
+      Schmiede-Fenster. Verwaltungs-/Settings-Fenster bleiben jetzt parallel offen
+      (kein gegenseitiges Schließen mehr; Schließen per Toggle/X/Rechtsklick). Issue #41.
 - [ ] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion); **Verteilungs-
       Einstellungen** (Warenverteilung mehrerer Abnehmer) stehen noch aus.
 - [ ] **Nachrichten-/Ereignisleiste** (Angriff, „Gebäude fertig", „Lager voll" …).

@@ -62,11 +62,12 @@ var _stats_panel: PanelContainer
 var _stats_label: Label
 var _settings_panel: PanelContainer
 var _settings_body: Label
-# Werkzeug-/Militär-Einstellungen (#41): eigenes Fenster mit Reglern.
-var _tools_panel: PanelContainer
+# Werkzeug-/Militär-Einstellungen (#41): zwei getrennte Reglerfenster wie im Original.
+var _tools_panel: PanelContainer           # Werkzeug-Prioritäten/-Bestellungen
+var _military_panel: PanelContainer        # Militär (Rekrutierungsrate)
 var _tools_prio_sliders: Dictionary = {}   # Werkzeug-Gut -> HSlider (Priorität)
 var _tools_prio_labels: Dictionary = {}    # Werkzeug-Gut -> Label (Gewichtsanzeige)
-var _tools_order_spins: Dictionary = {}    # Werkzeug-Gut -> SpinBox (Bestellmenge)
+var _tools_order_labels: Dictionary = {}   # Werkzeug-Gut -> Label (Bestellmenge)
 var _recruit_slider: HSlider
 var _recruit_value_label: Label
 var _tools_loading := false                # Regler werden gerade aus dem Modell gesetzt
@@ -567,7 +568,9 @@ func _build_ui() -> void:
 	_tbutton(mainsel_box, "Inventur", _open_inventory)
 	_tbutton(mainsel_box, "Gebaeude", _open_buildings)
 	_tbutton(mainsel_box, "Statistik", _open_stats)
-	for stub in ["Verteilung", "Transport", "Werkzeuge", "Produktivitaet", "Militaer"]:
+	_tbutton(mainsel_box, "Werkzeuge", _toggle_tools_settings)
+	_tbutton(mainsel_box, "Militaer", _toggle_military_settings)
+	for stub in ["Verteilung", "Transport", "Produktivitaet"]:
 		var sb := _tbutton(mainsel_box, stub, _noop)
 		sb.disabled = true
 		sb.tooltip_text = "Noch nicht implementiert"
@@ -616,13 +619,10 @@ func _build_ui() -> void:
 	_tbutton(scale_actions, "UI klein", _set_ui_scale.bind("klein"))
 	_tbutton(scale_actions, "UI mittel", _set_ui_scale.bind("mittel"))
 	_tbutton(scale_actions, "UI gross", _set_ui_scale.bind("gross"))
-	var tools_actions := HBoxContainer.new()
-	tools_actions.add_theme_constant_override("separation", 4)
-	settings_box.add_child(tools_actions)
-	_tbutton(tools_actions, "Werkzeug/Militär", _toggle_tools_settings)
 	_update_settings_text()
 
 	_build_tools_panel()
+	_build_military_panel()
 
 	# Flaggen-Kontextmenü (S2-artig): erscheint an der angeklickten Flagge.
 	_flag_menu = _floating_panel(Vector2(0, 0), Vector2(0, 0), Vector2(168, 0))
@@ -972,9 +972,9 @@ func _toggle_build_panel() -> void:
 	if _build_panel == null:
 		return
 	var next := not _build_panel.visible
-	_hide_management_panels()
 	_build_panel.visible = next
 	if next:
+		_build_panel.move_to_front()
 		build_filter_bq = -1
 		build_window_spot = Vector2i(-1, -1)
 		_position_build_panel_default()
@@ -985,9 +985,9 @@ func _toggle_economy_panel() -> void:
 	if _economy_panel == null:
 		return
 	var next := not _economy_panel.visible
-	_hide_management_panels()
 	_economy_panel.visible = next
 	if next:
+		_economy_panel.move_to_front()
 		_update_economy_panel()
 
 
@@ -995,31 +995,32 @@ func _toggle_mainsel() -> void:
 	if _mainsel_panel == null:
 		return
 	var next := not _mainsel_panel.visible
-	_hide_management_panels()
 	_mainsel_panel.visible = next
+	if next:
+		_mainsel_panel.move_to_front()
 
 
 func _open_inventory() -> void:
-	_hide_management_panels()
 	_economy_panel.visible = true
+	_economy_panel.move_to_front()
 	_update_economy_panel()
 
 
 func _open_buildings() -> void:
 	var next := _buildings_panel == null or not _buildings_panel.visible
-	_hide_management_panels()
 	if _buildings_panel != null:
 		_buildings_panel.visible = next
 		if next:
+			_buildings_panel.move_to_front()
 			_update_buildings_panel()
 
 
 func _open_stats() -> void:
 	var next := _stats_panel == null or not _stats_panel.visible
-	_hide_management_panels()
 	if _stats_panel != null:
 		_stats_panel.visible = next
 		if next:
+			_stats_panel.move_to_front()
 			_update_stats_panel()
 
 
@@ -1083,24 +1084,37 @@ func _toggle_settings() -> void:
 	if _settings_panel == null:
 		return
 	var next := not _settings_panel.visible
-	_hide_management_panels()
 	_settings_panel.visible = next
 	if next:
+		_settings_panel.move_to_front()
 		_update_settings_text()
 
 
-## Eigenes Fenster für Werkzeug-Prioritäten/-Bestellungen + Rekrutierungsrate (#41).
-## Zwei Einstiegspunkte: System-Einstellungen und die Schmiede-/Werkzeugmacher-Fenster.
+## Kompakter Schrittbutton (◄ ► bzw. + −) mit fester kleiner Größe.
+func _step_btn(row: Container, text: String, cb: Callable) -> Button:
+	var btn := Button.new()
+	btn.text = text
+	UISkin.apply_button(btn)
+	btn.custom_minimum_size = Vector2(22, 22) * UISkin.ui_scale()
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.pressed.connect(cb)
+	row.add_child(btn)
+	return btn
+
+
+## Werkzeug-Fenster (#41): je Werkzeug ein Regler (Priorität) mit ◄/►-Schrittbuttons
+## und eine Sofort-Bestellung mit +/−. Einstieg: Verwaltung → „Werkzeuge" und der
+## Werkzeugmacher-Button. Mausrad scrollt nur den Inhalt (Slider: scrollable = false).
 func _build_tools_panel() -> void:
 	_tools_prio_sliders.clear()
 	_tools_prio_labels.clear()
-	_tools_order_spins.clear()
-	_tools_panel = _floating_panel(Vector2(0.5, 0.5), Vector2(-190, -210), Vector2(190, 210))
+	_tools_order_labels.clear()
+	_tools_panel = _floating_panel(Vector2(0.5, 0.5), Vector2(-225, -200), Vector2(225, 200))
 	_tools_panel.visible = false
-	var box := _add_window_chrome(_tools_panel, "Werkzeug & Militär", _toggle_tools_settings)
+	var box := _add_window_chrome(_tools_panel, "Werkzeug-Produktion", _toggle_tools_settings)
 
 	var hint := Label.new()
-	hint.text = "Werkzeugmacher: Priorität (Regler) = Häufigkeit, Bestellung = feste Menge (Vorrang)."
+	hint.text = "Regler = Häufigkeit (gewichtet). Sofort-Bestellung wird mit Vorrang produziert."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.mouse_filter = Control.MOUSE_FILTER_PASS
 	UISkin.apply_label(hint, true, 10)
@@ -1112,14 +1126,14 @@ func _build_tools_panel() -> void:
 	scroll.custom_minimum_size = Vector2(0, 250)
 	box.add_child(scroll)
 	var list := VBoxContainer.new()
-	list.add_theme_constant_override("separation", 2)
+	list.add_theme_constant_override("separation", 3)
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(list)
 
 	var px := UISkin.layout_num("good_icon_size", 18)
 	for g in Goods.tools():
 		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 5)
+		row.add_theme_constant_override("separation", 3)
 		row.mouse_filter = Control.MOUSE_FILTER_PASS
 		list.add_child(row)
 		var icon := TextureRect.new()
@@ -1130,55 +1144,81 @@ func _build_tools_panel() -> void:
 		row.add_child(icon)
 		var name_lbl := Label.new()
 		name_lbl.text = Goods.name_of(g)
-		name_lbl.custom_minimum_size = Vector2(78, 0)
+		name_lbl.custom_minimum_size = Vector2(74, 0)
 		UISkin.apply_label(name_lbl, false, 10)
 		row.add_child(name_lbl)
+		# Priorität: ◄ [Regler] ► [Wert]
+		_step_btn(row, "◄", _step_tool_priority.bind(g, -1))
 		var slider := HSlider.new()
 		slider.min_value = 0
 		slider.max_value = 10
 		slider.step = 1
-		slider.custom_minimum_size = Vector2(80, 0)
+		slider.scrollable = false   # Mausrad darf nur den Inhalt scrollen, nicht den Wert ändern
+		slider.custom_minimum_size = Vector2(70, 0)
 		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		slider.value_changed.connect(_on_tool_priority_changed.bind(g))
 		row.add_child(slider)
 		_tools_prio_sliders[g] = slider
+		_step_btn(row, "►", _step_tool_priority.bind(g, 1))
 		var val := Label.new()
 		val.custom_minimum_size = Vector2(16, 0)
+		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		UISkin.apply_label(val, true, 10)
 		row.add_child(val)
 		_tools_prio_labels[g] = val
-		var order := SpinBox.new()
-		order.min_value = 0
-		order.max_value = 99
-		order.step = 1
-		order.custom_minimum_size = Vector2(58, 22)
-		order.tooltip_text = "Bestellmenge (wird mit Vorrang produziert)"
-		order.value_changed.connect(_on_tool_order_changed.bind(g))
-		row.add_child(order)
-		_tools_order_spins[g] = order
+		# Sofort-Bestellung: − [Menge] +
+		var gap := Control.new()
+		gap.custom_minimum_size = Vector2(6, 0)
+		row.add_child(gap)
+		_step_btn(row, "−", _step_tool_order.bind(g, -1)).tooltip_text = "Bestellmenge −1"
+		var ord := Label.new()
+		ord.custom_minimum_size = Vector2(18, 0)
+		ord.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ord.tooltip_text = "Sofort-Bestellung (mit Vorrang produziert)"
+		UISkin.apply_label(ord, false, 10)
+		row.add_child(ord)
+		_tools_order_labels[g] = ord
+		_step_btn(row, "+", _step_tool_order.bind(g, 1)).tooltip_text = "Bestellmenge +1"
 
-	var sep := HSeparator.new()
-	box.add_child(sep)
+
+## Militär-Fenster (#41): Rekrutierungsrate als Regler mit −/+ Schrittbuttons.
+## Einstieg: Verwaltung → „Militaer" und der Schmiede-Button.
+func _build_military_panel() -> void:
+	_military_panel = _floating_panel(Vector2(0.5, 0.5), Vector2(-180, -70), Vector2(180, 70))
+	_military_panel.visible = false
+	var box := _add_window_chrome(_military_panel, "Militär", _toggle_military_settings)
+
+	var hint := Label.new()
+	hint.text = "Rekrutierungsrate: wie viele Soldaten aus Schwert+Schild+Bier+Träger entstehen."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.mouse_filter = Control.MOUSE_FILTER_PASS
+	UISkin.apply_label(hint, true, 10)
+	box.add_child(hint)
+
 	var mil := HBoxContainer.new()
-	mil.add_theme_constant_override("separation", 5)
+	mil.add_theme_constant_override("separation", 4)
 	mil.mouse_filter = Control.MOUSE_FILTER_PASS
 	box.add_child(mil)
 	var mil_label := Label.new()
-	mil_label.text = "Rekrutierungsrate"
-	mil_label.custom_minimum_size = Vector2(110, 0)
+	mil_label.text = "Rate"
+	mil_label.custom_minimum_size = Vector2(34, 0)
 	UISkin.apply_label(mil_label, false, 11)
 	mil.add_child(mil_label)
+	_step_btn(mil, "−", _step_recruit.bind(-1))
 	_recruit_slider = HSlider.new()
 	_recruit_slider.min_value = 0
 	_recruit_slider.max_value = 10
 	_recruit_slider.step = 1
+	_recruit_slider.scrollable = false
 	_recruit_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_recruit_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_recruit_slider.value_changed.connect(_on_recruit_changed)
 	mil.add_child(_recruit_slider)
+	_step_btn(mil, "+", _step_recruit.bind(1))
 	_recruit_value_label = Label.new()
 	_recruit_value_label.custom_minimum_size = Vector2(22, 0)
+	_recruit_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	UISkin.apply_label(_recruit_value_label, true, 11)
 	mil.add_child(_recruit_value_label)
 
@@ -1186,16 +1226,40 @@ func _build_tools_panel() -> void:
 func _toggle_tools_settings() -> void:
 	if _tools_panel == null:
 		return
-	var next := not _tools_panel.visible
-	_hide_management_panels()
-	_tools_panel.visible = next
-	if next:
+	_tools_panel.visible = not _tools_panel.visible
+	if _tools_panel.visible:
 		_tools_panel.move_to_front()
 		_refresh_tools_panel()
 
 
-## Reglerwerte aus dem Wirtschaftsmodell setzen, ohne die value_changed-Callbacks
-## auszulösen (sonst würde das Setzen sofort zurückschreiben).
+func _toggle_military_settings() -> void:
+	if _military_panel == null:
+		return
+	_military_panel.visible = not _military_panel.visible
+	if _military_panel.visible:
+		_military_panel.move_to_front()
+		_refresh_military_panel()
+
+
+## Aus dem Gebäudefenster: Werkzeugmacher → Werkzeug-Fenster, Schmiede → Militär.
+## Öffnet (statt zu toggeln), damit der Button nie versehentlich zumacht.
+func _open_building_settings(idx: int) -> void:
+	if not state.buildings.has(idx):
+		return
+	var b: WorldState.Building = state.buildings[idx]
+	if b.def_id == "smithy":
+		if _military_panel != null:
+			_military_panel.visible = true
+			_military_panel.move_to_front()
+			_refresh_military_panel()
+	else:
+		if _tools_panel != null:
+			_tools_panel.visible = true
+			_tools_panel.move_to_front()
+			_refresh_tools_panel()
+
+
+## Reglerwerte aus dem Modell setzen, ohne die value_changed-Callbacks auszulösen.
 func _refresh_tools_panel() -> void:
 	if economy == null or _tools_panel == null:
 		return
@@ -1204,10 +1268,16 @@ func _refresh_tools_panel() -> void:
 		var w := int(economy.tool_priority.get(g, 0))
 		(_tools_prio_sliders[g] as HSlider).set_value_no_signal(w)
 		(_tools_prio_labels[g] as Label).text = str(w)
-		(_tools_order_spins[g] as SpinBox).set_value_no_signal(int(economy.tool_orders.get(g, 0)))
-	if _recruit_slider != null:
-		_recruit_slider.set_value_no_signal(economy.recruiting_ratio)
-		_recruit_value_label.text = str(economy.recruiting_ratio)
+		(_tools_order_labels[g] as Label).text = str(int(economy.tool_orders.get(g, 0)))
+	_tools_loading = false
+
+
+func _refresh_military_panel() -> void:
+	if economy == null or _recruit_slider == null:
+		return
+	_tools_loading = true
+	_recruit_slider.set_value_no_signal(economy.recruiting_ratio)
+	_recruit_value_label.text = str(economy.recruiting_ratio)
 	_tools_loading = false
 
 
@@ -1219,10 +1289,24 @@ func _on_tool_priority_changed(value: float, tool_good: int) -> void:
 		(_tools_prio_labels[tool_good] as Label).text = str(int(value))
 
 
-func _on_tool_order_changed(value: float, tool_good: int) -> void:
-	if _tools_loading or economy == null:
+func _step_tool_priority(tool_good: int, delta: int) -> void:
+	if economy == null:
 		return
-	economy.set_tool_order(tool_good, int(value))
+	var v := clampi(int(economy.tool_priority.get(tool_good, 0)) + delta, 0, 10)
+	economy.set_tool_priority(tool_good, v)
+	if _tools_prio_sliders.has(tool_good):
+		(_tools_prio_sliders[tool_good] as HSlider).set_value_no_signal(v)
+	if _tools_prio_labels.has(tool_good):
+		(_tools_prio_labels[tool_good] as Label).text = str(v)
+
+
+func _step_tool_order(tool_good: int, delta: int) -> void:
+	if economy == null:
+		return
+	var v := maxi(int(economy.tool_orders.get(tool_good, 0)) + delta, 0)
+	economy.set_tool_order(tool_good, v)
+	if _tools_order_labels.has(tool_good):
+		(_tools_order_labels[tool_good] as Label).text = str(v)
 
 
 func _on_recruit_changed(value: float) -> void:
@@ -1231,6 +1315,16 @@ func _on_recruit_changed(value: float) -> void:
 	economy.set_recruiting_ratio(int(value))
 	if _recruit_value_label != null:
 		_recruit_value_label.text = str(int(value))
+
+
+func _step_recruit(delta: int) -> void:
+	if economy == null:
+		return
+	var v := clampi(economy.recruiting_ratio + delta, 0, 10)
+	economy.set_recruiting_ratio(v)
+	if _recruit_slider != null:
+		_recruit_slider.set_value_no_signal(v)
+		_recruit_value_label.text = str(v)
 
 
 func _set_ui_scale(name: String) -> void:
@@ -1253,9 +1347,12 @@ func _rebuild_ui_after_scale() -> void:
 	_flash("UI-Groesse: " + UISkin.ui_scale_name())
 
 
+## Blendet die LEGACY-Verwaltungsfenster aus (Map-Kontextmenüs nutzen das). Die
+## Werkzeug-/Militär-Fenster bleiben bewusst offen — sie schließen nur per Toggle,
+## X oder Rechtsklick/ESC.
 func _hide_management_panels(except: Control = null) -> void:
 	for p in [_build_panel, _economy_panel, _settings_panel, _mainsel_panel,
-			_buildings_panel, _stats_panel, _tools_panel]:
+			_buildings_panel, _stats_panel]:
 		if p != null and p != except:
 			p.visible = false
 
@@ -1331,8 +1428,8 @@ func _escape_or_select() -> void:
 	if _road_menu != null and _road_menu.visible:
 		_close_road_menu()
 		return
-	for p in [_build_panel, _economy_panel, _settings_panel, _mainsel_panel,
-			_buildings_panel, _stats_panel]:
+	for p in [_tools_panel, _military_panel, _build_panel, _economy_panel,
+			_settings_panel, _mainsel_panel, _buildings_panel, _stats_panel]:
 		if p != null and p.visible:
 			p.visible = false
 			return
@@ -1576,8 +1673,9 @@ func _open_building_window(b: WorldState.Building) -> void:
 	var goto_btn := _tbutton(actions, "Zum Geb.", _goto_building_window.bind(idx))
 	var demolish := _tbutton(actions, "Abriss", _delete_building_window.bind(idx))
 	var attack := _tbutton(actions, "Angriff", _attack_building_window.bind(idx))
-	# Direkter Einstieg in die Werkzeug-/Militär-Einstellungen aus Schmiede/Werkzeugmacher.
-	var settings_btn := _tbutton(actions, "Einstellungen", _toggle_tools_settings)
+	# Direkter Einstieg in die passende Einstellungsseite (Werkzeugmacher → Werkzeug,
+	# Schmiede → Militär). Label/Sichtbarkeit setzt _update_one_building_window.
+	var settings_btn := _tbutton(actions, "Werkzeuge", _open_building_settings.bind(idx))
 
 	_building_windows[idx] = {
 		panel = panel, title = title, icon = icon, info = info,
@@ -1660,8 +1758,9 @@ func _update_one_building_window(idx: int) -> void:
 	demolish.visible = own and not b.is_hq
 	goto_btn.visible = true
 	attack.visible = (not own) and b.influence > 0
-	# Werkzeug-/Militär-Einstellungen direkt aus Schmiede/Werkzeugmacher öffnen.
+	# Passende Einstellungsseite direkt aus dem Gebäude öffnen.
 	settings_btn.visible = own and (b.def_id == "smithy" or b.def_id == "toolmaker")
+	settings_btn.text = "Militär" if b.def_id == "smithy" else "Werkzeuge"
 
 
 ## Garnison + Rang als Icons (statt Textzeile): gefüllte Spielerfarb-Plätze für
