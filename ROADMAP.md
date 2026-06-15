@@ -328,12 +328,13 @@ GitHub-Arbeitspakete:
       Raster (gedimmt bei 0) plus **Bevölkerung/Berufe**-Liste (aus `hq_people`)
       und Soldaten-Reserve, statt der bisherigen Textliste.
 - [ ] **Minikarte** in gerahmtem Panel; Umschalter für Overlays (Gebiet, Bauplätze, Nebel).
-- [~] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion) und
-      **Einstellungs-Fenster** (Verteilung, Werkzeug-/Militär-Prioritäten).
-      Unterbau steht (2026-06-15): `economy.tool_priority` / `tool_orders` /
-      `recruiting_ratio` mit Settings-API (`set_tool_priority/-order/-recruiting_ratio`),
-      serialisiert. Offen: die Regler-UI selbst (Werkzeug-Prioritäten + Bestellpfeile,
-      Militär-Rekrutierungsrate; später Verteilung). Issue #41.
+- [x] **Werkzeug-/Militär-Einstellungsfenster** (2026-06-15): eigenes Reglerfenster
+      mit Werkzeug-Prioritäten (12 Regler) + Bestellmengen (SpinBox/Bestellpfeile) und
+      Rekrutierungsrate-Regler. Zwei Einstiege: System → „Werkzeug/Militär" und ein
+      „Einstellungen"-Button im Schmiede-/Werkzeugmacher-Fenster. Liest/schreibt die
+      `economy`-Settings (set_tool_priority/-order/-recruiting_ratio). Issue #41.
+- [ ] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion); **Verteilungs-
+      Einstellungen** (Warenverteilung mehrerer Abnehmer) stehen noch aus.
 - [ ] **Nachrichten-/Ereignisleiste** (Angriff, „Gebäude fertig", „Lager voll" …).
 - [ ] **Tooltips** durchgängig; Cursor-Symbole je Modus (Flagge/Straße/Abriss).
 
