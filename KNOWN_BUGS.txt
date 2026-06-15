@@ -4,7 +4,7 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
-[2026-06-15] (IN ARBEIT, braucht GUI-Gegenprobe) Träger verschwinden östlich am HQ
+[2026-06-15] (BEHOBEN, GUI-bestätigt) Träger verschwinden östlich am HQ
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/39
 
