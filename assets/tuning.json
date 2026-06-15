@@ -51,7 +51,7 @@
   "hq_start_goods": {
     "boards": 30, "stone": 30, "wood": 12,
     "bread": 8, "fish": 6, "water": 6, "coal": 6,
-    "grain": 6, "flour": 4, "iron": 4, "sword": 3,
+    "grain": 6, "flour": 4, "iron": 4, "sword": 3, "shield": 3, "beer": 3,
     "hammer": 4, "pickaxe": 4, "axe": 2, "saw": 2,
     "shovel": 2, "scythe": 1, "rod_and_line": 1, "bow": 1,
     "cleaver": 1, "rolling_pin": 1, "crucible": 1, "tongs": 1

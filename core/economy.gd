@@ -109,7 +109,7 @@ enum { H_IDLE, H_OUT, H_FETCH, H_IN, H_RETURN }
 enum { WK_IDLE, WK_OUT, WK_WORK, WK_BACK, WK_WAIT }
 
 # Warum ein Produktionsgebäude gerade NICHT arbeitet (fürs Gebäudefenster).
-enum { IDLE_OK, IDLE_OUT_FULL, IDLE_NO_INPUTS, IDLE_NO_RESOURCE }
+enum { IDLE_OK, IDLE_OUT_FULL, IDLE_NO_INPUTS, IDLE_NO_RESOURCE, IDLE_NO_OUTPUT }
 
 
 class HouseCarrier:
@@ -148,7 +148,10 @@ class BState:
 	var construct_progress := 0
 	var producing := false
 	var work_timer := 0
-	var out_stock := 0
+	var out_stock: Dictionary = {}         # good -> Anzahl im Ausgangspuffer
+	                                       # (mehrere Sorten bei Werkzeugmacher/Schmiede)
+	var out_cycle := 0                     # Zähler für gleichmäßige Mehrfach-Ausgänge
+	var cur_output := -1                   # in diesem Zyklus gewähltes Ausgangsgut
 	var worker_target := Vector2i(-1, -1)  # Knoten, zu dem der Arbeiter geht
 	var out_yield := true                  # liefert der laufende Gang ein Ausgangsgut?
 	                                       # (Bauernhof: Ernte ja, Säen nein — Issue #26)
@@ -199,6 +202,10 @@ var hq_house: HouseCarrier:
 	get: return storages[0].house
 	set(value): storages[0].house = value
 var soldiers := 0                    # ausgebildete Soldaten im HQ (Reserve)
+# --- Spieler-Einstellungen (RTTR-Regler, nur Spieler 0; deterministisch) ---
+var tool_priority: Dictionary = {}   # Werkzeug-Gut -> Gewicht 0..10 (Werkzeugmacher)
+var tool_orders: Dictionary = {}     # Werkzeug-Gut -> noch offene Bestellmenge (Vorrang)
+var recruiting_ratio := 10           # Soldaten-Rekrutierungsrate 0..10 (RTTR MilSetting 0)
 var ai_enabled := true               # Gegner-KI aktiv? (zum Testen abschaltbar)
 var ai: AIBase = null                # austauschbare Gegner-KI (Plugin)
 var marchers: Array[Marcher] = []    # gerade marschierende Soldaten
@@ -214,6 +221,7 @@ var _helper_timer := 0               # Träger-Nachschub des HQ-Lagers (Issue #3
 var _growing_trees: Dictionary = {} # map idx -> Restticks bis zur nächsten Baumstufe
 var _growing_fields: Dictionary = {} # map idx -> Restticks bis nächste Feldstufe / bis Verdorren (#26)
 var _decay_fields: Dictionary = {}   # map idx -> Restticks bis Feld-Deko (Stoppel/verdorrt) verschwindet (#26)
+var _recruit_accum := 0              # Akkumulator für die Rekrutierungsrate (deterministisch)
 var _rng := RandomNumberGenerator.new()  # seeded → deterministisch (Lockstep-tauglich)
 
 
@@ -223,10 +231,36 @@ func _init(world_state: WorldState) -> void:
 	# darauf zugreift. Bestand/Personen füllt später _init_hq_stock beim HQ-Fund.
 	storages = [Storage.new()]
 	ai = DefaultAI.new()  # Standard-Gegner-KI (austauschbar über world)
+	_init_settings()
 	_rng.seed = 0xA17E57   # fester Seed: gleiche Abläufe auf allen Clients
 	_init_tree_growth_from_map()
 	_init_field_growth_from_map()
 	_init_decay_fields_from_map()
+
+
+## Standard-Werte der Spieler-Regler (RTTR-nah). Werkzeug-Prioritäten als Gewichte
+## (0..10) je Werkzeug; Bestellungen starten leer; Rekrutierung voll.
+func _init_settings() -> void:
+	tool_priority = Tuning.tool_priority_default()
+	tool_orders = {}
+	for g in Goods.tools():
+		tool_orders[g] = 0
+	recruiting_ratio = Tuning.recruiting_ratio_default()
+
+
+## --- Settings-API (von der UI genutzt; clampt auf gültige Bereiche) ---
+func set_tool_priority(tool_good: int, weight: int) -> void:
+	if Goods.is_tool_good(tool_good):
+		tool_priority[tool_good] = clampi(weight, 0, 10)
+
+
+func set_tool_order(tool_good: int, count: int) -> void:
+	if Goods.is_tool_good(tool_good):
+		tool_orders[tool_good] = maxi(count, 0)
+
+
+func set_recruiting_ratio(ratio: int) -> void:
+	recruiting_ratio = clampi(ratio, 0, 10)
 
 
 # --------------------------------------------------------------------------
@@ -757,16 +791,14 @@ func _tick_catapults() -> void:
 			dirty = true
 
 
-## Schwerter ausbilden, Marschierende bewegen, neue Soldaten entsenden.
+## Soldaten ausbilden, Marschierende bewegen, neue Soldaten entsenden.
 func _tick_soldiers() -> void:
 	if hq_flag < 0:
 		return
 	_soldier_timer -= 1
 	if _soldier_timer <= 0:
 		_soldier_timer = SOLDIER_TICKS
-		if hq_stock.get(Goods.SWORD, 0) > 0:
-			hq_stock[Goods.SWORD] = hq_stock[Goods.SWORD] - 1
-			soldiers += 1
+		_try_recruit()
 	_tick_marchers()
 	if soldiers <= 0:
 		return
@@ -796,6 +828,28 @@ func _tick_soldiers() -> void:
 		_inc_soldiers[i] = inc + 1
 		marchers.append(m)
 		return
+
+
+## Einen Soldaten (Gefreiten) rekrutieren — RTTR-getreu aus
+## 1 Schwert + 1 Schild + 1 Bier + 1 Träger (Helper), gedrosselt durch die
+## Rekrutierungsrate (0..10). Deterministisch: ein Akkumulator zählt die Rate hoch
+## und löst je 10 Punkte genau eine Rekrutierung aus (Rate 10 = jeden Takt, 5 = jeden
+## zweiten, 0 = nie). (#41)
+func _try_recruit() -> void:
+	if recruiting_ratio <= 0:
+		return
+	if int(hq_stock.get(Goods.SWORD, 0)) <= 0 or int(hq_stock.get(Goods.SHIELD, 0)) <= 0 \
+			or int(hq_stock.get(Goods.BEER, 0)) <= 0 or int(hq_people.get(Jobs.HELPER, 0)) <= 0:
+		return  # nicht alle vier Zutaten vorhanden → keine Rekrutierung
+	_recruit_accum += recruiting_ratio
+	if _recruit_accum < 10:
+		return
+	_recruit_accum -= 10
+	hq_stock[Goods.SWORD] = int(hq_stock[Goods.SWORD]) - 1
+	hq_stock[Goods.SHIELD] = int(hq_stock[Goods.SHIELD]) - 1
+	hq_stock[Goods.BEER] = int(hq_stock[Goods.BEER]) - 1
+	hq_people[Jobs.HELPER] = int(hq_people[Jobs.HELPER]) - 1
+	soldiers += 1
 
 
 func _tick_marchers() -> void:
@@ -1415,20 +1469,27 @@ func _request_from_hq(bs: BState, g: int, amount: int) -> void:
 # --- Produktion ---
 
 func _tick_work(bs: BState) -> void:
-	var output: int = bs.def.get("output", -1)
 	var resource: String = String(bs.def.get("resource", ""))
-	if output == -1 and resource != "plant_tree":
+	if not _is_producer(bs) and resource != "plant_tree":
 		return  # Lager / Militär: keine Produktion
 	var gather := resource != ""   # läuft der Arbeiter zu einem Zielknoten?
 
 	match bs.wphase:
 		WK_IDLE:
-			if bs.out_stock >= OUT_CAP:
+			if _out_total(bs) >= OUT_CAP:
 				bs.idle_reason = IDLE_OUT_FULL
 				return
 			if not _has_inputs(bs):
 				bs.idle_reason = IDLE_NO_INPUTS
 				return
+			# Ausgangsgut dieses Zyklus wählen (Werkzeugmacher/Schmiede gewichtet;
+			# sonst das feste output-Gut). -1 bei Produzenten = nichts wählbar
+			# (alle Werkzeug-Prioritäten 0) → warten, NICHT Eingänge verbrauchen.
+			var chosen := _pick_output(bs)
+			if _is_producer(bs) and chosen == -1:
+				bs.idle_reason = IDLE_NO_OUTPUT
+				return
+			bs.cur_output = chosen
 			if gather:
 				var tgt := _resource_target(bs)
 				if tgt.x < 0:
@@ -1458,14 +1519,13 @@ func _tick_work(bs: BState) -> void:
 					_do_resource_action(bs)
 					_enter_wphase(bs, WK_BACK, _worker_walk_ticks(bs, bs.worker_target))
 				else:
-					if output != -1:
-						bs.out_stock += 1
+					_add_out(bs, bs.cur_output)
 					_enter_wphase(bs, WK_WAIT, float(Tuning.work_wait(bs.bld.def_id, resource)))
 		WK_BACK:
 			bs.ph_t -= 1.0
 			if bs.ph_t <= 0.0:
-				if output != -1 and bs.out_yield:
-					bs.out_stock += 1
+				if bs.out_yield:
+					_add_out(bs, bs.cur_output)
 				_enter_wphase(bs, WK_WAIT, float(Tuning.work_wait(bs.bld.def_id, resource)))
 		WK_WAIT:
 			bs.ph_t -= 1.0
@@ -1473,6 +1533,71 @@ func _tick_work(bs: BState) -> void:
 				bs.producing = false
 				bs.worker_target = Vector2i(-1, -1)
 				bs.wphase = WK_IDLE
+
+
+## Kann dieses Gebäude ein Ausgangsgut erzeugen? (festes `output` ODER eine
+## nicht-leere `outputs`-Liste — Werkzeugmacher/Schmiede.)
+func _is_producer(bs: BState) -> bool:
+	if int(bs.def.get("output", -1)) != -1:
+		return true
+	var outs = bs.def.get("outputs", null)
+	return outs is Array and not (outs as Array).is_empty()
+
+
+## Gesamtzahl der Waren im Ausgangspuffer (über alle Sorten).
+func _out_total(bs: BState) -> int:
+	var n := 0
+	for g in bs.out_stock:
+		n += int(bs.out_stock[g])
+	return n
+
+
+## Eine Ware in den Ausgangspuffer legen (good < 0 = nichts, z. B. Säen/Pflanzen).
+func _add_out(bs: BState, good: int) -> void:
+	if good < 0:
+		return
+	bs.out_stock[good] = int(bs.out_stock.get(good, 0)) + 1
+
+
+## Ausgangsgut für den nächsten Produktionszyklus wählen. Werkzeugmacher: nach
+## Bestellungen/Prioritäten; Schmiede u. Ä.: feste `outputs` gleichmäßig abwechseln;
+## sonst das einzelne `output`-Gut.
+func _pick_output(bs: BState) -> int:
+	if bool(bs.def.get("produces_tools", false)):
+		return _pick_tool()
+	var outs = bs.def.get("outputs", null)
+	if outs is Array and not (outs as Array).is_empty():
+		var arr: Array = outs
+		var pick := int(arr[bs.out_cycle % arr.size()])
+		bs.out_cycle += 1
+		return pick
+	return int(bs.def.get("output", -1))
+
+
+## Werkzeugmacher: ein Werkzeug nach Bestellungen (Vorrang) bzw. Prioritäts-
+## Gewichten wählen (RTTR nofMetalworker: gewichteter, hier seeded-deterministischer
+## Zufall). -1 = nichts wählbar (alle Prioritäten 0, keine Bestellung) → wartet.
+func _pick_tool() -> int:
+	# 1) Offene Bestellungen zuerst, gewichtet nach Priorität (mind. 1).
+	var ordered: Array = []
+	for g in Goods.tools():
+		if int(tool_orders.get(g, 0)) > 0:
+			var w0 := maxi(int(tool_priority.get(g, 0)), 1)
+			for _i in range(w0):
+				ordered.append(g)
+	if not ordered.is_empty():
+		var op := int(ordered[_rng.randi() % ordered.size()])
+		tool_orders[op] = int(tool_orders[op]) - 1
+		return op
+	# 2) Sonst rein nach Prioritäts-Gewichten (Gewicht 0 = nie).
+	var arr: Array = []
+	for g in Goods.tools():
+		var w1 := int(tool_priority.get(g, 0))
+		for _i in range(w1):
+			arr.append(g)
+	if arr.is_empty():
+		return -1
+	return int(arr[_rng.randi() % arr.size()])
 
 
 ## Eine Arbeiter-Phase starten (Dauer in Ticks, mind. 1).
@@ -1605,21 +1730,21 @@ func _find_water_edge(center: Vector2i) -> Vector2i:
 ## Schickt fertige Ausgangswaren ins nächstgelegene erreichbare Lager (#31). Mit
 ## nur einem Lager (HQ) ist das Ziel immer das HQ — identisch zum bisherigen Verhalten.
 func _ship_outputs(bs: BState) -> void:
-	var output: int = bs.def.get("output", -1)
-	if output == -1:
+	if bs.out_stock.is_empty():
 		return
-	while bs.out_stock > 0:
-		var q: Array = flag_goods.get(bs.flag_idx, [])
-		if q.size() >= FLAG_CAP:
-			return
-		var st := _nearest_storage(bs.flag_idx, 0, func(_s: Storage) -> bool: return true)
-		if st == null:
-			return
-		var good := Good.new()
-		good.type = output
-		good.dest = st.flag_idx
-		_push_good(bs.flag_idx, good)
-		bs.out_stock -= 1
+	for output in bs.out_stock.keys():
+		while int(bs.out_stock.get(output, 0)) > 0:
+			var q: Array = flag_goods.get(bs.flag_idx, [])
+			if q.size() >= FLAG_CAP:
+				return
+			var st := _nearest_storage(bs.flag_idx, 0, func(_s: Storage) -> bool: return true)
+			if st == null:
+				return
+			var good := Good.new()
+			good.type = int(output)
+			good.dest = st.flag_idx
+			_push_good(bs.flag_idx, good)
+			bs.out_stock[output] = int(bs.out_stock[output]) - 1
 
 
 # --- Ressourcensuche ---
@@ -2231,9 +2356,8 @@ func building_status(bld: WorldState.Building) -> String:
 	var inputs: Dictionary = bs.def.get("inputs", {})
 	for g in inputs:
 		s += "  %s %d/%d" % [Goods.name_of(g), bs.delivered.get(g, 0), int(inputs[g]) * 2]
-	var output: int = bs.def.get("output", -1)
-	if output != -1:
-		s += "  → %s (Ausgang %d)" % [Goods.name_of(output), bs.out_stock]
+	if _is_producer(bs):
+		s += "  → Ausgang %d" % _out_total(bs)
 	if int(bs.def.get("influence", 0)) > 0:
 		s += "  Garnison %d/%d  Rang +%d" % [bld.garrison, bld.capacity, bld.promotions]
 	return s
@@ -2269,10 +2393,21 @@ func building_info(bld: WorldState.Building) -> Dictionary:
 	for g in inputs:
 		var want := int(inputs[g]) * 2  # Sollbestand = doppelter Rezeptbedarf (Puffer)
 		info.inputs.append({good = g, have = mini(bs.delivered.get(g, 0), want), want = want})
-	var output: int = bs.def.get("output", -1)
-	if output != -1:
-		info.output = {good = output, stock = mini(bs.out_stock, OUT_CAP), cap = OUT_CAP}
-	var is_producer := output != -1 or String(bs.def.get("resource", "")) == "plant_tree"
+	var prod := _is_producer(bs)
+	if prod:
+		var total := _out_total(bs)
+		var primary := int(bs.def.get("output", -1))
+		if primary == -1:
+			var outs = bs.def.get("outputs", [])
+			primary = int(outs[0]) if (outs is Array and not (outs as Array).is_empty()) else -1
+		if primary != -1:
+			info.output = {good = primary, stock = mini(total, OUT_CAP), cap = OUT_CAP}
+		# Aufschlüsselung je Sorte für Mehrfach-Ausgänge (Werkzeugmacher/Schmiede).
+		var per: Array = []
+		for gg in bs.out_stock:
+			per.append({good = int(gg), stock = int(bs.out_stock[gg])})
+		info.outputs = per
+	var is_producer := prod or String(bs.def.get("resource", "")) == "plant_tree"
 	if is_producer and bs.staffed:
 		info.productivity = 100 * bs.prod_active / maxi(bs.prod_total, 1)
 	# Kurzstatus statt der langen Textzeile: Waren stehen als Icons im Fenster,
@@ -2293,6 +2428,7 @@ func building_info(bld: WorldState.Building) -> Dictionary:
 				info.warning = "Keine Fische in Reichweite" \
 					if String(bs.def.get("resource", "")) == "water" \
 					else "Kein Rohstoff in Reichweite"
+			IDLE_NO_OUTPUT: info.warning = "Kein Werkzeug ausgewählt (alle Prioritäten 0)"
 	return info
 
 

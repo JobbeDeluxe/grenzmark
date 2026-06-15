@@ -2335,6 +2335,11 @@ func _save_game() -> void:
 		# Laden verteilt resync() daraus alles neu (Personen laufen wieder vom Lager los).
 		hq_people = economy.total_people(),
 		soldiers = economy.soldiers,
+		# Spieler-Regler (Werkzeug-Prioritäten/-Bestellungen, Rekrutierungsrate, #41).
+		tool_priority = economy.tool_priority.duplicate(),
+		tool_orders = economy.tool_orders.duplicate(),
+		recruiting_ratio = economy.recruiting_ratio,
+		recruit_accum = economy._recruit_accum,
 		# Bestände der baubaren Lagerhäuser (#31); HQ-Lager steckt in hq_stock.
 		extra_storages = economy.extra_storages_state(),
 	}
@@ -2456,6 +2461,15 @@ func _load_game() -> void:
 	# ab. Alt-Spielstände ohne Sektion bekommen die Standard-Startpersonen.
 	economy.hq_people = data.get("hq_people", Tuning.hq_start_people())
 	economy.soldiers = int(data.get("soldiers", 0))
+	# Spieler-Regler zurückspielen (Defaults stehen schon aus _init_settings, #41).
+	var tp = data.get("tool_priority", null)
+	if tp is Dictionary and not (tp as Dictionary).is_empty():
+		economy.tool_priority = tp
+	var to = data.get("tool_orders", null)
+	if to is Dictionary:
+		economy.tool_orders = to
+	economy.recruiting_ratio = clampi(int(data.get("recruiting_ratio", economy.recruiting_ratio)), 0, 10)
+	economy._recruit_accum = int(data.get("recruit_accum", 0))
 	var tree_growth = data.get("tree_growth", {})
 	if tree_growth is Dictionary:
 		economy.restore_tree_growth(tree_growth)

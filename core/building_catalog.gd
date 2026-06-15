@@ -99,7 +99,12 @@ static func defs() -> Dictionary:
 		"toolmaker": {
 			id = "toolmaker", name = "Werkzeugmacher", size = M,
 			cost = { Goods.BOARDS: 3, Goods.STONE: 2 },
-			inputs = { Goods.BOARDS: 1, Goods.IRON: 1 }, output = Goods.TOOLS,
+			# Produziert je Zyklus EIN konkretes Werkzeug, ausgewählt nach den
+			# Werkzeug-Prioritäten/-Bestellungen des Spielers (RTTR nofMetalworker:
+			# gewichteter Zufall, Bestellungen zuerst). `output` = -1, da kein festes
+			# Einzelgut; `produces_tools` schaltet die Auswahllogik scharf.
+			inputs = { Goods.BOARDS: 1, Goods.IRON: 1 }, output = -1,
+			outputs = Goods.tools(), produces_tools = true,
 			work = 150, resource = "", influence = 0, category = "metall",
 		},
 		"coalmine": {
@@ -147,7 +152,10 @@ static func defs() -> Dictionary:
 		"smithy": {
 			id = "smithy", name = "Schmiede", size = M,
 			cost = { Goods.BOARDS: 3, Goods.STONE: 2 },
+			# Waffenschmiede liefert abwechselnd Schwert und Schild (RTTR Armory):
+			# beide werden für die Soldaten-Rekrutierung gebraucht (#41).
 			inputs = { Goods.IRON: 1, Goods.COAL: 1 }, output = Goods.SWORD,
+			outputs = [Goods.SWORD, Goods.SHIELD],
 			work = 160, resource = "", influence = 0, category = "metall",
 		},
 		"guardhouse": {

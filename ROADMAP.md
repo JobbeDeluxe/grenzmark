@@ -328,8 +328,12 @@ GitHub-Arbeitspakete:
       Raster (gedimmt bei 0) plus **Bevölkerung/Berufe**-Liste (aus `hq_people`)
       und Soldaten-Reserve, statt der bisherigen Textliste.
 - [ ] **Minikarte** in gerahmtem Panel; Umschalter für Overlays (Gebiet, Bauplätze, Nebel).
-- [ ] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion) und
+- [~] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion) und
       **Einstellungs-Fenster** (Verteilung, Werkzeug-/Militär-Prioritäten).
+      Unterbau steht (2026-06-15): `economy.tool_priority` / `tool_orders` /
+      `recruiting_ratio` mit Settings-API (`set_tool_priority/-order/-recruiting_ratio`),
+      serialisiert. Offen: die Regler-UI selbst (Werkzeug-Prioritäten + Bestellpfeile,
+      Militär-Rekrutierungsrate; später Verteilung). Issue #41.
 - [ ] **Nachrichten-/Ereignisleiste** (Angriff, „Gebäude fertig", „Lager voll" …).
 - [ ] **Tooltips** durchgängig; Cursor-Symbole je Modus (Flagge/Straße/Abriss).
 
@@ -437,7 +441,8 @@ Mühle, Bäckerei, Fischerhütte, Kohle-/Eisen-/Goldmine, Eisenschmelze,
 Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [x] Jägerhütte (→ Fleisch)
 - [x] Schweinefarm (Getreide + Wasser → Schwein) + Schlachterei (Schwein → Fleisch)
-- [x] Werkzeugmacher (Bretter + Eisen → Werkzeug)
+- [x] Werkzeugmacher (Bretter + Eisen → konkrete Einzelwerkzeuge nach Prioritäten/
+      Bestellungen, gewichteter seeded-Zufall wie RTTR nofMetalworker)
 - [~] 4 Erzsorten (Kohle/Eisen/Gold/Granit) als Adern + Granitmine; jede Mine
       baut nur ihr passendes Mineral ab. Offen: Erz im Normalspiel unterirdisch
       statt sichtbar führen; Sichtbarkeit später über Geologen/Debug.
@@ -451,7 +456,7 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
       Lager ab (Restbestand → HQ). Offen (Stufe 2/3): Ein-/Auslagern-Stopp je Ware,
       Warenausgleich, Personen/Soldaten aus jedem Lager.
 - [ ] Eselzüchter (→ Esel) — braucht Esel-auf-Straßen-System
-- [ ] Waffenschmiede mit Schwert UND Schild (statt nur Schwert)
+- [x] Waffenschmiede (Schmiede) liefert abwechselnd Schwert UND Schild (RTTR Armory)
 - [ ] Hafen + Werft (Schiffe/Boote)
 - [ ] Baracke / weitere Militär-Stufen, Spähturm
 
@@ -498,9 +503,9 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [ ] Soldaten-Ränge mit Stufen (Gefreiter→General), Beförderung sichtbar
 - [ ] Angriff mit wählbarer Soldatenzahl; Gebäude-Belagerung
 - [ ] Gebäudegrößen-Ausbau (kleines→großes Militärgebäude)
-- [ ] Schilde + Schwerter + Bier (+ Träger) nötig, um Soldaten im HQ zu rekrutieren
-      — aktuell macht 1 Schwert schon einen Soldaten (RTTR: min(Schwert,Schild,Bier,Helper))
-      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/41)
+- [x] Schilde + Schwerter + Bier + Träger nötig, um Soldaten im HQ zu rekrutieren
+      (RTTR: min(Schwert,Schild,Bier,Helper) × Rekrutierungsrate). Rate als Regler-Wert
+      vorbereitet; UI-Regler-Seite folgt (Stufe 8). (Issue #41)
 
 **Wasser & See (mittel):**
 - [ ] Häfen, Werften, Schiffe; Warentransport über Wasser

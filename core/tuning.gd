@@ -131,7 +131,7 @@ static func hq_start_goods() -> Dictionary:
 	return _resolve_inventory("hq_start_goods", Goods.KEYS, {
 		Goods.BOARDS: 30, Goods.STONE: 30, Goods.WOOD: 12,
 		Goods.BREAD: 8, Goods.FISH: 6, Goods.WATER: 6, Goods.COAL: 6,
-		Goods.GRAIN: 6, Goods.FLOUR: 4, Goods.IRON: 4, Goods.SWORD: 3,
+		Goods.GRAIN: 6, Goods.FLOUR: 4, Goods.IRON: 4, Goods.SWORD: 3, Goods.SHIELD: 3, Goods.BEER: 3,
 		Goods.HAMMER: 4, Goods.PICKAXE: 4, Goods.AXE: 2, Goods.SAW: 2,
 		Goods.SHOVEL: 2, Goods.SCYTHE: 1, Goods.ROD_AND_LINE: 1, Goods.BOW: 1,
 		Goods.CLEAVER: 1, Goods.ROLLING_PIN: 1, Goods.CRUCIBLE: 1, Goods.TONGS: 1,
@@ -162,6 +162,21 @@ static func helper_produce_ticks() -> int:
 ## Lager füllt bis hierher auf und baut darüber ab (~100 pro Lager).
 static func helper_cap() -> int:
 	return maxi(0, int(_num("helper_cap", 100)))
+
+
+## Standard-Werkzeugprioritäten des Werkzeugmachers als { Goods.* : Gewicht 0..10 }.
+## Override via tuning.json "tool_priority" (String-ID -> Gewicht). Gleichgewichtet,
+## damit anfangs ein ausgewogener Werkzeugmix entsteht (RTTR: Regler je Werkzeug).
+static func tool_priority_default() -> Dictionary:
+	var defaults := {}
+	for g in Goods.tools():
+		defaults[g] = 5
+	return _resolve_inventory("tool_priority", Goods.KEYS, defaults)
+
+
+## Standard-Rekrutierungsrate 0..10 (RTTR Military-Setting 0). 10 = volle Rate.
+static func recruiting_ratio_default() -> int:
+	return clampi(int(_num("recruiting_ratio", 10)), 0, 10)
 
 
 ## tuning.json[json_key] (String-ID -> Anzahl) zu { enum_id: Anzahl } auflösen.

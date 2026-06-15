@@ -39,6 +39,7 @@ func _initialize() -> void:
 	_test_stop_finishes_cycle()
 	_test_productivity_and_building_info()
 	_test_military()
+	_test_tools_and_recruitment()
 	_test_combat()
 	_test_enemy_road_people()
 	_test_ai()
@@ -261,7 +262,7 @@ func _test_storehouse_routing() -> void:
 	_check(bs != null, "Lagerhaus: Sägewerk hat bstate")
 	if bs == null:
 		return
-	bs.out_stock = 1
+	bs.out_stock = {Goods.BOARDS: 1}
 	eco._ship_outputs(bs)
 	var q: Array = eco.flag_goods.get(bs.flag_idx, [])
 	_check(q.size() == 1 and q[0].dest == sf,
@@ -663,6 +664,106 @@ func _test_military() -> void:
 	_check(not gh.under_construction, "Wachhaus wird gebaut")
 	_check(gh.garrison >= 1, "Wachhaus erhält Soldaten (Garnison %d)" % gh.garrison)
 	_check(state.in_territory(12, 24), "Wachhaus erweitert das Gebiet nach Besatzung")
+
+
+## Werkzeugmacher-Produktion (Prioritäten/Bestellungen), Schmiede Schwert/Schild
+## und Soldaten-Rekrutierung aus Schwert+Schild+Bier+Träger (#41).
+func _test_tools_and_recruitment() -> void:
+	var map := _flat_map(30, 30)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(15, 15, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_check(hq != null, "Werkzeug/Rekrut: HQ platzierbar")
+	if hq == null:
+		return
+	eco.resync()
+
+	# --- Katalog: Werkzeugmacher/Schmiede sind Mehrfach-Produzenten ---
+	var tm := BuildingCatalog.get_def("toolmaker")
+	_check(bool(tm.get("produces_tools", false)) and int(tm.get("output", 0)) == -1,
+		"Werkzeugmacher: produces_tools, kein festes Einzel-output")
+	var sm := BuildingCatalog.get_def("smithy")
+	var sm_out: Array = sm.get("outputs", [])
+	_check(sm_out.has(Goods.SWORD) and sm_out.has(Goods.SHIELD),
+		"Schmiede: outputs = Schwert + Schild")
+
+	# --- Werkzeugmacher: Auswahl nach Prioritäten (nur Axt > 0 → immer Axt) ---
+	for g in Goods.tools():
+		eco.tool_priority[g] = 0
+		eco.tool_orders[g] = 0
+	eco.tool_priority[Goods.AXE] = 5
+	var only_axe := true
+	for _i in 30:
+		if eco._pick_tool() != Goods.AXE:
+			only_axe = false
+			break
+	_check(only_axe, "Werkzeugmacher: nur Axt-Priorität → produziert nur Axt")
+
+	# Alle Prioritäten 0 und keine Bestellung → nichts wählbar (-1).
+	eco.tool_priority[Goods.AXE] = 0
+	_check(eco._pick_tool() == -1, "Werkzeugmacher: alle Prioritäten 0 → kein Werkzeug")
+
+	# --- Bestellungen haben Vorrang: 2 Sägen bestellt, alle Prioritäten 5 ---
+	for g in Goods.tools():
+		eco.tool_priority[g] = 5
+	eco.tool_orders[Goods.SAW] = 2
+	var first := eco._pick_tool()
+	var second := eco._pick_tool()
+	_check(first == Goods.SAW and second == Goods.SAW,
+		"Werkzeugmacher: Bestellungen (Säge) zuerst")
+	_check(int(eco.tool_orders.get(Goods.SAW, 0)) == 0,
+		"Werkzeugmacher: Bestellmenge nach 2 Stück aufgebraucht")
+
+	# --- Schmiede wechselt Schwert/Schild ab ---
+	var bs := Economy.BState.new()
+	bs.def = sm
+	bs.out_cycle = 0
+	var a := eco._pick_output(bs)
+	var b := eco._pick_output(bs)
+	var c := eco._pick_output(bs)
+	_check(a == Goods.SWORD and b == Goods.SHIELD and c == Goods.SWORD,
+		"Schmiede: produziert abwechselnd Schwert/Schild")
+
+	# --- Rekrutierung #41: braucht alle vier Zutaten ---
+	eco.soldiers = 0
+	eco._recruit_accum = 0
+	eco.recruiting_ratio = 10
+	eco.hq_stock = { Goods.SWORD: 0, Goods.SHIELD: 0, Goods.BEER: 0 }
+	eco.hq_people = { Jobs.HELPER: 0 }
+	eco._try_recruit()
+	_check(eco.soldiers == 0, "Rekrut: ohne Zutaten kein Soldat")
+
+	eco.hq_stock[Goods.SWORD] = 1  # nur Schwert reicht NICHT mehr (vorher: ja)
+	eco._try_recruit()
+	_check(eco.soldiers == 0, "Rekrut: 1 Schwert allein erzeugt keinen Soldaten")
+
+	eco.hq_stock = { Goods.SWORD: 1, Goods.SHIELD: 1, Goods.BEER: 1 }
+	eco.hq_people = { Jobs.HELPER: 1 }
+	eco._try_recruit()
+	_check(eco.soldiers == 1, "Rekrut: Schwert+Schild+Bier+Träger → 1 Soldat")
+	_check(int(eco.hq_stock.get(Goods.SWORD, 0)) == 0
+		and int(eco.hq_stock.get(Goods.SHIELD, 0)) == 0
+		and int(eco.hq_stock.get(Goods.BEER, 0)) == 0
+		and int(eco.hq_people.get(Jobs.HELPER, 0)) == 0,
+		"Rekrut: je 1 Schwert/Schild/Bier/Träger verbraucht")
+
+	# --- Rekrutierungsrate drosselt: Rate 5 → erst jeder zweite Takt ---
+	eco.soldiers = 0
+	eco._recruit_accum = 0
+	eco.recruiting_ratio = 5
+	eco.hq_stock = { Goods.SWORD: 5, Goods.SHIELD: 5, Goods.BEER: 5 }
+	eco.hq_people = { Jobs.HELPER: 5 }
+	eco._try_recruit()
+	_check(eco.soldiers == 0, "Rekrut: Rate 5 → erster Takt rekrutiert noch nicht")
+	eco._try_recruit()
+	_check(eco.soldiers == 1, "Rekrut: Rate 5 → zweiter Takt rekrutiert")
+
+	# Rate 0 → nie rekrutieren.
+	eco.soldiers = 0
+	eco._recruit_accum = 0
+	eco.recruiting_ratio = 0
+	eco._try_recruit()
+	_check(eco.soldiers == 0, "Rekrut: Rate 0 → keine Rekrutierung")
 
 
 func _test_combat() -> void:
@@ -1190,7 +1291,7 @@ func _test_farm_fields() -> void:
 					if int(imap.objects[k]) == MapData.MO_FIELD:
 						field_seen = true
 						break
-			if fbs.out_stock > 0:
+			if ieco._out_total(fbs) > 0:
 				grain_seen = true
 				break
 		_check(field_seen, "Farm: legt sichtbar ein Feld auf der Karte an")

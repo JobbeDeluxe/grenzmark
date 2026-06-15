@@ -113,3 +113,12 @@ static func id_of(key: String) -> int:
 ## `Script.is_tool()` und würde beim Aufruf über den Klassennamen verdeckt.
 static func is_tool_good(g: int) -> bool:
 	return g >= FIRST_TOOL and g <= LAST_TOOL
+
+
+## Die zwölf Spezialwerkzeuge als Liste (Enum-Reihenfolge TONGS..BOW) — für
+## Werkzeug-Prioritäten/-Bestellungen und die Werkzeugmacher-Produktion.
+static func tools() -> Array:
+	var out: Array = []
+	for g in range(FIRST_TOOL, LAST_TOOL + 1):
+		out.append(g)
+	return out
