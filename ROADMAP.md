@@ -473,6 +473,9 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
       (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/43)
 - [x] Gebäude-Produktion an/aus schalten (Taste P am gewählten Gebäude)
 - [ ] Produktion drosseln (Prozent), Eingangsmengen begrenzen
+- [ ] Minen mit ODER-Nahrung versorgen (Fisch/Fleisch/Brot, eines genügt) statt nur Brot;
+      Bier ist KEINE Minen-Nahrung (RTTR BLD_WORK_DESC). Voraussetzung für Fisch→Minen (#43).
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/44)
 - [ ] Direkte Gebäude→Gebäude-Lieferung (nicht alles über HQ)
 - [x] Felder: Bauer sät/erntet Getreide-Felder (Acker als Map-Objekt, Issue #26),
       original-getreu an RTTR nofFarmer/noGrainfield abgeglichen:
