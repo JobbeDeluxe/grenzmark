@@ -1,72 +1,97 @@
 # Grenzmark
 
-Grenzmark is a Godot 4 prototype for a classic node-and-road settlement strategy
-game, inspired by the structure of Die Siedler II, Return to the Roots, and
-Widelands.
+Grenzmark ist ein Godot-4-Aufbauspiel im Geist von **Die Siedler II**,
+**Return to the Roots** und **Widelands**. Ziel ist nicht ein 1:1-Klon, sondern
+eine eigene, frei austauschbare Neuimplementierung der klassischen Spielmechanik:
+Warenkreisläufe, Flaggen, Straßen, Träger, Baustellen, Produktionsketten,
+Grenzen, Soldaten, KI und später eine deterministische Multiplayer-Basis.
 
-The goal is to rebuild the feel of the old economy loop as closely as possible
-with original code and original/free assets: flags, roads, carriers, goods,
-construction sites, production chains, territory, soldiers, AI, and eventually
-multiplayer-ready deterministic simulation.
+**Wichtig:** Es werden keine originalen Spiel-Dateien, Grafiken, Daten oder
+Codeabschnitte aus den Vorbildern verwendet. Konzepte als Inspiration sind okay,
+kopierte geschützte Inhalte nicht.
 
-No original Die Siedler II files are included.
+## 100 % KI-Projekt
 
-## Ein 100%-KI-Projekt (bitte lesen)
+Grenzmark ist bewusst als Experiment angelegt: **Code und möglichst auch Assets
+entstehen zu 100 % durch KI-Agenten.** Menschen testen, geben Feedback und setzen
+die Richtung, schreiben aber nicht selbst am Projekt mit. Die Entwicklung wird
+teilweise live begleitet:
 
-Grenzmark ist ein **bewusst zu 100 % von KI geschriebener** Nachbau der klassischen
-Aufbau-Mechanik von **Die Siedler II / Return to the Roots / Widelands**. Den Code
-(und möglichst auch die Assets) schreiben **KI-Agenten** — **Menschen sind hier
-Tester und Feedback-Geber**, keine Code-Autoren. Das ist ausdrücklich gewollt und
-Teil des Experiments. Die Entwicklung wird teils live gestreamt auf
-**Twitch: https://www.twitch.tv/jobbedeluxe**.
+- Twitch: [twitch.tv/jobbedeluxe](https://www.twitch.tv/jobbedeluxe)
+- Hauptrepo: [github.com/JobbeDeluxe/grenzmark](https://github.com/JobbeDeluxe/grenzmark)
+- Agenten-Regeln: [AGENTS.md](AGENTS.md)
 
-- Hauptprojekt: **https://github.com/JobbeDeluxe/grenzmark**
-- **KI-Agenten:** Bitte zuerst **[AGENTS.md](AGENTS.md)** lesen — dort stehen Ziel,
-  Architektur, Arbeitsweise, PR-Regeln und die rechtlichen Grenzen
-  (keine 1:1-Kopien von geschütztem Material).
-- Beiträge per **Pull Request** gegen `main`; im PR bitte angeben, **welches
-  KI-Modell/welcher Agent** die Änderung erstellt hat.
+Pull Requests sollen angeben, welches KI-Modell oder welcher Agent die Änderung
+erstellt hat.
 
-![Terrain preview](assets/designs/terrain_preview_v1.png)
+## Eindruck
 
-## Current State
+Die folgenden Bilder zeigen aktuelle austauschbare Asset- und Design-Previews.
+Im Spiel werden die eigentlichen PNGs aus den Asset-Ordnern geladen; fehlen
+Dateien, zeichnet Godot vorläufige Platzhalter.
 
-- Godot 4.6.3 / GDScript project.
-- S2-like triangular node grid with 6-neighbor roads and build spots.
-- Procedural island maps with height, terrain, tree variants, multi-stage stones,
-  and ore.
-- Road network, flags, goods transport, carriers, workers, construction sites.
-- HQ-centered economy with production chains.
-- Territory, military buildings, soldiers, attacks, capture, catapult, simple AI.
-- Exchangeable assets in `assets/`.
-- Headless core tests.
+<p align="center">
+  <img src="assets/designs/terrain_preview_v1.png" alt="Terrain-Preview" width="48%">
+  <img src="assets/designs/buildings_preview_v2.png" alt="Gebäude-Preview" width="48%">
+</p>
+<p align="center">
+  <img src="assets/designs/field_growth_contact_v3.png" alt="Kornfeld-Phasen" width="48%">
+  <img src="assets/designs/tool_icons_contact_v3.png" alt="Werkzeug-Icons" width="48%">
+</p>
 
-See [ROADMAP.md](ROADMAP.md) for the detailed development plan and the checklist
-of missing features compared to the classic originals.
+## Aktueller Stand
 
-## Engine Binaries
+Grenzmark ist ein spielbarer Prototyp mit klar getrenntem Simulationskern und
+Godot-Darstellung.
 
-Godot engine binaries are **not committed** to this repository.
+- **Engine:** Godot 4.6.3, GDScript.
+- **Architektur:** `core/` enthält die reine, deterministische Simulation;
+  `game/` enthält Rendering, Eingabe und UI.
+- **Simulation:** feste 30-Hz-Ticks, Tests laufen headless ohne Szenenbaum.
+- **Karte:** versetztes Dreiecks-/Hex-Gitter mit sechs Nachbarn, Höhen,
+  Terrain-Dreiecken, Bäumen, Steinen, Erzen und endlichen Fischgründen.
+- **Bauen:** Bauplätze, Flaggen, Straßen, Bauhilfe, Abriss, Baustellen,
+  Materiallieferung und zweistufiger Ausbau.
+- **Wirtschaft:** Hauptquartier, zusätzliche Lagerhäuser, Warenbestand,
+  Träger, Wegefindung, Produktionsketten, Werkzeuge, Arbeiter und Personenlogik.
+- **Produktion:** Holz, Bretter, Stein, Nahrung, Werkzeugketten, Landwirtschaft
+  mit Feldphasen von Saat bis Ernte oder Verfall.
+- **Militär:** Territorium, Militärgebäude, Soldaten, Angriff, Eroberung,
+  Katapult-Logik, einfache Gegner-KI und KI-Plugin-Schnittstelle.
+- **UI:** Hauptmenü, untere Hauptleiste, Baumenü, Inventar, Gebäudefenster,
+  Minimap, Nebel/Bauhilfe, Einstellungen und Design-Editor.
+- **Assets:** austauschbare PNGs plus `assets/design.json`, `assets/tuning.json`
+  und `assets/ui.json` für Größen, Positionen, Tuning und UI-Skin.
 
-Godot is MIT-licensed and can generally be redistributed with its license notice,
-but the Windows editor executable is larger than GitHub's normal single-file
-limit. Download Godot 4.6.3 stable from the official Godot site or archive and
-open this folder as a project.
+Details und offene Punkte stehen in [ROADMAP.md](ROADMAP.md). Bekannte Fehler
+stehen in [KNOWN_BUGS.txt](KNOWN_BUGS.txt).
 
-Recommended local filenames:
+## Noch offen
+
+Die größten nächsten Baustellen sind:
+
+- UI-Ausbau und Bedienkomfort in Stufe 8 der Roadmap.
+- Vollständige Sprite-Sheets für Träger, Arbeiter, Bauarbeiter und Soldaten.
+- Soldaten-Rang-Grafiken und bessere Bewegungsanimationen.
+- Mehr Missionen, Kartengenerator-Optionen und Spielziele.
+- Sound, Musik, zusätzliche Sprachen und Multiplayer-Vorbereitung.
+- Weitere Tests für Randfälle in Wirtschaft, Militär und KI.
+
+## Starten
+
+Godot-Binaries werden nicht ins Repo eingecheckt. Lade Godot 4.6.3 stable von
+der offiziellen Godot-Seite und öffne diesen Ordner als Projekt.
+
+Empfohlene lokale Dateinamen:
 
 ```text
 Godot_v4.6.3-stable_win64.exe
 Godot_v4.6.3-stable_win64_console.exe
 ```
 
-Those files are ignored by Git.
+Start aus Godot: Projekt öffnen und `F5` drücken.
 
-## Run
-
-Open the project folder with Godot 4.6.3 and press `F5`.
-
-From a shell, if the Godot executable is next to the project:
+Start aus PowerShell, wenn die Godot-Exe im Projektordner liegt:
 
 ```powershell
 .\Godot_v4.6.3-stable_win64.exe --path .
@@ -74,71 +99,78 @@ From a shell, if the Godot executable is next to the project:
 
 ## Tests
 
+Headless-Core-Test:
+
 ```powershell
 .\Godot_v4.6.3-stable_win64_console.exe --headless --path . --script res://tests/test_core.gd
 ```
 
-Expected result at the time of publishing:
+Aktueller erwarteter Stand:
 
 ```text
-== Ergebnis: 320 ok, 0 fehlgeschlagen ==
+== Ergebnis: 735 ok, 0 fehlgeschlagen ==
 ```
 
-## Controls
+Die Zahl steigt, wenn neue Tests dazukommen.
 
-| Input | Action |
+## Steuerung
+
+| Eingabe | Aktion |
 |---|---|
-| Right or middle mouse drag | Pan map |
-| Mouse wheel | Zoom |
-| Left build UI | Select mode/building |
-| `1` / `2` / `9` / `0` | Flag / road / demolish / select |
-| Left click | Execute current action |
-| Space | Show build-site/flag/road helper overlay |
-| Pause | Pause |
-| `+` / `-` | Faster / slower simulation |
-| `K` | Toggle opponent AI |
-| `J` | Switch opponent AI |
-| `P` | Toggle selected building production |
-| `F2` / `F3` | Save / load |
-| `F5` | New game |
-| Minimap click | Center camera |
+| Rechte oder mittlere Maustaste ziehen | Karte verschieben |
+| Mausrad | Zoomen |
+| Linksklick | Aktuelle Aktion ausführen oder Objekt auswählen |
+| Untere Leiste / Baumenü | Bau- und Spielmodus wählen |
+| `1` / `2` / `9` / `0` | Flagge / Straße / Abriss / Auswahl |
+| `Leertaste` | Bauplätze, Flaggen und Straßenhilfe anzeigen |
+| `F` | Nebelanzeige umschalten |
+| `K` | Gegner-KI ein- oder ausschalten |
+| `J` | Gegner-KI wechseln |
+| `P` | Produktion des ausgewählten Gebäudes pausieren |
+| `S` | Einstellungen öffnen |
+| `F2` / `F3` | Speichern / Laden |
+| `F5` | Neues Spiel |
+| `Pause` | Simulation pausieren |
+| `+` / `-` | Simulation schneller / langsamer |
+| Minimap-Klick | Kamera zentrieren |
 
-## Assets
+## Assets und Anpassung
 
-The game automatically loads PNGs from `assets/` when they exist and falls back
-to drawn placeholders otherwise.
+Das Spiel lädt PNGs aus `assets/` und fällt sonst auf Platzhalter zurück. So kann
+das Aussehen ohne Codeänderung ersetzt werden.
 
-Important folders:
+Wichtige Orte:
 
-- `assets/terrain/`: `water.png`, `meadow.png`, `mountain.png`, `sand.png`,
-  `swamp.png`, `snow.png`
-- `assets/roads/`: `road.png`, optionale Terrain-Varianten und `road_cobble.png`
-- `assets/ui/build_spots/`: austauschbare Bauhilfe-Symbole für Leertaste
-- `assets/buildings/<def_id>.png`: building sprites such as `hq.png`,
-  `woodcutter.png`, `sawmill.png`
-- `assets/objects/`: tree variants/stages, stone stages, `ore.png`
-- `assets/goods/<number>.png`: goods icons matching `core/goods.gd`
-- `assets/units/`: optional walk sprite sheets
+- `assets/terrain/` - Terrain-Kacheln wie Wasser, Wiese, Berg, Sand und Sumpf.
+- `assets/roads/` - Straßen- und Pflastervarianten.
+- `assets/buildings/` - Gebäudesprites passend zu den Gebäude-Definitionen.
+- `assets/objects/` - Bäume, Steine, Erz und andere Kartenobjekte.
+- `assets/goods/` - Waren-Icons passend zu `core/goods.gd`.
+- `assets/units/` - optionale Sprite-Sheets für Einheiten.
+- `assets/ui/` - UI-Skin, Menühintergrund und Steuerelemente.
+- `assets/designs/` - Design-Entwürfe, Kontaktbögen und Asset-Vorlagen.
 
-See [assets/README.md](assets/README.md) for the exact filenames, sizes, design
-config, and legal notes.
+Der Design-Editor im Spiel schreibt Maße, Eingänge und Positionen nach
+`assets/design.json`. Tuning-Werte liegen in `assets/tuning.json`, UI-Werte in
+`assets/ui.json`.
 
-## Contributing
+Genauere Asset-Regeln stehen in [assets/README.md](assets/README.md).
 
-Contributions are welcome. The most useful areas right now are:
+## Mitmachen
 
-- original sprites and animation sheets,
-- economy details closer to the classic games,
-- better map generation and terrain transitions,
-- UI polish,
-- tests for simulation edge cases,
-- AI improvements.
+Willkommen sind vor allem Tests, Feedback, Bugberichte, Balancing-Ideen und
+KI-erstellte Pull Requests. Vor Änderungen bitte lesen:
 
-Please do not submit copyrighted assets from commercial games. Conceptual
-references are fine; copied files are not.
+- [AGENTS.md](AGENTS.md) - Arbeitsregeln für KI-Agenten.
+- [ROADMAP.md](ROADMAP.md) - aktueller Plan und Feature-Lücken.
+- [KNOWN_BUGS.txt](KNOWN_BUGS.txt) - bekannte Probleme.
+- [assets/README.md](assets/README.md) - Asset-Formate und rechtliche Hinweise.
 
-## License
+Bitte keine proprietären Dateien, keine Originalgrafiken und keine kopierten
+Codeabschnitte aus kommerziellen Spielen oder fremden Projekten einreichen.
 
-Code and the included original/generated project assets are released under the
-MIT License unless a file says otherwise. See [LICENSE](LICENSE) and
+## Lizenz
+
+Code und enthaltene eigene oder generierte Projektassets stehen unter der
+MIT-Lizenz, sofern eine Datei nichts anderes sagt. Siehe [LICENSE](LICENSE) und
 [NOTICE.md](NOTICE.md).
