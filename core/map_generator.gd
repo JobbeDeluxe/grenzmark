@@ -6,6 +6,8 @@ extends RefCounted
 
 const TERRAIN_CLEANUP_PASSES := 2
 const STONE_CLUSTER_AREA := 1400
+const STEEP_MEADOW_MOUNTAIN_MIN_HEIGHT := 12.0
+const STEEP_MEADOW_MOUNTAIN_SLOPE := 4
 
 ## Erzeugt eine MapData mit Höhen und Terrain.
 static func generate(width: int, height: int, seed: int = 12345) -> MapData:
@@ -167,6 +169,13 @@ static func _classify_node_terrain(map: MapData, wet: FastNoiseLite) -> PackedBy
 				t = Terrain.MOUNTAIN
 			else:
 				t = Terrain.SNOW
+			# Hohe, sehr steile Wiesenflanken sind spielerisch Bergkanten:
+			# RTTR/S2 stuft direkte Höhendifferenzen > 3 für Gebäude auf
+			# Flaggenqualität zurück. Damit die Grafik nicht "Wiese" auf einer
+			# Felswand verspricht, malen wir solche Knoten als Berg.
+			if t == Terrain.MEADOW and h >= STEEP_MEADOW_MOUNTAIN_MIN_HEIGHT \
+					and map.max_slope(x, y) >= STEEP_MEADOW_MOUNTAIN_SLOPE:
+				t = Terrain.MOUNTAIN
 			if t == Terrain.MEADOW and h < 11.0 and wet != null:
 				var w: float = wet.get_noise_2d(x, y) * 0.5 + 0.5
 				if w > 0.64:

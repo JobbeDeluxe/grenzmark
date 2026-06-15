@@ -109,6 +109,17 @@ func _test_map_generation() -> void:
 	_check(meadow > 50, "Karte enthält Wiese (%d)" % meadow)
 	_check(water > 0, "Karte enthält Wasser am Rand (%d)" % water)
 
+	# Hohe, steile Wiesenflanken sollen als Bergkante erscheinen, nicht als
+	# fruchtbare Wiese. Sonst wirken Felder/Gebäude auf Bergwänden erlaubt.
+	var steep := _flat_map(8, 8)
+	for yy in steep.height:
+		for xx in steep.width:
+			steep.set_height(xx, yy, 13)
+	steep.set_height(5, 4, 17)
+	var terrain := MapGenerator._classify_node_terrain(steep, null)
+	_check(int(terrain[steep.idx(4, 4)]) == Terrain.MOUNTAIN,
+		"Kartengenerator: hohe Steilwiese wird Bergkante")
+
 
 func _test_bq_and_flags() -> void:
 	var map := MapGenerator.generate(40, 40, 7)
@@ -1207,6 +1218,16 @@ func _test_farm_fields() -> void:
 		"Farm: neben wachsendem Feld nur Flagge (RTTR FlagsAround)")
 	# Die Saatregel verbietet ein zweites Feld direkt daneben.
 	_check(not eco._is_field_spot(nb.x, nb.y), "Farm: kein zweites Feld direkt neben einem Feld")
+
+	# Steile Wiesenhänge sind kein Ackerplatz. Das entspricht der RTTR/S2-BQ-
+	# Schwelle: direkte Höhendifferenz > 3 ist nur noch Flaggenqualität.
+	var steep_field_map := _flat_map(16, 16)
+	steep_field_map.set_height(8, 8, 10)
+	steep_field_map.set_height(9, 8, 14)
+	var steep_field_state := WorldState.new(steep_field_map)
+	var steep_field_eco := Economy.new(steep_field_state)
+	_check(not steep_field_eco._is_field_spot(8, 8),
+		"Farm: kein Ackerplatz auf steilem Wiesenhang")
 
 	# Wachstum: seed → ripe.
 	var total := Tuning.field_growth_ticks(0) + Tuning.field_growth_ticks(1) + Tuning.field_growth_ticks(2)

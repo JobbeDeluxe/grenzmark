@@ -31,6 +31,7 @@ const FARM_RADIUS := 3         # Suchradius für Bauernhof-Felder. RTTR nutzt Ge
                                # inneren Radius-2-Bereich (nur ~3 gleichzeitige Felder). Radius 3
                                # gleicht den größeren Fußabdruck aus → ~8 gleichzeitige Felder,
                                # originalnah „viele Felder". (#7/#26)
+const FIELD_MAX_SLOPE := 3     # RTTR/S2: direkte Höhendifferenz > 3 ist nur Flaggenqualität.
 const SOLDIER_TICKS := 120     # Ticks, um aus einem Schwert einen Soldaten zu machen
 const MARCH_SPEED := 0.07      # Tempo marschierender Soldaten (Segmente/Tick)
 const ATTACK_SPEED := 1.3      # Tempo angreifender Soldaten (Weltpixel/Tick)
@@ -1834,6 +1835,8 @@ func _is_field_spot(x: int, y: int) -> bool:
 	if state.has_object(x, y) or state._occ(x, y) != WorldState.OBJ_NONE:
 		return false
 	if not _all_meadow(x, y):
+		return false
+	if state.map.max_slope(x, y) > FIELD_MAX_SLOPE:
 		return false
 	# Keine direkten Nachbar-Getreidefelder oder Gebäude/Baustellen.
 	for dir in Grid.DIRS:
