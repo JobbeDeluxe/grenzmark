@@ -26,9 +26,14 @@ erstellt hat.
 
 ## Eindruck
 
-Die folgenden Bilder zeigen aktuelle austauschbare Asset- und Design-Previews.
-Im Spiel werden die eigentlichen PNGs aus den Asset-Ordnern geladen; fehlen
-Dateien, zeichnet Godot vorläufige Platzhalter.
+Das erste Bild zeigt einen aktuellen Spielstand aus dem laufenden Prototyp.
+Darunter folgen austauschbare Asset- und Design-Previews. Im Spiel werden die
+eigentlichen PNGs aus den Asset-Ordnern geladen; fehlen Dateien, zeichnet Godot
+vorläufige Platzhalter.
+
+<p align="center">
+  <img src="docs/screenshots/ingame-preview-2026-06-15.png" alt="Aktuelles Ingame-Bild" width="96%">
+</p>
 
 <p align="center">
   <img src="assets/designs/terrain_preview_v1.png" alt="Terrain-Preview" width="48%">
