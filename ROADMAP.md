@@ -468,9 +468,11 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 
 **Wirtschaft (hoch):**
 - [ ] Mehrere Lagerhäuser/Vorratshäuser mit eigenem Inventar
-- [ ] Warenverteilung (%) & Transport-Prioritäten (welches Gebäude bekommt was zuerst,
+- [~] Warenverteilung (%) & Transport-Prioritäten (welches Gebäude bekommt was zuerst,
       welche Ware fährt zuerst) — Verwaltung-Regler „Verteilung"/„Transport" wie #41
-      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/43)
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/43).
+      Erledigt: Verteilung (core, gewichtet/deterministisch nach RTTR distributionMap)
+      + Fenster „Verteilung" (Regler je Abnehmer). Offen: Transport-Prioritäten (Phase 2).
 - [x] Gebäude-Produktion an/aus schalten (Taste P am gewählten Gebäude)
 - [ ] Produktion drosseln (Prozent), Eingangsmengen begrenzen
 - [ ] Minen mit ODER-Nahrung versorgen (Fisch/Fleisch/Brot, eines genügt) statt nur Brot;

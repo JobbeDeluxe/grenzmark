@@ -70,6 +70,9 @@ var _tools_prio_labels: Dictionary = {}    # Werkzeug-Gut -> Label (Gewichtsanze
 var _tools_order_labels: Dictionary = {}   # Werkzeug-Gut -> Label (Bestellmenge)
 var _recruit_slider: HSlider
 var _recruit_value_label: Label
+var _distribution_panel: PanelContainer    # Warenverteilung (#43)
+var _dist_sliders: Dictionary = {}         # "good:def_id" -> HSlider
+var _dist_labels: Dictionary = {}          # "good:def_id" -> Label (Gewichtsanzeige)
 var _tools_loading := false                # Regler werden gerade aus dem Modell gesetzt
 var _minimap_panel: PanelContainer
 var _flag_menu: PanelContainer
@@ -570,7 +573,9 @@ func _build_ui() -> void:
 	_tbutton(mainsel_box, "Statistik", _open_stats)
 	_tbutton(mainsel_box, "Werkzeuge", _toggle_tools_settings)
 	_tbutton(mainsel_box, "Militaer", _toggle_military_settings)
-	for stub in ["Verteilung", "Transport", "Produktivitaet"]:
+	var dist_btn := _tbutton(mainsel_box, "Verteilung", _toggle_distribution_settings)
+	dist_btn.tooltip_text = "Warenverteilung: welcher Abnehmer eine knappe Ware bevorzugt bekommt (#43)."
+	for stub in ["Transport", "Produktivitaet"]:
 		var sb := _tbutton(mainsel_box, stub, _noop)
 		sb.disabled = true
 		sb.tooltip_text = "Noch nicht implementiert"
@@ -628,6 +633,7 @@ func _build_ui() -> void:
 
 	_build_tools_panel()
 	_build_military_panel()
+	_build_distribution_panel()
 
 	# Flaggen-Kontextmenü (S2-artig): erscheint an der angeklickten Flagge.
 	_flag_menu = _floating_panel(Vector2(0, 0), Vector2(0, 0), Vector2(168, 0))
@@ -1249,6 +1255,134 @@ func _build_military_panel() -> void:
 	mil.add_child(_recruit_value_label)
 
 
+## Verteilungs-Fenster (#43): je knapper Mehrfach-Ware ein Abschnitt (Waren-Icon +
+## Name) mit einer Reglerzeile pro Abnehmer (Gewicht 0..10, ◄/► wie #41). Muster
+## und Bedienung wie Werkzeug-/Militärfenster. Mausrad scrollt nur den Inhalt.
+func _build_distribution_panel() -> void:
+	_dist_sliders.clear()
+	_dist_labels.clear()
+	_distribution_panel = _floating_panel(Vector2(0.5, 0.5), Vector2(-235, -210), Vector2(235, 210))
+	_distribution_panel.visible = false
+	var box := _add_window_chrome(_distribution_panel, "Warenverteilung", _toggle_distribution_settings)
+
+	var hint := Label.new()
+	hint.text = "Wer bekommt eine knappe Ware bevorzugt? Höheres Gewicht = größerer Anteil."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.mouse_filter = Control.MOUSE_FILTER_PASS
+	UISkin.apply_label(hint, true, 10)
+	box.add_child(hint)
+	box.add_child(HSeparator.new())
+
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, 300)
+	box.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 3)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(list)
+
+	var px := UISkin.layout_num("good_icon_size", 18)
+	if economy == null:
+		return
+	for good in economy.distribution:
+		var g := int(good)
+		# Abschnittskopf: Waren-Icon + Name.
+		var head := HBoxContainer.new()
+		head.add_theme_constant_override("separation", 4)
+		head.mouse_filter = Control.MOUSE_FILTER_PASS
+		list.add_child(head)
+		var gi := TextureRect.new()
+		gi.custom_minimum_size = Vector2(px, px)
+		gi.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		gi.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		gi.texture = UISkin.good_texture(g)
+		head.add_child(gi)
+		var gname := Label.new()
+		gname.text = Goods.name_of(g)
+		UISkin.apply_label(gname, true, 11)
+		head.add_child(gname)
+		# Je Abnehmer eine Reglerzeile.
+		for def_id in (economy.distribution[good] as Dictionary):
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 3)
+			row.mouse_filter = Control.MOUSE_FILTER_PASS
+			list.add_child(row)
+			var indent := Control.new()
+			indent.custom_minimum_size = Vector2(px, 0)
+			row.add_child(indent)
+			var name_lbl := Label.new()
+			name_lbl.text = String(BuildingCatalog.get_def(def_id).get("name", def_id))
+			name_lbl.custom_minimum_size = Vector2(96, 0)
+			UISkin.apply_label(name_lbl, false, 10)
+			row.add_child(name_lbl)
+			_step_btn(row, "◄", _step_distribution.bind(g, def_id, -1))
+			var slider := HSlider.new()
+			slider.min_value = 0
+			slider.max_value = 10
+			slider.step = 1
+			slider.scrollable = false
+			slider.custom_minimum_size = Vector2(70, 0)
+			slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			slider.value_changed.connect(_on_distribution_changed.bind(g, def_id))
+			row.add_child(slider)
+			_step_btn(row, "►", _step_distribution.bind(g, def_id, 1))
+			var val := Label.new()
+			val.custom_minimum_size = Vector2(16, 0)
+			val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			UISkin.apply_label(val, true, 10)
+			row.add_child(val)
+			var key := "%d:%s" % [g, def_id]
+			_dist_sliders[key] = slider
+			_dist_labels[key] = val
+
+
+func _toggle_distribution_settings() -> void:
+	if _distribution_panel == null:
+		return
+	_distribution_panel.visible = not _distribution_panel.visible
+	if _distribution_panel.visible:
+		_distribution_panel.move_to_front()
+		_refresh_distribution_panel()
+
+
+func _refresh_distribution_panel() -> void:
+	if economy == null or _distribution_panel == null:
+		return
+	_tools_loading = true
+	for key in _dist_sliders:
+		var parts := String(key).split(":")
+		var g := int(parts[0])
+		var def_id := String(parts[1])
+		var w := economy._dist_weight(g, def_id)
+		(_dist_sliders[key] as HSlider).set_value_no_signal(w)
+		(_dist_labels[key] as Label).text = str(w)
+	_tools_loading = false
+
+
+func _on_distribution_changed(value: float, good: int, def_id: String) -> void:
+	if _tools_loading or economy == null:
+		return
+	economy.set_distribution(good, def_id, int(value))
+	var key := "%d:%s" % [good, def_id]
+	if _dist_labels.has(key):
+		(_dist_labels[key] as Label).text = str(int(value))
+
+
+func _step_distribution(good: int, def_id: String, delta: int) -> void:
+	if economy == null:
+		return
+	var v := clampi(economy._dist_weight(good, def_id) + delta, 0, 10)
+	economy.set_distribution(good, def_id, v)
+	var key := "%d:%s" % [good, def_id]
+	if _dist_sliders.has(key):
+		(_dist_sliders[key] as HSlider).set_value_no_signal(v)
+	if _dist_labels.has(key):
+		(_dist_labels[key] as Label).text = str(v)
+
+
 func _toggle_tools_settings() -> void:
 	if _tools_panel == null:
 		return
@@ -1474,7 +1608,7 @@ func _escape_or_select() -> void:
 	if _road_menu != null and _road_menu.visible:
 		_close_road_menu()
 		return
-	for p in [_tools_panel, _military_panel, _build_panel, _economy_panel,
+	for p in [_tools_panel, _military_panel, _distribution_panel, _build_panel, _economy_panel,
 			_settings_panel, _mainsel_panel, _buildings_panel, _stats_panel]:
 		if p != null and p.visible:
 			p.visible = false
