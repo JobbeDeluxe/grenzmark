@@ -2650,6 +2650,7 @@ func _save_game() -> void:
 		recruiting_ratio = economy.recruiting_ratio,
 		recruit_accum = economy._recruit_accum,
 		mines_accept_beer = economy.mines_accept_beer,
+		distribution = economy.distribution.duplicate(true),  # Warenverteilung (#43)
 		# Bestände der baubaren Lagerhäuser (#31); HQ-Lager steckt in hq_stock.
 		extra_storages = economy.extra_storages_state(),
 	}
@@ -2781,6 +2782,9 @@ func _load_game() -> void:
 	economy.recruiting_ratio = clampi(int(data.get("recruiting_ratio", economy.recruiting_ratio)), 0, 10)
 	economy._recruit_accum = int(data.get("recruit_accum", 0))
 	economy.mines_accept_beer = bool(data.get("mines_accept_beer", false))
+	var dist = data.get("distribution", null)
+	if dist is Dictionary and not (dist as Dictionary).is_empty():
+		economy.distribution = dist  # Warenverteilung (#43); sonst bleiben die Defaults
 	var tree_growth = data.get("tree_growth", {})
 	if tree_growth is Dictionary:
 		economy.restore_tree_growth(tree_growth)

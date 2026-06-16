@@ -207,6 +207,7 @@ var soldiers := 0                    # ausgebildete Soldaten im HQ (Reserve)
 # --- Spieler-Einstellungen (RTTR-Regler, nur Spieler 0; deterministisch) ---
 var tool_priority: Dictionary = {}   # Werkzeug-Gut -> Gewicht 0..10 (Werkzeugmacher)
 var tool_orders: Dictionary = {}     # Werkzeug-Gut -> noch offene Bestellmenge (Vorrang)
+var distribution: Dictionary = {}    # Ware -> { def_id -> Gewicht 0..10 } (#43 Verteilung)
 var recruiting_ratio := 10           # Soldaten-Rekrutierungsrate 0..10 (RTTR MilSetting 0)
 var mines_accept_beer := false       # Hausregel: Minen nehmen zusätzlich Bier als Nahrung
                                      # (Original: nur Fisch/Fleisch/Brot). Default aus.
@@ -250,6 +251,7 @@ func _init_settings() -> void:
 	for g in Goods.tools():
 		tool_orders[g] = 0
 	recruiting_ratio = Tuning.recruiting_ratio_default()
+	distribution = Tuning.distribution_default()
 
 
 ## --- Settings-API (von der UI genutzt; clampt auf gültige Bereiche) ---
@@ -269,6 +271,27 @@ func set_recruiting_ratio(ratio: int) -> void:
 
 func set_mines_accept_beer(on: bool) -> void:
 	mines_accept_beer = on
+
+
+## Verteilungsgewicht (0..10) eines Abnehmers für eine knappe Ware setzen (#43).
+func set_distribution(good: int, def_id: String, weight: int) -> void:
+	if not distribution.has(good):
+		return  # nur für mehrfach beanspruchte Waren definiert
+	if not (distribution[good] as Dictionary).has(def_id):
+		return
+	distribution[good][def_id] = clampi(weight, 0, 10)
+
+
+## Ist die Ware [g] gewichtet verteilt (mehrere konkurrierende Abnehmer, #43)?
+func _is_distributed(g: int) -> bool:
+	return distribution.has(g)
+
+
+## Verteilungsgewicht des Abnehmers [def_id] für Ware [g] (0, wenn nicht gelistet).
+func _dist_weight(g: int, def_id: String) -> int:
+	if not distribution.has(g):
+		return 0
+	return int((distribution[g] as Dictionary).get(def_id, 0))
 
 
 # --------------------------------------------------------------------------
@@ -502,6 +525,7 @@ func tick() -> void:
 	_tick_catapults()
 	_tick_house_carrier()
 	_tick_helper_production()
+	_distribute_inputs()  # #43: knappe Mehrfach-Waren gewichtet verteilen (vor Pull der Gebäude)
 	for i in state.buildings:
 		if bstates.has(i):
 			_tick_building(bstates[i])
@@ -1449,11 +1473,14 @@ func _cost_value(cost: Dictionary) -> float:
 func _request_inputs(bs: BState) -> void:
 	var inputs: Dictionary = bs.def.get("inputs", {})
 	for g in inputs:
+		if _is_distributed(g):
+			continue  # gewichtet verteilte Ware → zentral über _distribute_inputs (#43)
 		var desired: int = int(inputs[g]) * 2
 		var have: int = bs.delivered.get(g, 0) + bs.incoming.get(g, 0)
 		if have < desired:
 			_request_from_hq(bs, g, desired - have)
 	# Nahrungsgruppe (ODER): bis zum Sollbestand auffüllen, egal welche Sorte.
+	# Verteilte Sorten (z. B. Fisch → Minen) kommen zentral; hier nur der Rest.
 	var group := _food_group(bs)
 	if not group.is_empty():
 		var have_food := 0
@@ -1463,22 +1490,104 @@ func _request_inputs(bs: BState) -> void:
 			_request_food(bs, group, FOOD_BUFFER - have_food)
 
 
+## Zentrale Warenverteilung (#43): verteilt knappe Waren mit mehreren Abnehmern
+## gewichtet (RTTR distributionMap). Läuft einmal pro Tick VOR der Gebäudeschleife,
+## damit die Gebäude den Rest (nicht verteilte Eingänge / übrige Nahrung) sehen.
+func _distribute_inputs() -> void:
+	for g in distribution:
+		_distribute_good(int(g))
+
+
+## Eine verteilte Ware auf die konkurrierenden Abnehmer verteilen: pro Einheit wird
+## ein Abnehmer mit Restbedarf gewichtet gezogen (seeded → deterministisch) und aus
+## dem nächsten Lager beliefert. Endet, wenn kein Lager die Ware mehr hat.
+func _distribute_good(g: int) -> void:
+	var reqs: Array = []
+	for i in state.buildings:
+		if not bstates.has(i):
+			continue
+		var bs: BState = bstates[i]
+		if bs.bld.owner != 0 or bs.is_construction or bs.stopped or not bs.staffed:
+			continue
+		if not _is_producer(bs):
+			continue
+		var w := _dist_weight(g, bs.bld.def_id)
+		if w <= 0:
+			continue
+		var deficit := _good_deficit(bs, g)
+		if deficit > 0:
+			reqs.append({bs = bs, deficit = deficit, weight = w})
+	while not reqs.is_empty():
+		var total := 0
+		for r in reqs:
+			if int(r.deficit) > 0:
+				total += int(r.weight)
+		if total <= 0:
+			return  # niemand will mehr
+		var roll := _rng.randi() % total
+		var pick: Dictionary = {}
+		for r in reqs:
+			if int(r.deficit) <= 0:
+				continue
+			roll -= int(r.weight)
+			if roll < 0:
+				pick = r
+				break
+		if pick.is_empty() or not _pull_one(pick.bs, g):
+			return  # kein Lager hat die Ware mehr → fertig
+		pick.deficit = int(pick.deficit) - 1
+
+
+## Restbedarf eines Gebäudes an Ware [g] (Sollbestand minus vorhandene + unterwegs).
+## Für normale Eingänge: doppelter Rezeptbedarf. Für eine verteilte Nahrungssorte:
+## der offene Sollbestand der ODER-Gruppe (eine Einheit füllt die Gruppe).
+func _good_deficit(bs: BState, g: int) -> int:
+	var have := int(bs.delivered.get(g, 0)) + int(bs.incoming.get(g, 0))
+	var inputs: Dictionary = bs.def.get("inputs", {})
+	if inputs.has(g):
+		return int(inputs[g]) * 2 - have
+	if _food_group(bs).has(g):
+		var have_food := 0
+		for fg in _food_group(bs):
+			have_food += int(bs.delivered.get(fg, 0)) + int(bs.incoming.get(fg, 0))
+		return FOOD_BUFFER - have_food
+	return 0
+
+
+## Ein Stück Ware [g] aus dem nächsten Lager mit Vorrat für [bs] reservieren und in
+## dessen outbox legen. Liefert false, wenn kein erreichbares Lager die Ware führt.
+func _pull_one(bs: BState, g: int) -> bool:
+	var st := _nearest_storage(bs.flag_idx, 0, func(s: Storage) -> bool:
+		return int(s.stock.get(g, 0)) > 0 and s.outbox.size() < FLAG_CAP)
+	if st == null:
+		return false
+	st.stock[g] = int(st.stock[g]) - 1
+	bs.incoming[g] = bs.incoming.get(g, 0) + 1
+	var good := Good.new()
+	good.type = g
+	good.dest = bs.flag_idx
+	st.outbox.append(good)
+	return true
+
+
 ## Fordert [amount] Nahrungseinheiten an: pro Stück das nächste Lager, das IRGENDEINE
 ## Sorte aus der Gruppe vorrätig hat (Gruppenreihenfolge entscheidet die Sorte).
 func _request_food(bs: BState, group: Array, amount: int) -> void:
+	# Verteilte Sorten (z. B. Fisch → Minen) liefert die zentrale Verteilung; hier
+	# nur die frei beziehbaren Sorten der Gruppe greifen (Gruppenreihenfolge zählt).
 	for _k in amount:
 		var st := _nearest_storage(bs.flag_idx, 0, func(s: Storage) -> bool:
 			if s.outbox.size() >= FLAG_CAP:
 				return false
 			for fg in group:
-				if int(s.stock.get(fg, 0)) > 0:
+				if not _is_distributed(int(fg)) and int(s.stock.get(fg, 0)) > 0:
 					return true
 			return false)
 		if st == null:
 			return
 		var picked := -1
 		for fg in group:
-			if int(st.stock.get(fg, 0)) > 0:
+			if not _is_distributed(int(fg)) and int(st.stock.get(fg, 0)) > 0:
 				picked = int(fg)
 				break
 		if picked < 0:
@@ -1496,18 +1605,10 @@ func _request_food(bs: BState, group: Array, amount: int) -> void:
 ## sich das nähere, übernimmt automatisch das nächstweitere. Mit nur einem Lager
 ## (HQ) ist das identisch zum bisherigen Verhalten.
 func _request_from_hq(bs: BState, g: int, amount: int) -> void:
-	for k in amount:
-		var st := _nearest_storage(bs.flag_idx, 0, func(s: Storage) -> bool:
-			return int(s.stock.get(g, 0)) > 0 and s.outbox.size() < FLAG_CAP)
-		if st == null:
+	# Ware wartet im Lager; dessen Tür-Träger bringt sie zur Flagge hinaus.
+	for _k in amount:
+		if not _pull_one(bs, g):
 			return
-		st.stock[g] = int(st.stock[g]) - 1
-		bs.incoming[g] = bs.incoming.get(g, 0) + 1
-		# Ware wartet im Lager; dessen Tür-Träger bringt sie zur Flagge hinaus.
-		var good := Good.new()
-		good.type = g
-		good.dest = bs.flag_idx
-		st.outbox.append(good)
 
 
 # --- Produktion ---

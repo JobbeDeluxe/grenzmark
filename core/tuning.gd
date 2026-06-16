@@ -179,6 +179,36 @@ static func recruiting_ratio_default() -> int:
 	return clampi(int(_num("recruiting_ratio", 10)), 0, 10)
 
 
+## Standard-Warenverteilung (#43, RTTR distributionMap, auf vorhandene Gebäude
+## reduziert): je verteilter Ware ein Gewicht 0..10 pro konkurrierendem Abnehmer.
+## Nur Waren mit MEHREREN Abnehmern stehen hier — bei knappem Bestand bekommt der
+## höher gewichtete Abnehmer anteilig mehr. Override via tuning.json "distribution"
+## (Waren-ID -> { def_id -> Gewicht }).
+static func distribution_default() -> Dictionary:
+	var defaults := {
+		Goods.FISH:  { "coalmine": 5, "ironmine": 7, "goldmine": 10, "granitemine": 3 },
+		Goods.GRAIN: { "mill": 5, "pigfarm": 3, "brewery": 3 },
+		Goods.WATER: { "bakery": 6, "brewery": 3, "pigfarm": 2 },
+		Goods.COAL:  { "smithy": 8, "smelter": 7, "mint": 10 },
+		Goods.IRON:  { "smithy": 8, "toolmaker": 4 },
+	}
+	var raw = _cfg_dict().get("distribution")
+	if not (raw is Dictionary):
+		return defaults
+	# Override je Ware komplett ersetzen (vorwärtskompatibel: unbekannte IDs ignoriert).
+	for k in raw:
+		var gid := int(Goods.KEYS.find(String(k)))
+		if gid < 0 or not (raw[k] is Dictionary):
+			continue
+		var inner := {}
+		for did in raw[k]:
+			var v = raw[k][did]
+			if v is int or v is float:
+				inner[String(did)] = clampi(int(v), 0, 10)
+		defaults[gid] = inner
+	return defaults
+
+
 ## tuning.json[json_key] (String-ID -> Anzahl) zu { enum_id: Anzahl } auflösen.
 ## Fehlt/leer/kein Dictionary -> Kopie der Standardwerte. Unbekannte IDs werden
 ## ignoriert (vorwärtskompatibel).

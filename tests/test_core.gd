@@ -39,6 +39,7 @@ func _initialize() -> void:
 	_test_storehouse_routing()
 	_test_stop_finishes_cycle()
 	_test_productivity_and_building_info()
+	_test_distribution()
 	_test_military()
 	_test_tools_and_recruitment()
 	_test_combat()
@@ -651,6 +652,76 @@ func _test_productivity_and_building_info() -> void:
 			"Prod-Test: Soll/Ist-Werte plausibel")
 	_check((sinfo.output as Dictionary).get("good", -1) == Goods.BOARDS,
 		"Prod-Test: Ausgangszeile ist Bretter")
+
+
+## #43 Phase 1: gewichtete Warenverteilung. Knappe Mehrfach-Waren (Fisch, Getreide,
+## Wasser, Kohle, Eisen) werden gemäß einstellbarer Gewichte (RTTR distributionMap)
+## auf die konkurrierenden Abnehmer verteilt — deterministisch (seeded).
+func _test_distribution() -> void:
+	var map := _flat_map(30, 30)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+
+	# Defaults vorhanden und für die existierenden Gebäude gesetzt.
+	_check(eco._is_distributed(Goods.FISH), "Verteilung: Fisch ist verteilt (mehrere Minen)")
+	_check(eco._is_distributed(Goods.COAL), "Verteilung: Kohle ist verteilt")
+	_check(not eco._is_distributed(Goods.WOOD), "Verteilung: Holz NICHT verteilt (ein Abnehmer)")
+	_check(eco._dist_weight(Goods.FISH, "goldmine") == 10, "Verteilung: Goldmine-Fischgewicht 10 (RTTR)")
+	_check(eco._dist_weight(Goods.FISH, "coalmine") == 5, "Verteilung: Kohlemine-Fischgewicht 5 (RTTR)")
+
+	# Setter clampt und ignoriert unbekannte Abnehmer/Waren.
+	eco.set_distribution(Goods.FISH, "goldmine", 99)
+	_check(eco._dist_weight(Goods.FISH, "goldmine") == 10, "Verteilung: Setter clampt auf 10")
+	eco.set_distribution(Goods.FISH, "sawmill", 7)  # Sägewerk isst keinen Fisch
+	_check(eco._dist_weight(Goods.FISH, "sawmill") == 0, "Verteilung: unbekannter Abnehmer wird nicht gesetzt")
+	eco.set_distribution(Goods.WOOD, "sawmill", 7)  # Holz ist gar nicht verteilt
+	_check(not eco._is_distributed(Goods.WOOD), "Verteilung: nicht verteilte Ware bleibt unverändert")
+	eco.set_distribution(Goods.FISH, "goldmine", 10)  # zurücksetzen
+
+	# Szenario: HQ + Gold- und Kohlemine ans Netz. Bei Fischknappheit (1 Stück/Runde)
+	# muss die höher gewichtete Goldmine (10) deutlich öfter bedient werden als Kohle (5).
+	var hq := state.place_building(15, 22, WorldState.BQ_CASTLE, true, "hq", 0, false)
+	var gold := state.place_building(15, 14, WorldState.BQ_HOUSE, false, "goldmine", 0, false)
+	var coal := state.place_building(15, 8, WorldState.BQ_HOUSE, false, "coalmine", 0, false)
+	_check(hq != null and gold != null and coal != null, "Verteilung: HQ und zwei Minen platzierbar")
+	if hq == null or gold == null or coal == null:
+		return
+	var r1 := state.build_road(hq.flag_pos, gold.flag_pos)
+	var r2 := state.build_road(gold.flag_pos, coal.flag_pos)
+	_check(r1 != null and r2 != null, "Verteilung: Straßenkette HQ—Gold—Kohle baubar")
+	eco.resync()
+	var gbs: Economy.BState = eco.bstates.get(state.map.idx(gold.pos.x, gold.pos.y))
+	var cbs: Economy.BState = eco.bstates.get(state.map.idx(coal.pos.x, coal.pos.y))
+	_check(gbs != null and cbs != null, "Verteilung: beide Minen haben bstate")
+	if gbs == null or cbs == null:
+		return
+	# Arbeiter als anwesend annehmen (isoliert die Verteil-Logik vom Personalweg).
+	gbs.staffed = true; gbs.has_person = true
+	cbs.staffed = true; cbs.has_person = true
+
+	var gold_total := 0
+	var coal_total := 0
+	for _t in 300:
+		gbs.delivered.clear(); gbs.incoming.clear()
+		cbs.delivered.clear(); cbs.incoming.clear()
+		eco.storages[0].outbox.clear()
+		eco.hq_stock[Goods.FISH] = 1  # nur EIN Fisch pro Runde → echte Knappheit
+		eco._distribute_good(Goods.FISH)
+		gold_total += int(gbs.incoming.get(Goods.FISH, 0))
+		coal_total += int(cbs.incoming.get(Goods.FISH, 0))
+	_check(gold_total + coal_total == 300, "Verteilung: jede knappe Einheit wurde genau einmal zugeteilt")
+	_check(gold_total > coal_total, "Verteilung: höher gewichtete Goldmine (10) bekommt mehr als Kohle (5)")
+	_check(gold_total > int(coal_total * 1.4), "Verteilung: Anteil grob nach Gewicht (~10:5)")
+
+	# Genügend Fisch: beide Minen füllen ihren Sollbestand (kein Verlust durch Verteilung).
+	gbs.delivered.clear(); gbs.incoming.clear()
+	cbs.delivered.clear(); cbs.incoming.clear()
+	eco.storages[0].outbox.clear()
+	eco.hq_stock[Goods.FISH] = 99
+	eco._distribute_good(Goods.FISH)
+	_check(int(gbs.incoming.get(Goods.FISH, 0)) == Economy.FOOD_BUFFER \
+		and int(cbs.incoming.get(Goods.FISH, 0)) == Economy.FOOD_BUFFER,
+		"Verteilung: bei Überfluss füllen beide Minen den Nahrungs-Sollbestand")
 
 
 func _test_military() -> void:
