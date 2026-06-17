@@ -73,6 +73,8 @@ var _recruit_value_label: Label
 var _distribution_panel: PanelContainer    # Warenverteilung (#43)
 var _dist_sliders: Dictionary = {}         # "good:def_id" -> HSlider
 var _dist_labels: Dictionary = {}          # "good:def_id" -> Label (Gewichtsanzeige)
+var _transport_panel: PanelContainer       # Transport-Prioritäten (#43)
+var _transport_list: VBoxContainer         # Inhalt der Prioritätsliste (wird umsortiert)
 var _tools_loading := false                # Regler werden gerade aus dem Modell gesetzt
 var _minimap_panel: PanelContainer
 var _flag_menu: PanelContainer
@@ -575,7 +577,9 @@ func _build_ui() -> void:
 	_tbutton(mainsel_box, "Militaer", _toggle_military_settings)
 	var dist_btn := _tbutton(mainsel_box, "Verteilung", _toggle_distribution_settings)
 	dist_btn.tooltip_text = "Warenverteilung: welcher Abnehmer eine knappe Ware bevorzugt bekommt (#43)."
-	for stub in ["Transport", "Produktivitaet"]:
+	var trans_btn := _tbutton(mainsel_box, "Transport", _toggle_transport_settings)
+	trans_btn.tooltip_text = "Transport-Priorität: welche Ware bei Stau zuerst befördert wird (#43)."
+	for stub in ["Produktivitaet"]:
 		var sb := _tbutton(mainsel_box, stub, _noop)
 		sb.disabled = true
 		sb.tooltip_text = "Noch nicht implementiert"
@@ -634,6 +638,7 @@ func _build_ui() -> void:
 	_build_tools_panel()
 	_build_military_panel()
 	_build_distribution_panel()
+	_build_transport_panel()
 
 	# Flaggen-Kontextmenü (S2-artig): erscheint an der angeklickten Flagge.
 	_flag_menu = _floating_panel(Vector2(0, 0), Vector2(0, 0), Vector2(168, 0))
@@ -1383,6 +1388,87 @@ func _step_distribution(good: int, def_id: String, delta: int) -> void:
 		(_dist_labels[key] as Label).text = str(v)
 
 
+## Transport-Prioritäten-Fenster (#43): Liste aller Waren nach Priorität (oben =
+## fährt bei Stau zuerst), je Zeile ▲/▼ zum Umsortieren — wie S2 iwTransport.
+func _build_transport_panel() -> void:
+	_transport_panel = _floating_panel(Vector2(0.5, 0.5), Vector2(-210, -220), Vector2(210, 220))
+	_transport_panel.visible = false
+	var box := _add_window_chrome(_transport_panel, "Transport-Priorität", _toggle_transport_settings)
+
+	var hint := Label.new()
+	hint.text = "Welche Ware fährt bei Stau zuerst? Oben = höchste Priorität. ▲/▼ verschiebt."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.mouse_filter = Control.MOUSE_FILTER_PASS
+	UISkin.apply_label(hint, true, 10)
+	box.add_child(hint)
+	box.add_child(HSeparator.new())
+
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, 320)
+	box.add_child(scroll)
+	_transport_list = VBoxContainer.new()
+	_transport_list.add_theme_constant_override("separation", 2)
+	_transport_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_transport_list)
+	_rebuild_transport_list()
+
+
+## Baut die Prioritätsliste in aktueller Reihenfolge neu auf (nach jedem Verschieben).
+func _rebuild_transport_list() -> void:
+	if _transport_list == null or economy == null:
+		return
+	for c in _transport_list.get_children():
+		_transport_list.remove_child(c)
+		c.queue_free()
+	var px := UISkin.layout_num("good_icon_size", 18)
+	var n := economy.transport_order.size()
+	for rank in n:
+		var g := int(economy.transport_order[rank])
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 3)
+		row.mouse_filter = Control.MOUSE_FILTER_PASS
+		_transport_list.add_child(row)
+		var num := Label.new()
+		num.text = "%2d" % (rank + 1)
+		num.custom_minimum_size = Vector2(22, 0)
+		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		UISkin.apply_label(num, true, 10)
+		row.add_child(num)
+		var icon := TextureRect.new()
+		icon.custom_minimum_size = Vector2(px, px)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.texture = UISkin.good_texture(g)
+		row.add_child(icon)
+		var name_lbl := Label.new()
+		name_lbl.text = Goods.name_of(g)
+		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		UISkin.apply_label(name_lbl, false, 10)
+		row.add_child(name_lbl)
+		var up := _step_btn(row, "▲", _step_transport.bind(g, -1))
+		up.disabled = rank == 0
+		var down := _step_btn(row, "▼", _step_transport.bind(g, 1))
+		down.disabled = rank == n - 1
+
+
+func _step_transport(g: int, dir: int) -> void:
+	if economy == null:
+		return
+	economy.move_transport(g, dir)
+	_rebuild_transport_list()
+
+
+func _toggle_transport_settings() -> void:
+	if _transport_panel == null:
+		return
+	_transport_panel.visible = not _transport_panel.visible
+	if _transport_panel.visible:
+		_transport_panel.move_to_front()
+		_rebuild_transport_list()
+
+
 func _toggle_tools_settings() -> void:
 	if _tools_panel == null:
 		return
@@ -1608,8 +1694,9 @@ func _escape_or_select() -> void:
 	if _road_menu != null and _road_menu.visible:
 		_close_road_menu()
 		return
-	for p in [_tools_panel, _military_panel, _distribution_panel, _build_panel, _economy_panel,
-			_settings_panel, _mainsel_panel, _buildings_panel, _stats_panel]:
+	for p in [_tools_panel, _military_panel, _distribution_panel, _transport_panel,
+			_build_panel, _economy_panel, _settings_panel, _mainsel_panel,
+			_buildings_panel, _stats_panel]:
 		if p != null and p.visible:
 			p.visible = false
 			return
@@ -2785,6 +2872,7 @@ func _save_game() -> void:
 		recruit_accum = economy._recruit_accum,
 		mines_accept_beer = economy.mines_accept_beer,
 		distribution = economy.distribution.duplicate(true),  # Warenverteilung (#43)
+		transport_order = economy.transport_order.duplicate(),  # Transport-Prioritäten (#43)
 		# Bestände der baubaren Lagerhäuser (#31); HQ-Lager steckt in hq_stock.
 		extra_storages = economy.extra_storages_state(),
 	}
@@ -2919,6 +3007,17 @@ func _load_game() -> void:
 	var dist = data.get("distribution", null)
 	if dist is Dictionary and not (dist as Dictionary).is_empty():
 		economy.distribution = dist  # Warenverteilung (#43); sonst bleiben die Defaults
+	var torder = data.get("transport_order", null)
+	if torder is Array and not (torder as Array).is_empty():
+		# Vollständigkeit absichern: fehlende Waren hinten ergänzen (vorwärtskompatibel).
+		var ord: Array = []
+		for g in torder:
+			if int(g) >= 0 and int(g) < Goods.COUNT and not ord.has(int(g)):
+				ord.append(int(g))
+		for g in range(Goods.COUNT):
+			if not ord.has(g):
+				ord.append(g)
+		economy.transport_order = ord
 	var tree_growth = data.get("tree_growth", {})
 	if tree_growth is Dictionary:
 		economy.restore_tree_growth(tree_growth)

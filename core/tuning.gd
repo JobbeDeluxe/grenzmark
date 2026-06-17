@@ -209,6 +209,35 @@ static func distribution_default() -> Dictionary:
 	return defaults
 
 
+## Standard-Transport-Priorität (#43, RTTR STD_TRANSPORT_PRIO, Konzept): Reihenfolge,
+## in der Waren bei Stau befördert werden — Index 0 = zuerst. Wertvolles/Kleines zuerst
+## (Münzen, Waffen, Werkzeuge), Baustoffe zuletzt. Override via tuning.json
+## "transport_order" (Liste von Waren-IDs); fehlende Waren werden hinten ergänzt.
+static func transport_order_default() -> Array:
+	var order: Array[int] = [
+		Goods.COINS, Goods.SWORD, Goods.SHIELD,
+		Goods.TONGS, Goods.HAMMER, Goods.AXE, Goods.SAW, Goods.PICKAXE, Goods.SHOVEL,
+		Goods.CRUCIBLE, Goods.ROD_AND_LINE, Goods.SCYTHE, Goods.CLEAVER, Goods.ROLLING_PIN, Goods.BOW,
+		Goods.TOOLS, Goods.BEER, Goods.IRON,
+		Goods.BREAD, Goods.FISH, Goods.MEAT, Goods.WATER, Goods.FLOUR, Goods.GRAIN,
+		Goods.COAL, Goods.IRON_ORE, Goods.GOLD_ORE, Goods.PIG,
+		Goods.BOARDS, Goods.WOOD, Goods.STONE,
+	]
+	var raw = _cfg_dict().get("transport_order")
+	if raw is Array:
+		var custom: Array[int] = []
+		for k in raw:
+			var gid := int(Goods.KEYS.find(String(k)))
+			if gid >= 0 and not custom.has(gid):
+				custom.append(gid)
+		order = custom
+	# Vollständigkeit sichern: jede fehlende Ware hinten anhängen (niedrigste Priorität).
+	for g in range(Goods.COUNT):
+		if not order.has(g):
+			order.append(g)
+	return order
+
+
 ## tuning.json[json_key] (String-ID -> Anzahl) zu { enum_id: Anzahl } auflösen.
 ## Fehlt/leer/kein Dictionary -> Kopie der Standardwerte. Unbekannte IDs werden
 ## ignoriert (vorwärtskompatibel).

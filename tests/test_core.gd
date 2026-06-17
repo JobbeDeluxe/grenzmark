@@ -40,6 +40,7 @@ func _initialize() -> void:
 	_test_stop_finishes_cycle()
 	_test_productivity_and_building_info()
 	_test_distribution()
+	_test_transport_priority()
 	_test_military()
 	_test_tools_and_recruitment()
 	_test_combat()
@@ -722,6 +723,54 @@ func _test_distribution() -> void:
 	_check(int(gbs.incoming.get(Goods.FISH, 0)) == Economy.FOOD_BUFFER \
 		and int(cbs.incoming.get(Goods.FISH, 0)) == Economy.FOOD_BUFFER,
 		"Verteilung: bei Überfluss füllen beide Minen den Nahrungs-Sollbestand")
+
+
+## #43 Phase 2: Transport-Prioritäten. Bei mehreren wartenden Waren Richtung selber
+## Flagge fährt die höher priorisierte zuerst (RTTR STD_TRANSPORT_PRIO); Reihenfolge
+## ist umsortierbar und vollständig.
+func _test_transport_priority() -> void:
+	var map := _flat_map(30, 30)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+
+	# Standardreihenfolge vollständig und sinnvoll sortiert.
+	_check(eco.transport_order.size() == Goods.COUNT, "Transport: alle Waren in der Reihenfolge")
+	_check(eco._transport_rank(Goods.COINS) < eco._transport_rank(Goods.STONE),
+		"Transport: Münzen haben höhere Priorität als Steine")
+	_check(eco._transport_rank(Goods.SWORD) < eco._transport_rank(Goods.WOOD),
+		"Transport: Waffen vor Baustoffen")
+
+	# Umsortieren: ▲ (−1) eins höher, ▼ (+1) zurück; Ränder clampen.
+	var before := eco._transport_rank(Goods.STONE)
+	eco.move_transport(Goods.STONE, -1)
+	_check(eco._transport_rank(Goods.STONE) == before - 1, "Transport: ▲ verschiebt um eins nach oben")
+	eco.move_transport(Goods.STONE, 1)
+	_check(eco._transport_rank(Goods.STONE) == before, "Transport: ▼ verschiebt zurück")
+	var top := int(eco.transport_order[0])
+	eco.move_transport(top, -1)
+	_check(int(eco.transport_order[0]) == top, "Transport: oberste Ware bleibt bei ▲ oben (Rand)")
+
+	# Aufnahme nach Priorität: HQ + Holzfäller per Straße verbunden.
+	var hq := state.place_building(15, 20, WorldState.BQ_CASTLE, true, "hq", 0, false)
+	var wc := state.place_building(15, 14, WorldState.BQ_HOUSE, false, "woodcutter", 0, false)
+	_check(hq != null and wc != null, "Transport: HQ und Holzfäller platzierbar")
+	if hq == null or wc == null:
+		return
+	var road := state.build_road(hq.flag_pos, wc.flag_pos)
+	_check(road != null, "Transport: Straße HQ—Holzfäller baubar")
+	eco.resync()
+	var wf := state.map.idx(wc.flag_pos.x, wc.flag_pos.y)
+	var hf := state.map.idx(hq.flag_pos.x, hq.flag_pos.y)
+	# Stein (niedrige Prio) wartet ZUERST, Münze (hohe Prio) kommt später dazu — beide zum HQ.
+	var low := Economy.Good.new(); low.type = Goods.STONE; low.dest = hf
+	var high := Economy.Good.new(); high.type = Goods.COINS; high.dest = hf
+	eco.flag_goods[wf] = [low, high]
+	var first = eco._take_good_for(wf, hf)
+	_check(first != null and first.type == Goods.COINS,
+		"Transport: höher priorisierte Münze fährt zuerst (trotz späterer Ankunft)")
+	var second = eco._take_good_for(wf, hf)
+	_check(second != null and second.type == Goods.STONE,
+		"Transport: danach die niedriger priorisierte Ware")
 
 
 func _test_military() -> void:

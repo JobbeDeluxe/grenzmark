@@ -337,9 +337,9 @@ GitHub-Arbeitspakete:
       vs. Sofort-Bestellung. Verwaltungs-/Settings-Fenster bleiben parallel offen;
       Schließen per Toggle/X oder Rechtsklick — und der Rechtsklick schließt NUR das
       Fenster unter der Maus (nicht mehr ein beliebiges fernes Fenster). Issue #41.
-- [ ] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion); **Verteilungs-/
-      Transport-Einstellungen** (Warenverteilung mehrerer Abnehmer + Transport-Prioritäten)
-      stehen noch aus — Issue #43.
+- [ ] **Statistik-Fenster** (Tabs: Waren/Gebäude/Militär/Produktion) steht noch aus.
+- [x] **Verteilungs-/Transport-Einstellungen** (Warenverteilung mehrerer Abnehmer +
+      Transport-Prioritäten) als Verwaltung-Fenster „Verteilung"/„Transport" — Issue #43.
 - [ ] **Nachrichten-/Ereignisleiste** (Angriff, „Gebäude fertig", „Lager voll" …).
 - [ ] **Tooltips** durchgängig; Cursor-Symbole je Modus (Flagge/Straße/Abriss).
 
@@ -468,11 +468,12 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 
 **Wirtschaft (hoch):**
 - [ ] Mehrere Lagerhäuser/Vorratshäuser mit eigenem Inventar
-- [~] Warenverteilung (%) & Transport-Prioritäten (welches Gebäude bekommt was zuerst,
+- [x] Warenverteilung (%) & Transport-Prioritäten (welches Gebäude bekommt was zuerst,
       welche Ware fährt zuerst) — Verwaltung-Regler „Verteilung"/„Transport" wie #41
       (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/43).
-      Erledigt: Verteilung (core, gewichtet/deterministisch nach RTTR distributionMap)
-      + Fenster „Verteilung" (Regler je Abnehmer). Offen: Transport-Prioritäten (Phase 2).
+      Verteilung: core gewichtet/deterministisch (RTTR distributionMap) + Fenster „Verteilung".
+      Transport: core Prioritätsauswahl bei der Warenaufnahme (RTTR STD_TRANSPORT_PRIO) +
+      Fenster „Transport" (umsortierbare Liste). In-Game-Test durch Spieler offen (#45).
 - [x] Gebäude-Produktion an/aus schalten (Taste P am gewählten Gebäude)
 - [ ] Produktion drosseln (Prozent), Eingangsmengen begrenzen
 - [ ] Minen mit ODER-Nahrung versorgen (Fisch/Fleisch/Brot, eines genügt) statt nur Brot;

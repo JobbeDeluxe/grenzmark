@@ -208,6 +208,7 @@ var soldiers := 0                    # ausgebildete Soldaten im HQ (Reserve)
 var tool_priority: Dictionary = {}   # Werkzeug-Gut -> Gewicht 0..10 (Werkzeugmacher)
 var tool_orders: Dictionary = {}     # Werkzeug-Gut -> noch offene Bestellmenge (Vorrang)
 var distribution: Dictionary = {}    # Ware -> { def_id -> Gewicht 0..10 } (#43 Verteilung)
+var transport_order: Array = []      # Waren nach Transport-Priorität (Index 0 = zuerst, #43)
 var recruiting_ratio := 10           # Soldaten-Rekrutierungsrate 0..10 (RTTR MilSetting 0)
 var mines_accept_beer := false       # Hausregel: Minen nehmen zusätzlich Bier als Nahrung
                                      # (Original: nur Fisch/Fleisch/Brot). Default aus.
@@ -252,6 +253,7 @@ func _init_settings() -> void:
 		tool_orders[g] = 0
 	recruiting_ratio = Tuning.recruiting_ratio_default()
 	distribution = Tuning.distribution_default()
+	transport_order = Tuning.transport_order_default()
 
 
 ## --- Settings-API (von der UI genutzt; clampt auf gültige Bereiche) ---
@@ -292,6 +294,27 @@ func _dist_weight(g: int, def_id: String) -> int:
 	if not distribution.has(g):
 		return 0
 	return int((distribution[g] as Dictionary).get(def_id, 0))
+
+
+## Transport-Rang einer Ware (#43): kleiner = wird bei Stau zuerst befördert.
+## Nicht gelistete Waren landen hinten (niedrigste Priorität).
+func _transport_rank(g: int) -> int:
+	var r := transport_order.find(g)
+	return r if r >= 0 else transport_order.size()
+
+
+## Ware in der Transport-Priorität um [dir] verschieben (-1 = höher/früher,
+## +1 = tiefer/später). Tauscht mit dem Nachbarn; clampt an den Rändern.
+func move_transport(g: int, dir: int) -> void:
+	var i := transport_order.find(g)
+	if i < 0:
+		return
+	var j := i + (1 if dir > 0 else -1)
+	if j < 0 or j >= transport_order.size():
+		return
+	var tmp = transport_order[i]
+	transport_order[i] = transport_order[j]
+	transport_order[j] = tmp
 
 
 # --------------------------------------------------------------------------
@@ -2454,20 +2477,35 @@ func hq_flag_node() -> Vector2i:
 
 func _take_good_for(flag_idx: int, target_flag_idx: int):
 	var queue: Array = flag_goods.get(flag_idx, [])
-	for k in queue.size():
-		var g: Good = queue[k]
-		if _next_hop(flag_idx, g.dest) == target_flag_idx:
-			queue.remove_at(k)
-			return g
-	return null
+	var k := _best_good_index(queue, flag_idx, target_flag_idx)
+	if k < 0:
+		return null
+	var g: Good = queue[k]
+	queue.remove_at(k)
+	return g
 
 
 func _peek_good_for(flag_idx: int, target_flag_idx: int):
 	var queue: Array = flag_goods.get(flag_idx, [])
-	for g in queue:
-		if _next_hop(flag_idx, g.dest) == target_flag_idx:
-			return g
-	return null
+	var k := _best_good_index(queue, flag_idx, target_flag_idx)
+	return queue[k] if k >= 0 else null
+
+
+## Index der Ware in [queue], die als Nächstes Richtung [target_flag_idx] befördert
+## wird: unter allen passenden (nächster Hop == Ziel) die mit der höchsten Transport-
+## Priorität (#43); bei Gleichstand die zuerst Wartende (FIFO). -1, wenn keine passt.
+func _best_good_index(queue: Array, flag_idx: int, target_flag_idx: int) -> int:
+	var best := -1
+	var best_rank := 0
+	for k in queue.size():
+		var g: Good = queue[k]
+		if _next_hop(flag_idx, g.dest) != target_flag_idx:
+			continue
+		var rank := _transport_rank(g.type)
+		if best < 0 or rank < best_rank:
+			best = k
+			best_rank = rank
+	return best
 
 
 func _next_hop(from_idx: int, dest_idx: int) -> int:
