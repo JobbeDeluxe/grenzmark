@@ -11,7 +11,6 @@ const MAP_SEED := 1337
 const DEFAULT_ENEMY_COUNT := 1
 const MAX_ENEMY_COUNT := 5
 const TICK_HZ := 30.0
-const SAVE_PATH := "user://settlers_save.dat"
 const BUILD_TILE_SIZE := Vector2(92, 108)
 
 enum { MODE_SELECT, MODE_FLAG, MODE_ROAD, MODE_BUILD, MODE_DELETE }
@@ -99,13 +98,23 @@ var map_resolved_type := MapGenerator.DEFAULT_MAP_TYPE  # konkret (zufall aufgel
 
 ## Wird vom Hauptmenü gesetzt: true = beim Start Spielstand laden.
 static var boot_load := false
+## Pfad des beim Start zu ladenden Spielstands (leer = jüngster).
+static var boot_load_path := ""
+
+var _last_save_name := ""
+var _saveload_panel: PanelContainer
+var _saveload_body: VBoxContainer
+var _saveload_name_edit: LineEdit
 
 
 func _ready() -> void:
 	if boot_load:
 		boot_load = false
 		_new_game()   # Grundgerüst, dann laden
-		_load_game()
+		var path := boot_load_path if boot_load_path != "" else SaveManager.latest_path()
+		boot_load_path = ""
+		if path != "":
+			_load_from(path)
 	else:
 		_new_game()
 
@@ -2803,8 +2812,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_2: _set_mode(MODE_ROAD)
 			KEY_9, KEY_DELETE: _set_mode(MODE_DELETE)
 			KEY_0, KEY_ESCAPE: _escape_or_select()
-			KEY_F2: _save_game()
-			KEY_F3: _load_game()
+			KEY_F2: _quick_save()
+			KEY_F3: _quick_load()
+			KEY_F5: _open_save_dialog()
+			KEY_F9: _open_load_browser()
 			KEY_F5: _new_game()
 			KEY_B: _toggle_build_panel()
 			KEY_S: _toggle_settings()
@@ -3037,7 +3048,19 @@ func _bq_name(bq: int) -> String:
 #  Speichern / Laden  (Struktur + HQ-Lager; Produktionsfortschritt setzt neu auf)
 # --------------------------------------------------------------------------
 
+## "Speichern"-Button/Taste: öffnet den Benennen-Dialog (benannte Speicherpunkte).
 func _save_game() -> void:
+	_open_save_dialog()
+
+
+## Schnellspeichern (F2): in den zuletzt benutzten Slot, sonst "Schnellspeicher".
+func _quick_save() -> void:
+	var name := _last_save_name if _last_save_name != "" else "Schnellspeicher"
+	_save_to(SaveManager.slugify(name), name)
+
+
+## Baut die komplette Spielstand-Struktur (ohne Datei-IO).
+func _build_save_data() -> Dictionary:
 	var data := {
 		w = map.width, h = map.height,
 		map_source = map_source,
@@ -3099,23 +3122,45 @@ func _save_game() -> void:
 			nodes = r.nodes.duplicate(), a = r.a, b = r.b,
 			owner = r.owner, traffic = r.traffic, level = r.level,
 		})
-
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if f != null:
-		f.store_var(data, true)
-		f.close()
-		_flash("Gespeichert.")
+	return data
 
 
+## Speichert unter einem benannten Slot (überschreibt gleichnamige Slots).
+func _save_to(slug: String, name: String) -> void:
+	if SaveManager.write(slug, name, _build_save_data()):
+		_last_save_name = name
+		_flash("Gespeichert: %s" % name)
+	else:
+		_flash("Speichern fehlgeschlagen.")
+
+
+## "Laden"-Button/Taste: öffnet den Lade-Browser.
 func _load_game() -> void:
-	if not FileAccess.file_exists(SAVE_PATH):
+	_open_load_browser()
+
+
+## Schnellladen (F3): jüngsten Spielstand laden.
+func _quick_load() -> void:
+	var path := SaveManager.latest_path()
+	if path == "":
 		_flash("Kein Spielstand.")
 		return
+	_load_from(path)
+
+
+## Lädt einen Spielstand aus einer Datei (benannter Slot oder alter Einzelstand).
+func _load_from(path: String) -> void:
+	var data := SaveManager.read_path(path)
+	if data.is_empty():
+		_flash("Spielstand nicht lesbar.")
+		return
+	_last_save_name = String(data.get("save_name", _last_save_name))
+	_apply_save_data(data)
+
+
+func _apply_save_data(data: Dictionary) -> void:
 	selected = null
 	paused = false
-	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
-	var data: Dictionary = f.get_var(true)
-	f.close()
 
 	map_source = String(data.get("map_source", map_source))
 	map_seed_text = String(data.get("map_seed_text", map_seed_text))
@@ -3266,7 +3311,151 @@ func _load_game() -> void:
 			if hq.x >= 0:
 				camera.position = map.node_world(hq.x, hq.y)
 	renderer.queue_redraw()
-	_flash("Geladen.")
+	var loaded_name := String(data.get("save_name", ""))
+	_flash("Geladen: %s" % loaded_name if loaded_name != "" else "Geladen.")
+
+
+# --------------------------------------------------------------------------
+#  Speichern/Laden-UI: benannte Speicherpunkte (Dialog + Browser)
+# --------------------------------------------------------------------------
+
+func _ensure_saveload_panel() -> void:
+	if _saveload_panel != null:
+		return
+	_saveload_panel = _floating_panel(Vector2(0.5, 0.5), Vector2(-200, -190), Vector2(200, 190))
+	_saveload_panel.visible = false
+	var box := _add_window_chrome(_saveload_panel, "Speichern / Laden", _close_saveload)
+	_saveload_body = VBoxContainer.new()
+	_saveload_body.add_theme_constant_override("separation", roundi(6.0 * UISkin.ui_scale()))
+	_saveload_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(_saveload_body)
+
+
+func _close_saveload() -> void:
+	if _saveload_panel != null:
+		_saveload_panel.visible = false
+
+
+func _clear_saveload_body() -> void:
+	for c in _saveload_body.get_children():
+		c.queue_free()
+
+
+## Speichern-Dialog: Namensfeld + Liste vorhandener Slots (anklicken = überschreiben).
+func _open_save_dialog() -> void:
+	_ensure_saveload_panel()
+	_saveload_panel.visible = true
+	_saveload_panel.move_to_front()
+	_clear_saveload_body()
+
+	var caption := Label.new()
+	caption.text = "Name des Speicherpunkts:"
+	UISkin.apply_label(caption, true, 12)
+	_saveload_body.add_child(caption)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	_saveload_body.add_child(row)
+	_saveload_name_edit = LineEdit.new()
+	_saveload_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_saveload_name_edit.text = _last_save_name if _last_save_name != "" else _default_save_name()
+	_saveload_name_edit.add_theme_font_size_override("font_size", maxi(9, roundi(12.0 * UISkin.ui_scale())))
+	_saveload_name_edit.text_submitted.connect(func(_t): _confirm_save())
+	row.add_child(_saveload_name_edit)
+	var save_btn := _tbutton(row, "Speichern", _confirm_save)
+	save_btn.tooltip_text = "Unter diesem Namen speichern (überschreibt gleichnamigen Slot)"
+
+	var saves := SaveManager.list_saves()
+	if saves.size() > 0:
+		var hint := Label.new()
+		hint.text = "oder vorhandenen Slot überschreiben:"
+		UISkin.apply_label(hint, true, 11)
+		_saveload_body.add_child(hint)
+		_add_saves_list(saves, false)
+
+
+## Lade-Browser: Liste aller Spielstände mit Laden/Löschen.
+func _open_load_browser() -> void:
+	_ensure_saveload_panel()
+	_saveload_panel.visible = true
+	_saveload_panel.move_to_front()
+	_clear_saveload_body()
+
+	var caption := Label.new()
+	caption.text = "Spielstand laden:"
+	UISkin.apply_label(caption, true, 12)
+	_saveload_body.add_child(caption)
+
+	var saves := SaveManager.list_saves()
+	if saves.is_empty():
+		var none := Label.new()
+		none.text = "Keine Spielstände vorhanden."
+		UISkin.apply_label(none, true, 11)
+		_saveload_body.add_child(none)
+		return
+	_add_saves_list(saves, true)
+
+
+## Baut die scrollbare Liste der Spielstände. with_delete=true zeigt Lösch-Buttons.
+func _add_saves_list(saves: Array, with_delete: bool) -> void:
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, 200) * UISkin.ui_scale()
+	_saveload_body.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", roundi(3.0 * UISkin.ui_scale()))
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(list)
+
+	for entry in saves:
+		var e: Dictionary = entry
+		var rowc := HBoxContainer.new()
+		rowc.add_theme_constant_override("separation", 4)
+		rowc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		list.add_child(rowc)
+		var label := "%s   (%s, %s)" % [
+			String(e.get("name", "?")), String(e.get("size", "?")),
+			SaveManager.format_date(int(e.get("saved_at", 0)))]
+		var pick := Button.new()
+		pick.text = label
+		UISkin.apply_button(pick)
+		pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		pick.clip_text = true
+		var path := String(e.get("path", ""))
+		var name := String(e.get("name", ""))
+		if with_delete:
+			pick.pressed.connect(func(): _close_saveload(); _load_from(path))
+		else:
+			# Im Speichern-Dialog: Klick übernimmt den Namen ins Feld (Überschreiben).
+			pick.pressed.connect(func(): _saveload_name_edit.text = name)
+		rowc.add_child(pick)
+		var del := _tbutton(rowc, "X", _delete_save.bind(String(e.get("slug", "")), bool(e.get("legacy", false))))
+		del.tooltip_text = "Diesen Spielstand löschen"
+
+
+func _confirm_save() -> void:
+	var name := _saveload_name_edit.text.strip_edges()
+	if name == "":
+		name = _default_save_name()
+	_save_to(SaveManager.slugify(name), name)
+	_close_saveload()
+
+
+func _delete_save(slug: String, legacy: bool) -> void:
+	if legacy:
+		if FileAccess.file_exists(SaveManager.LEGACY_PATH):
+			DirAccess.remove_absolute(SaveManager.LEGACY_PATH)
+	else:
+		SaveManager.delete(slug)
+	# Liste neu aufbauen (im aktuellen Modus bleiben).
+	if _saveload_panel != null and _saveload_panel.visible:
+		_open_load_browser()
+
+
+func _default_save_name() -> String:
+	var dt := Time.get_datetime_dict_from_system()
+	return "Spielstand %02d.%02d %02d:%02d" % [dt.day, dt.month, dt.hour, dt.minute]
 
 
 func _flash(text: String) -> void:

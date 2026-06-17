@@ -71,6 +71,7 @@ func _initialize() -> void:
 	_test_territory_closest_wins()
 	_test_military_min_distance()
 	_test_saveload()
+	_test_save_manager()
 	print("== Ergebnis: %d ok, %d fehlgeschlagen ==" % [_ok, _fail])
 	quit(1 if _fail > 0 else 0)
 
@@ -1901,6 +1902,31 @@ func _test_road_traffic_upgrade() -> void:
 	for i in Tuning.road_upgrade_deliveries():
 		eco._mark_road_delivery(road)
 	_check(road.level == WorldState.ROAD_COBBLE, "Straße wird nach Warenlast gepflastert")
+
+
+## Benannte Speicherpunkte (#27-Folge): slugify, write/list/read/delete-Roundtrip.
+func _test_save_manager() -> void:
+	_check(SaveManager.slugify("Mein Reich 1!") == "mein_reich_1", "Save: slugify säubert Namen")
+	_check(SaveManager.slugify("") == "spielstand", "Save: leerer Name → Default-Slug")
+	# Eindeutige Test-Slugs, um echte Spielstände nicht anzufassen.
+	var slug_a := "unittest_a_%d" % (Time.get_ticks_msec() % 100000)
+	var slug_b := "unittest_b_%d" % (Time.get_ticks_msec() % 100000)
+	SaveManager.write(slug_a, "Test A", { "w": 96, "h": 96, "map_type": "insel", "marker": 42 })
+	SaveManager.write(slug_b, "Test B", { "w": 64, "h": 64, "map_type": "flach", "marker": 7 })
+	var names := {}
+	for s in SaveManager.list_saves():
+		names[String(s.get("slug", ""))] = String(s.get("name", ""))
+	_check(names.get(slug_a, "") == "Test A" and names.get(slug_b, "") == "Test B",
+		"Save: list_saves führt geschriebene Slots mit Namen")
+	var back := SaveManager.read(slug_a)
+	_check(int(back.get("marker", 0)) == 42 and String(back.get("save_name", "")) == "Test A",
+		"Save: read liefert Daten + save_name zurück")
+	SaveManager.delete(slug_a)
+	SaveManager.delete(slug_b)
+	var still := {}
+	for s in SaveManager.list_saves():
+		still[String(s.get("slug", ""))] = true
+	_check(not still.has(slug_a) and not still.has(slug_b), "Save: delete entfernt die Slots")
 
 
 func _test_saveload() -> void:

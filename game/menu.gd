@@ -3,7 +3,6 @@ extends Control
 ## Einfaches Hauptmenü: Neues Spiel, Laden, Einstellungen, Beenden.
 
 const WORLD_SCENE := "res://game/main.tscn"
-const SAVE_PATH := "user://settlers_save.dat"
 const MENU_BACKGROUND_PATH := "res://assets/ui/main_menu_background.png"
 const UISkin := preload("res://game/ui_skin.gd")
 const DEV_UNLOCK_CODE := "jobbedeluxe"
@@ -23,6 +22,8 @@ static var _open_settings_after_reload := false
 var _main_page: VBoxContainer
 var _new_game_panel: PanelContainer
 var _settings_panel: PanelContainer
+var _load_panel: PanelContainer
+var _load_list: VBoxContainer
 var _dev_section: VBoxContainer
 var _dev_unlock_buffer := ""
 var _map_controls: Array = []
@@ -62,11 +63,12 @@ func _ready() -> void:
 	_main_page.add_child(sub)
 
 	_button(_main_page, "Neues Spiel", _show_new_game_page)
-	var load_btn := _button(_main_page, "Spiel laden", _on_load)
-	load_btn.disabled = not FileAccess.file_exists(SAVE_PATH)
+	var load_btn := _button(_main_page, "Spiel laden", _show_load_page)
+	load_btn.disabled = SaveManager.list_saves().is_empty()
 	_button(_main_page, "Einstellungen", _show_settings_page)
 	_build_new_game_panel(box)
 	_build_settings_panel(box)
+	_build_load_panel(box)
 	_button(_main_page, "Beenden", _on_quit)
 	if _open_settings_after_reload:
 		_open_settings_after_reload = false
@@ -468,31 +470,40 @@ func _spin_int(box: Container, label: String, key: String, fallback: int,
 
 func _show_settings_page() -> void:
 	_refresh_map_controls()
-	if _main_page != null:
-		_main_page.visible = false
-	if _new_game_panel != null:
-		_new_game_panel.visible = false
+	_hide_all_pages()
 	if _settings_panel != null:
 		_settings_panel.visible = true
 
 
 func _show_new_game_page() -> void:
 	_refresh_map_controls()
-	if _main_page != null:
-		_main_page.visible = false
-	if _settings_panel != null:
-		_settings_panel.visible = false
+	_hide_all_pages()
 	if _new_game_panel != null:
 		_new_game_panel.visible = true
 
 
+func _show_load_page() -> void:
+	_hide_all_pages()
+	_refresh_load_list()
+	if _load_panel != null:
+		_load_panel.visible = true
+
+
 func _show_main_page() -> void:
-	if _settings_panel != null:
-		_settings_panel.visible = false
-	if _new_game_panel != null:
-		_new_game_panel.visible = false
+	_hide_all_pages()
 	if _main_page != null:
 		_main_page.visible = true
+
+
+func _hide_all_pages() -> void:
+	if _main_page != null:
+		_main_page.visible = false
+	if _new_game_panel != null:
+		_new_game_panel.visible = false
+	if _settings_panel != null:
+		_settings_panel.visible = false
+	if _load_panel != null:
+		_load_panel.visible = false
 
 
 func _checkbox(box: Container, text: String, key: String, fallback: bool) -> CheckBox:
@@ -517,8 +528,67 @@ func _on_new() -> void:
 	get_tree().change_scene_to_file(WORLD_SCENE)
 
 
-func _on_load() -> void:
+## Lade-Panel im Hauptmenü: Liste aller benannten Spielstände.
+func _build_load_panel(box: Container) -> void:
+	_load_panel = PanelContainer.new()
+	_load_panel.visible = false
+	_load_panel.custom_minimum_size = Vector2(360, 380) * UISkin.ui_scale()
+	_load_panel.add_theme_stylebox_override("panel", UISkin.panel_style("panel"))
+	box.add_child(_load_panel)
+
+	var inner := VBoxContainer.new()
+	inner.add_theme_constant_override("separation", roundi(8.0 * UISkin.ui_scale()))
+	_load_panel.add_child(inner)
+
+	var title := Label.new()
+	title.text = "Spiel laden"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UISkin.apply_label(title, false, 20)
+	inner.add_child(title)
+
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.custom_minimum_size = Vector2(320, 260) * UISkin.ui_scale()
+	inner.add_child(scroll)
+	_load_list = VBoxContainer.new()
+	_load_list.add_theme_constant_override("separation", roundi(4.0 * UISkin.ui_scale()))
+	_load_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_load_list)
+
+	var back := _button(inner, "Zurueck", _show_main_page)
+	back.custom_minimum_size = Vector2(160, 34) * UISkin.ui_scale()
+
+
+func _refresh_load_list() -> void:
+	if _load_list == null:
+		return
+	for c in _load_list.get_children():
+		c.queue_free()
+	var saves := SaveManager.list_saves()
+	if saves.is_empty():
+		var none := Label.new()
+		none.text = "Keine Spielstände vorhanden."
+		UISkin.apply_label(none, true, 12)
+		_load_list.add_child(none)
+		return
+	for entry in saves:
+		var e: Dictionary = entry
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", roundi(4.0 * UISkin.ui_scale()))
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_load_list.add_child(row)
+		var label := "%s   (%s, %s)" % [
+			String(e.get("name", "?")), String(e.get("size", "?")),
+			SaveManager.format_date(int(e.get("saved_at", 0)))]
+		var pick := _button(row, label, _start_load.bind(String(e.get("path", ""))))
+		pick.custom_minimum_size = Vector2(240, 32) * UISkin.ui_scale()
+		pick.clip_text = true
+		pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+
+func _start_load(path: String) -> void:
 	World.boot_load = true
+	World.boot_load_path = path
 	get_tree().change_scene_to_file(WORLD_SCENE)
 
 
