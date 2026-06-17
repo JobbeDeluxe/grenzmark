@@ -214,6 +214,7 @@ var mines_accept_beer := false       # Hausregel: Minen nehmen zusätzlich Bier 
                                      # (Original: nur Fisch/Fleisch/Brot). Default aus.
 var ai_enabled := true               # Gegner-KI aktiv? (zum Testen abschaltbar)
 var ai: AIBase = null                # austauschbare Gegner-KI (Plugin)
+var ai_by_owner: Dictionary = {}     # owner -> eigene KI-Instanz (mehrere Gegner)
 var marchers: Array[Marcher] = []    # gerade marschierende Soldaten
 var strays: Array[Stray] = []        # verirrte Träger (Straße weg, tragen noch Ware)
 var _inc_soldiers: Dictionary = {}   # building idx -> unterwegs befindliche Soldaten
@@ -552,8 +553,16 @@ func _tick_helper_production() -> void:
 # --------------------------------------------------------------------------
 
 func tick() -> void:
-	if ai_enabled and ai != null:
-		ai.think(self, 1)
+	if ai_enabled:
+		if not ai_by_owner.is_empty():
+			var owners := ai_by_owner.keys()
+			owners.sort()
+			for owner in owners:
+				var inst: AIBase = ai_by_owner[owner]
+				if inst != null:
+					inst.think(self, int(owner))
+		elif ai != null:
+			ai.think(self, 1)
 	_tick_tree_growth()
 	_tick_field_growth()
 	_tick_decay_fields()

@@ -14,7 +14,9 @@ func _initialize() -> void:
 	_test_neighbors()
 	_test_triangles_around()
 	_test_map_generation()
+	_test_seed_hash()
 	_test_worldgen_96()
+	_test_mountain_meadow_plateaus()
 	_test_mapgen_cleanup_and_stone_clusters()
 	_test_start_territory_stone_guarantee()
 	_test_ore_types()
@@ -126,6 +128,25 @@ func _test_map_generation() -> void:
 	var terrain := MapGenerator._classify_node_terrain(steep, null)
 	_check(int(terrain[steep.idx(4, 4)]) == Terrain.MOUNTAIN,
 		"Kartengenerator: hohe Steilwiese wird Bergkante")
+
+
+func _test_seed_hash() -> void:
+	var a := MapGenerator.stable_seed_from_string("SIEDLER")
+	var b := MapGenerator.stable_seed_from_string("SIEDLER")
+	var c := MapGenerator.stable_seed_from_string("siedler")
+	_check(a == b, "Seed-Hash: gleicher Text ergibt gleichen Seed")
+	_check(a != c, "Seed-Hash: Gross/Klein bleibt unterscheidbar")
+	var map_a := MapGenerator.generate(32, 32, a)
+	var map_b := MapGenerator.generate(32, 32, b)
+	_check(map_a.heights == map_b.heights and map_a.terr_r == map_b.terr_r \
+			and map_a.terr_d == map_b.terr_d and map_a.objects == map_b.objects,
+		"Seed-Hash: gleiche Kartenoptionen erzeugen gleiche Startkarte")
+	var world := World.new()
+	var effective_a := world._effective_world_seed("random", "SIEDLER", Vector2i(96, 96), 1)
+	var effective_b := world._effective_world_seed("random", "SIEDLER", Vector2i(96, 96), 2)
+	_check(effective_a != effective_b,
+		"Welt-Seed: Gegnerzahl ist Teil des effektiven Welt-Hashes")
+	world.free()
 
 
 func _test_bq_and_flags() -> void:
@@ -1131,6 +1152,34 @@ func _test_worldgen_96() -> void:
 	_check(castle >= 2, "Mindestens zwei Burgplätze (Spieler + Gegner): %d" % castle)
 
 
+func _test_mountain_meadow_plateaus() -> void:
+	var map := MapGenerator.generate(96, 96, 1337)
+	var state := WorldState.new(map)
+	var tri_count := 0
+	var hut_spots := 0
+	var oversized := 0
+	for yy in range(2, map.height - 2):
+		for xx in range(2, map.width - 2):
+			if map.get_tri(Vector2i(xx, yy), Grid.TRI_R) == Terrain.MOUNTAIN_MEADOW:
+				tri_count += 1
+			if map.get_tri(Vector2i(xx, yy), Grid.TRI_D) == Terrain.MOUNTAIN_MEADOW:
+				tri_count += 1
+			var has_highland := false
+			for t in map.terrains_around(xx, yy):
+				if t == Terrain.MOUNTAIN_MEADOW:
+					has_highland = true
+					break
+			if has_highland:
+				var bq := state.compute_bq(xx, yy)
+				if bq >= WorldState.BQ_HUT:
+					hut_spots += 1
+				if bq > WorldState.BQ_HUT:
+					oversized += 1
+	_check(tri_count > 20, "Bergwiese: Generator erzeugt Plateau-Terrain (%d Dreiecke)" % tri_count)
+	_check(hut_spots > 0, "Bergwiese: mindestens ein Huetten-/Wachhuettenplatz im Gebirge")
+	_check(oversized == 0, "Bergwiese: nur kleine Gebaeude, keine Haus/Burg-Plaetze (%d)" % oversized)
+
+
 func _test_mapgen_cleanup_and_stone_clusters() -> void:
 	var map := MapGenerator.generate(96, 96, 1337)
 	var again := MapGenerator.generate(96, 96, 1337)
@@ -1174,6 +1223,9 @@ func _test_catalog_complete() -> void:
 
 
 func _test_asset_files() -> void:
+	for id in ["water", "meadow", "mountain", "mountain_meadow", "sand", "swamp", "snow"]:
+		_check(FileAccess.file_exists("res://assets/terrain/%s.png" % id),
+			"Terrain-Textur vorhanden: %s" % id)
 	for g in Goods.COUNT:
 		_check(FileAccess.file_exists("res://assets/goods/%d.png" % g),
 			"Waren-Icon vorhanden: %d %s" % [g, Goods.name_of(g)])
@@ -1715,6 +1767,11 @@ func _test_saveload() -> void:
 
 	var data := {
 		w = map.width, h = map.height,
+		map_source = "random",
+		map_seed_text = "SIEDLER",
+		map_seed_value = MapGenerator.stable_seed_from_string("SIEDLER"),
+		map_generator_version = MapGenerator.MAP_GENERATOR_VERSION,
+		map_enemy_count = 3,
 		heights = map.heights, terr_r = map.terr_r, terr_d = map.terr_d,
 		objects = map.objects.duplicate(),
 		buildings = [],
@@ -1744,6 +1801,13 @@ func _test_saveload() -> void:
 	var people: Dictionary = back.get("hq_people", {})
 	_check(int(people.get(Jobs.HELPER, 0)) == 7 and int(people.get(Jobs.MINER, 0)) == 2,
 		"Save/Load: Personen-Inventar (Träger+Bergarbeiter) erhalten")
+
+
+	_check(String(back.get("map_seed_text", "")) == "SIEDLER" \
+			and int(back.get("map_enemy_count", -1)) == 3,
+		"Save/Load: Kartenmetadaten (Seed + Gegner) erhalten")
+	_check(String(back.get("map_generator_version", "")) == MapGenerator.MAP_GENERATOR_VERSION,
+		"Save/Load: Generator-Version erhalten")
 
 
 ## Sumpf wird erzeugt und ist begehbar, aber NICHT bebaubar (wie in S2).

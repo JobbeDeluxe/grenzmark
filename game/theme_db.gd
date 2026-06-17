@@ -22,6 +22,7 @@ static func terrain_texture(t: int) -> Texture2D:
 		Terrain.WATER: return _tex("res://assets/terrain/water.png")
 		Terrain.MEADOW: return _tex("res://assets/terrain/meadow.png")
 		Terrain.MOUNTAIN: return _tex("res://assets/terrain/mountain.png")
+		Terrain.MOUNTAIN_MEADOW: return _tex("res://assets/terrain/mountain_meadow.png")
 		Terrain.SAND: return _tex("res://assets/terrain/sand.png")
 		Terrain.SWAMP: return _tex("res://assets/terrain/swamp.png")
 		Terrain.SNOW: return _tex("res://assets/terrain/snow.png")
@@ -161,6 +162,7 @@ static func terrain_name(t: int) -> String:
 		Terrain.WATER: return "water"
 		Terrain.MEADOW: return "meadow"
 		Terrain.MOUNTAIN: return "mountain"
+		Terrain.MOUNTAIN_MEADOW: return "mountain_meadow"
 		Terrain.SAND: return "sand"
 		Terrain.SWAMP: return "swamp"
 		Terrain.SNOW: return "snow"

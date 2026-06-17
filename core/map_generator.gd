@@ -6,6 +6,10 @@ extends RefCounted
 
 const TERRAIN_CLEANUP_PASSES := 2
 const STONE_CLUSTER_AREA := 1400
+const MAP_GENERATOR_VERSION := "grenzmark-map-v2"
+const MOUNTAIN_MEADOW_PATCH_AREA := 1800
+const MOUNTAIN_MEADOW_RADIUS := 2
+const MOUNTAIN_MEADOW_MIN_SEPARATION := 10
 
 # Höhenrelief (#50): Die Höhen waren mit Amplitude ~24 zu flach gestaucht — Land lag
 # fast nur bei Nachbar-Höhendiff <=1, kaum Hütte/Haus-Plätze, Planierer (#49) ohne
@@ -91,12 +95,23 @@ static func generate(width: int, height: int, seed: int = 12345) -> MapData:
 	var node_terrain := _classify_node_terrain(map, wet)
 	_smooth_node_terrain(map, node_terrain, 2)
 	_apply_shore_ring(map, node_terrain)
+	_seed_mountain_meadows(map, node_terrain, seed)
 	_paint_node_terrain(map, node_terrain)
 	_cleanup_terrain(map)
 
 	_scatter_objects(map, seed)
 	seed_coastal_fish(map)
 	return map
+
+
+## Stabile String->Seed-Abbildung fuer Spieler-Seeds. Nicht Godots hash() nutzen:
+## der Wert muss fuer Savegames/Multiplayer ueber Versionen hinweg nachvollziehbar bleiben.
+static func stable_seed_from_string(text: String) -> int:
+	var bytes := text.strip_edges().to_utf8_buffer()
+	var h := 2166136261  # FNV-1a 32-bit offset basis
+	for b in bytes:
+		h = int((h ^ int(b)) * 16777619) & 0xffffffff
+	return int(h & 0x7fffffff)
 
 
 ## Endlicher Fischbestand (Issue #6) auf allen Küstenknoten (Knoten mit Wasser UND
@@ -265,13 +280,106 @@ static func _node_neighbor_has_terrain(map: MapData, terrain: PackedByteArray,
 	return false
 
 
+static func _seed_mountain_meadows(map: MapData, terrain: PackedByteArray, seed: int) -> void:
+	var plateau_noise := FastNoiseLite.new()
+	plateau_noise.noise_type = FastNoiseLite.TYPE_VALUE
+	plateau_noise.seed = seed + 23
+	plateau_noise.frequency = 0.08
+
+	var candidates := []
+	var margin := MOUNTAIN_MEADOW_RADIUS + 2
+	for y in range(margin, map.height - margin):
+		for x in range(margin, map.width - margin):
+			var p := Vector2i(x, y)
+			if not _mountain_meadow_candidate(map, terrain, p):
+				continue
+			var score := plateau_noise.get_noise_2d(x, y) * 0.5 + 0.5
+			candidates.append({ p = p, score = score })
+	candidates.sort_custom(func(a, b): return float(a.score) > float(b.score))
+
+	var target := clampi(int((map.width * map.height) / MOUNTAIN_MEADOW_PATCH_AREA), 1, 12)
+	var placed: Array[Vector2i] = []
+	for entry in candidates:
+		if placed.size() >= target:
+			return
+		var p: Vector2i = entry.p
+		var too_close := false
+		for prev in placed:
+			if _hex_distance(prev, p) < MOUNTAIN_MEADOW_MIN_SEPARATION:
+				too_close = true
+				break
+		if too_close:
+			continue
+		_carve_mountain_meadow(map, terrain, p)
+		placed.append(p)
+
+
+static func _mountain_meadow_candidate(map: MapData, terrain: PackedByteArray,
+		center: Vector2i) -> bool:
+	if int(terrain[map.idx(center.x, center.y)]) != Terrain.MOUNTAIN:
+		return false
+	var mountain := 0
+	var total := 0
+	for dy in range(-MOUNTAIN_MEADOW_RADIUS, MOUNTAIN_MEADOW_RADIUS + 1):
+		for dx in range(-MOUNTAIN_MEADOW_RADIUS, MOUNTAIN_MEADOW_RADIUS + 1):
+			var p := center + Vector2i(dx, dy)
+			if _hex_distance(center, p) > MOUNTAIN_MEADOW_RADIUS:
+				continue
+			if not map.in_bounds(p.x, p.y):
+				return false
+			var t := int(terrain[map.idx(p.x, p.y)])
+			if t == Terrain.WATER or t == Terrain.SAND or t == Terrain.SWAMP:
+				return false
+			if t == Terrain.MOUNTAIN:
+				mountain += 1
+			total += 1
+	return mountain >= total - 2
+
+
+static func _carve_mountain_meadow(map: MapData, terrain: PackedByteArray,
+		center: Vector2i) -> void:
+	var base_height := _mountain_meadow_height(map, center, MOUNTAIN_MEADOW_RADIUS)
+	for dy in range(-MOUNTAIN_MEADOW_RADIUS - 1, MOUNTAIN_MEADOW_RADIUS + 2):
+		for dx in range(-MOUNTAIN_MEADOW_RADIUS - 1, MOUNTAIN_MEADOW_RADIUS + 2):
+			var p := center + Vector2i(dx, dy)
+			if not map.in_bounds(p.x, p.y):
+				continue
+			var d := _hex_distance(center, p)
+			if d <= MOUNTAIN_MEADOW_RADIUS:
+				var i := map.idx(p.x, p.y)
+				var t := int(terrain[i])
+				if t == Terrain.MOUNTAIN or t == Terrain.SNOW:
+					terrain[i] = Terrain.MOUNTAIN_MEADOW
+					map.clear_map_object(p.x, p.y)
+					map.set_height(p.x, p.y, base_height)
+			elif d == MOUNTAIN_MEADOW_RADIUS + 1:
+				var h := map.get_height(p.x, p.y)
+				var delta := base_height - h
+				if absi(delta) > 2:
+					map.set_height(p.x, p.y, h + clampi(delta, -2, 2))
+
+
+static func _mountain_meadow_height(map: MapData, center: Vector2i, radius: int) -> int:
+	var sum := 0
+	var count := 0
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var p := center + Vector2i(dx, dy)
+			if map.in_bounds(p.x, p.y) and _hex_distance(center, p) <= radius:
+				sum += map.get_height(p.x, p.y)
+				count += 1
+	var avg := int(round(float(sum) / float(maxi(count, 1))))
+	return clampi(avg, int(H_MEADOW_MAX) + 2, int(H_MOUNTAIN_MAX) - 2)
+
+
 static func _paint_node_terrain(map: MapData, terrain: PackedByteArray) -> void:
 	for y in map.height:
 		for x in map.width:
 			var t := int(terrain[map.idx(x, y)])
 			map.set_tri(Vector2i(x, y), Grid.TRI_R, t)
 			map.set_tri(Vector2i(x, y), Grid.TRI_D, t)
-	for t in [Terrain.MEADOW, Terrain.SWAMP, Terrain.MOUNTAIN, Terrain.SNOW, Terrain.SAND, Terrain.WATER]:
+	for t in [Terrain.MEADOW, Terrain.SWAMP, Terrain.MOUNTAIN, Terrain.MOUNTAIN_MEADOW,
+			Terrain.SNOW, Terrain.SAND, Terrain.WATER]:
 		for y in map.height:
 			for x in map.width:
 				if int(terrain[map.idx(x, y)]) == t:

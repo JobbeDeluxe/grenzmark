@@ -268,12 +268,15 @@ func compute_bq(x: int, y: int) -> int:
 	var terr := map.terrains_around(x, y)
 	var all_build := true
 	var all_mountain := true
+	var has_mountain_meadow := false
 	var any_walk := false
 	for t in terr:
 		if not Terrain.is_buildable(t):
 			all_build = false
 		if not Terrain.is_mountain(t):
 			all_mountain = false
+		if t == Terrain.MOUNTAIN_MEADOW:
+			has_mountain_meadow = true
 		if Terrain.is_walkable(t):
 			any_walk = true
 
@@ -310,6 +313,8 @@ func compute_bq(x: int, y: int) -> int:
 				base = BQ_FLAG
 			elif map.get_height(se.x, se.y) - h0 > BUILD_MAX_ENTRY_RISE:
 				base = BQ_FLAG
+		if has_mountain_meadow and base > BQ_HUT:
+			base = BQ_HUT
 		# S2 (RTTR BQCalculator, BlockingManner::FlagsAround): direkt neben einem
 		# wachsenden Getreidefeld ist nur eine Flagge möglich, kein Gebäude.
 		if base > BQ_FLAG and _grainfield_adjacent(x, y):

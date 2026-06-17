@@ -5,15 +5,16 @@ extends RefCounted
 ## Terrain sitzt auf den Dreiecken, nicht auf den Knoten.
 
 enum {
-	WATER,    # Wasser — nicht begehbar, nicht bebaubar
-	MEADOW,   # Wiese/Gras — bebaubar
-	MOUNTAIN, # Berg — Minen, sonst nicht bebaubar
-	SAND,     # Sand/Wüste — begehbar, nicht bebaubar
-	SWAMP,    # Sumpf — begehbar, nicht bebaubar
-	SNOW,     # Schnee/Fels — gesperrt
+	WATER,    # Wasser: nicht begehbar, nicht bebaubar
+	MEADOW,   # Wiese/Gras: bebaubar
+	MOUNTAIN, # Berg: Minen, sonst nicht bebaubar
+	SAND,     # Sand/Wueste: begehbar, nicht bebaubar
+	SWAMP,    # Sumpf: begehbar, nicht bebaubar
+	SNOW,     # Schnee/Fels: gesperrt
+	MOUNTAIN_MEADOW, # Bergwiese/Plateau: begehbar, kleine Gebaeude
 }
 
-const COUNT := 6
+const COUNT := 7
 
 
 static func is_water(t: int) -> bool:
@@ -24,14 +25,14 @@ static func is_mountain(t: int) -> bool:
 	return t == MOUNTAIN
 
 
-## Bebaubar = normales Gebäude (Hütte/Haus/Burg) möglich.
+## Bebaubar = normales Gebaeude moeglich.
 static func is_buildable(t: int) -> bool:
-	return t == MEADOW
+	return t == MEADOW or t == MOUNTAIN_MEADOW
 
 
-## Begehbar = Träger/Straßen erlaubt.
+## Begehbar = Traeger/Strassen erlaubt.
 static func is_walkable(t: int) -> bool:
-	return t == MEADOW or t == MOUNTAIN or t == SAND or t == SWAMP
+	return t == MEADOW or t == MOUNTAIN or t == SAND or t == SWAMP or t == MOUNTAIN_MEADOW
 
 
 ## Gesperrt = blockiert auch Flaggen.
@@ -47,6 +48,7 @@ static func color(t: int) -> Color:
 		SAND:     return Color(0.78, 0.71, 0.45)
 		SWAMP:    return Color(0.30, 0.38, 0.28)
 		SNOW:     return Color(0.90, 0.92, 0.96)
+		MOUNTAIN_MEADOW: return Color(0.38, 0.50, 0.24)
 	return Color.MAGENTA
 
 
@@ -58,4 +60,5 @@ static func name_of(t: int) -> String:
 		SAND:     return "Sand"
 		SWAMP:    return "Sumpf"
 		SNOW:     return "Schnee"
+		MOUNTAIN_MEADOW: return "Bergwiese"
 	return "?"

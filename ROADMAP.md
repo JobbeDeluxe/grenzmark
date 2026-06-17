@@ -66,7 +66,9 @@ Das Skelett, auf dem alles aufbaut.
       statt Einzelstreuung; Spieler/KI bekommen je einen Steincluster im Gebiet.
       Erz unterirdisch (2026-06-10): versteckte Lagerstätten-Schicht, Adern im
       Berg, Mine baut endlich im Umkreis ab. Geologen-/Nebel-Aufdeckung folgt in
-      #21. (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/19)
+      #21. Bergwiesen-Plateaus (2026-06-17): seedgebundene kleine Bauplaetze im
+      Gebirge, damit Wachhuetten Bergketten erschliessen koennen.
+      (Issue: https://github.com/JobbeDeluxe/grenzmark/issues/19)
 - [x] Test-Teich im Startgebiet (kleiner See nahe HQ), damit Fischerhütte ohne
       Kartenglück getestet werden kann.
 - [x] Nebel des Krieges + Sicht umschaltbar (Taste F); Karte wird um eigene
@@ -166,9 +168,11 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Design-Editor (Hauptmenü) für Gebäudegrößen/Position/Eingang
 - [ ] Große UI-Überarbeitung → eigene **Stufe 8** (siehe unten)
 - [ ] Spielziele/Missionen wählbar; Statistik-Bildschirme
-- [ ] Weltseed/Kartenwahl (#27): Zufallsseed anzeigen/eingeben, `DEVMAP` als
-      reproduzierbare Entwicklerkarte, Kartenimport und später Editor-Karten
-      vorbereiten.
+- [~] Weltseed/Kartenwahl + Dev-Testflow (#27/#53): Erster Schnitt umgesetzt:
+      Neues-Spiel-Setup und Hauptmenue-Kartenoptionen fuer Zufall/Seed/DEVMAP, Kartengroesse, Gegnerzahl,
+      effektiver Welt-Hash aus Seed+Optionen, sichtbare Seed-/Generator-Metadaten im Spiel, Savegame-Metadaten sowie
+      verstecktes Dev/Test-Menue per `jobbedeluxe` mit ganzer Karte, Erz-Overlay
+      und Alles-aufgedeckt. Offen: Kartenimport und spaeter Editor-Karten.
 - [ ] Ton, Musik, Optionen (ganz zuletzt)
 
 ### Stufe 6 — Multiplayer

@@ -15,6 +15,7 @@ const ROAD_TILE := 48.0    # Kachellänge der Straßentextur entlang des Wegs
 
 var state: WorldState
 var _font: Font = ThemeDB.fallback_font
+var show_ore_debug := false     # Dev/Test: unterirdische Erzvorkommen anzeigen
 var _terrain_layer: Node2D   # zeichnet Terrain einmalig; nie neu zeichnen da Terrain statisch
 
 var fog_enabled := false        # Nebel des Krieges an/aus (zum Testen)
@@ -75,6 +76,8 @@ func _draw() -> void:
 	_build_tree_occ()
 	if show_build_spots:
 		_draw_build_spots()
+	if show_ore_debug:
+		_draw_ore_debug()
 	if fog_enabled:
 		_draw_fog()
 
@@ -103,7 +106,7 @@ func _draw_billboards() -> void:
 		var bp := map.node_world(b.pos.x, b.pos.y) + GameTheme.building_offset(b.def_id)
 		var foot := map.node_world(b.pos.x, b.pos.y).y
 		items.append({ y = foot, fn = func(): _paint_building(bp, b) })
-		if b.owner == 1 and state.flag_at(b.flag_pos) == null:
+		if b.owner != 0 and state.flag_at(b.flag_pos) == null:
 			var fp := map.node_world(b.flag_pos.x, b.flag_pos.y)
 			items.append({ y = fp.y, fn = func(): _paint_enemy_flag(fp) })
 	for i in state.flags:
@@ -319,6 +322,33 @@ func _spot_color(bq: int) -> Color:
 		WorldState.BQ_MINE:   return Color(0.6, 0.4, 0.9)
 		WorldState.BQ_FLAG:   return Color(0.95, 0.55, 0.2)
 	return Color(0.6, 0.6, 0.6, 0.6)
+
+
+func _draw_ore_debug() -> void:
+	var map := state.map
+	for i in map.ore_deposit_kind:
+		var amount := int(map.ore_deposit_amount.get(i, 0))
+		if amount <= 0:
+			continue
+		var x := int(i) % map.width
+		var y := int(i) / map.width
+		var p := map.node_world(x, y) + Vector2(0, -10)
+		var kind := int(map.ore_deposit_kind[i])
+		var col := _ore_color(kind)
+		draw_circle(p, 5.5, Color(0.02, 0.02, 0.02, 0.72))
+		draw_circle(p, 4.2, col)
+		draw_string(_font, p + Vector2(6, 4), _ore_debug_label(kind, amount),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 1, 1, 0.9))
+
+
+func _ore_debug_label(kind: int, amount: int) -> String:
+	var prefix := "?"
+	match kind:
+		MapData.ORE_COAL: prefix = "K"
+		MapData.ORE_IRON: prefix = "E"
+		MapData.ORE_GOLD: prefix = "G"
+		MapData.ORE_GRANITE: prefix = "S"
+	return "%s%d" % [prefix, amount]
 
 
 ## Nebel des Krieges: unerkundete Dreiecke abdunkeln.

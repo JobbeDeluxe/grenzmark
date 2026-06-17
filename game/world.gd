@@ -8,6 +8,8 @@ const UISkin := preload("res://game/ui_skin.gd")
 const MAP_W := 96
 const MAP_H := 96
 const MAP_SEED := 1337
+const DEFAULT_ENEMY_COUNT := 1
+const MAX_ENEMY_COUNT := 5
 const TICK_HZ := 30.0
 const SAVE_PATH := "user://settlers_save.dat"
 const BUILD_TILE_SIZE := Vector2(92, 108)
@@ -87,6 +89,11 @@ var ui_category := "hut"
 var build_filter_bq := -1
 var build_window_spot := Vector2i(-1, -1)
 var selected: WorldState.Building
+var map_source := "random"
+var map_seed_text := "1337"
+var map_seed_value := MAP_SEED
+var map_generator_version := MapGenerator.MAP_GENERATOR_VERSION
+var map_enemy_count := DEFAULT_ENEMY_COUNT
 
 ## Wird vom Hauptmenü gesetzt: true = beim Start Spielstand laden.
 static var boot_load := false
@@ -101,26 +108,70 @@ func _ready() -> void:
 		_new_game()
 
 
+func _resolve_new_game_options() -> Vector2i:
+	map_generator_version = MapGenerator.MAP_GENERATOR_VERSION
+	map_source = String(UISkin.option_value("map_source", "random"))
+	var size_id := String(UISkin.option_value("map_size", "medium"))
+	var map_size := _map_size_for(size_id)
+	map_enemy_count = clampi(int(UISkin.option_value("map_enemy_count", DEFAULT_ENEMY_COUNT)),
+		0, MAX_ENEMY_COUNT)
+	var requested_seed := String(UISkin.option_value("map_seed_text", "")).strip_edges()
+	if requested_seed.to_upper() == "DEVMAP":
+		map_source = "devmap"
+	if map_source == "devmap":
+		map_seed_text = "DEVMAP"
+	else:
+		map_source = "random"
+		if requested_seed == "":
+			var rng := RandomNumberGenerator.new()
+			rng.randomize()
+			map_seed_text = str(int(rng.randi()) & 0x7fffffff)
+		else:
+			map_seed_text = requested_seed
+	UISkin.set_option_value("map_last_seed_text", map_seed_text)
+	map_seed_value = _effective_world_seed(map_source, map_seed_text, map_size, map_enemy_count)
+	return map_size
+
+
+func _effective_world_seed(source: String, seed_text: String, size: Vector2i, enemies: int) -> int:
+	var key := "%s|%s|%dx%d|enemies:%d|%s" % [
+		source, seed_text.strip_edges(), size.x, size.y, enemies, map_generator_version]
+	return MapGenerator.stable_seed_from_string(key)
+
+
+func _map_size_for(size_id: String) -> Vector2i:
+	match size_id:
+		"small":
+			return Vector2i(64, 64)
+		"large":
+			return Vector2i(128, 128)
+	return Vector2i(MAP_W, MAP_H)
+
+
 func _new_game() -> void:
 	selected = null
 	paused = false
-	map = MapGenerator.generate(MAP_W, MAP_H, MAP_SEED)
+	var map_size := _resolve_new_game_options()
+	map = MapGenerator.generate(map_size.x, map_size.y, map_seed_value)
 	state = WorldState.new(map)
 	economy = Economy.new(state)
 	_wire_world()
 	_apply_ai()
 	_apply_start_options()
 	var hq := _place_headquarters()
-	_ensure_test_pond_near(hq)
+	if map_source == "devmap":
+		_ensure_test_pond_near(hq)
 	MapGenerator.seed_coastal_fish(map)  # Fischbestand am neuen Teichufer (Issue #6)
 	state.recompute_territory()
 	_ensure_stone_cluster_in_territory(0)
-	_place_enemy(hq)
+	_place_enemies(hq)
 	state.recompute_territory()
-	_ensure_stone_cluster_in_territory(1)
+	for owner in range(1, map_enemy_count + 1):
+		_ensure_stone_cluster_in_territory(owner)
 	economy.resync()
+	_apply_dev_world_overrides()
 	camera.position = map.node_world(hq.x, hq.y) if hq.x >= 0 \
-		else map.node_world(MAP_W / 2, MAP_H / 2)
+		else map.node_world(map.width / 2, map.height / 2)
 	renderer.queue_redraw()
 	_update_labels()
 
@@ -147,9 +198,9 @@ func _wire_world() -> void:
 
 func _place_headquarters() -> Vector2i:
 	var hq_def := BuildingCatalog.get_def("hq")
-	var cx := MAP_W / 2
-	var cy := MAP_H / 2
-	for r in range(0, maxi(MAP_W, MAP_H)):
+	var cx := map.width / 2
+	var cy := map.height / 2
+	for r in range(0, maxi(map.width, map.height)):
 		for dy in range(-r, r + 1):
 			for dx in range(-r, r + 1):
 				var x := cx + dx
@@ -285,16 +336,40 @@ func _apply_ai() -> void:
 		ai_list = AIRegistry.list()
 	ai_choice = clampi(ai_choice, 0, ai_list.size() - 1)
 	economy.ai = AIRegistry.create(ai_list[ai_choice])
+	economy.ai_by_owner.clear()
+	for owner in range(1, map_enemy_count + 1):
+		economy.ai_by_owner[owner] = AIRegistry.create(ai_list[ai_choice])
 
 
 func _apply_start_options() -> void:
 	if renderer != null:
 		renderer.show_build_spots = UISkin.option_bool("start_build_spots", false)
 		renderer.fog_enabled = UISkin.option_bool("start_fog", false)
+		renderer.show_ore_debug = UISkin.option_bool("dev_show_ore", false)
 		renderer.queue_redraw()
 	if economy != null:
 		economy.ai_enabled = UISkin.option_bool("start_ai", true)
 	_sync_hover_context()
+
+
+func _apply_dev_world_overrides() -> void:
+	if state == null or map == null:
+		return
+	if renderer != null:
+		renderer.show_ore_debug = UISkin.option_bool("dev_show_ore", false)
+	if UISkin.option_bool("dev_full_territory", false):
+		state.territory.clear()
+		state.enemy_territory.clear()
+		state.territory_owner = {}
+		for y in map.height:
+			for x in map.width:
+				var k := map.idx(x, y)
+				state.territory[k] = true
+				state.territory_owner[k] = 0
+	if UISkin.option_bool("dev_reveal_all", false):
+		for y in map.height:
+			for x in map.width:
+				state.explored[map.idx(x, y)] = true
 
 
 func _cycle_ai() -> void:
@@ -302,8 +377,56 @@ func _cycle_ai() -> void:
 		ai_list = AIRegistry.list()
 	ai_choice = (ai_choice + 1) % ai_list.size()
 	economy.ai = AIRegistry.create(ai_list[ai_choice])
+	economy.ai_by_owner.clear()
+	for owner in range(1, map_enemy_count + 1):
+		economy.ai_by_owner[owner] = AIRegistry.create(ai_list[ai_choice])
 	_flash("Gegner-KI: " + String(ai_list[ai_choice].name))
 	_update_labels()
+
+
+func _place_enemies(player_hq: Vector2i) -> void:
+	var anchors: Array[Vector2i] = []
+	if player_hq.x >= 0:
+		anchors.append(player_hq)
+	for owner in range(1, map_enemy_count + 1):
+		var spot := _enemy_castle_spot(anchors)
+		if spot.x < 0:
+			break
+		_place_enemy_at(spot, owner)
+		anchors.append(spot)
+
+
+func _place_enemy_at(spot: Vector2i, owner: int) -> void:
+	_add_building_raw(spot, WorldState.BQ_CASTLE, "hq", 9, owner, 6, 6, true)
+	for off in [Vector2i(3, 2), Vector2i(-3, 3), Vector2i(3, -2), Vector2i(-3, -2)]:
+		var p: Vector2i = spot + off
+		if map.in_bounds(p.x, p.y) and state.compute_bq(p.x, p.y) >= WorldState.BQ_HUT \
+				and state._occ(p.x, p.y) == WorldState.OBJ_NONE:
+			_add_building_raw(p, WorldState.BQ_HUT, "guardhouse", 5, owner, 2, 2, false)
+			break
+
+
+func _enemy_castle_spot(anchors: Array[Vector2i]) -> Vector2i:
+	var best := Vector2i(-1, -1)
+	var best_score := -1
+	for y in range(2, map.height - 2):
+		for x in range(2, map.width - 2):
+			if state._occ(x, y) != WorldState.OBJ_NONE:
+				continue
+			if state.compute_bq(x, y) < WorldState.BQ_CASTLE:
+				continue
+			var p := Vector2i(x, y)
+			var nearest := 1 << 30
+			var total := 0
+			for a in anchors:
+				var d := WorldState.hex_distance(p, a)
+				nearest = mini(nearest, d)
+				total += d
+			var score := nearest * 1000 + total
+			if score > best_score:
+				best_score = score
+				best = p
+	return best
 
 
 ## Gegner-HQ auf dem weitest entfernten Burg-Platz vom Spieler (immer auf Land).
@@ -389,6 +512,7 @@ func _process(delta: float) -> void:
 			_tick_accum -= step
 			guard += 1
 	if economy.dirty:
+		_apply_dev_world_overrides()
 		economy.dirty = false
 		renderer.queue_redraw()
 		if unit_renderer != null:
@@ -416,7 +540,7 @@ func _check_game_over() -> void:
 	if not player_hq:
 		_status_label.text = "NIEDERLAGE"
 		paused = true
-	elif not enemy_hq:
+	elif map_enemy_count > 0 and not enemy_hq:
 		_status_label.text = "SIEG!"
 		paused = true
 
@@ -627,6 +751,11 @@ func _build_ui() -> void:
 	_tbutton(settings_actions, "KI", _toggle_ai)
 	_tbutton(settings_actions, "Warenleiste", _toggle_resource_bar)
 	_tbutton(settings_actions, "Pause", _toggle_pause)
+	var save_actions := HBoxContainer.new()
+	save_actions.add_theme_constant_override("separation", 4)
+	settings_box.add_child(save_actions)
+	_tbutton(save_actions, "Speichern", _save_game)
+	_tbutton(save_actions, "Laden", _load_game)
 	var scale_actions := HBoxContainer.new()
 	scale_actions.add_theme_constant_override("separation", 4)
 	settings_box.add_child(scale_actions)
@@ -1627,6 +1756,14 @@ func _hide_management_panels(except: Control = null) -> void:
 			p.visible = false
 
 
+func _map_settings_text() -> String:
+	var source_label := "DEVMAP" if map_source == "devmap" else "Zufall/Seed"
+	var size_label := "%dx%d" % [map.width, map.height] if map != null else "?"
+	return "Karte: %s | Seed: %s | Hash: %d\nGroesse: %s | Gegner: %d | Generator: %s\n" % [
+		source_label, map_seed_text, map_seed_value, size_label, map_enemy_count,
+		map_generator_version]
+
+
 func _update_settings_text() -> void:
 	if _settings_body == null:
 		return
@@ -1634,6 +1771,7 @@ func _update_settings_text() -> void:
 		"Hotkeys: Space Bauplaetze, B Baufenster, S Optionen, I Waren, " + \
 		"M Minikarte, H HQ, F Nebel, Y UI aus/an.\n\n" + \
 		"UI-Groesse: %s\n\n" % UISkin.ui_scale_name() + \
+		_map_settings_text() + "\n" + \
 		"Optionen: Bauhilfe %s, Nebel %s, KI %s, Warenleiste oben %s\n\n" % [
 			"AN" if UISkin.option_bool("start_build_spots", false) else "AUS",
 			"AN" if UISkin.option_bool("start_fog", false) else "AUS",
@@ -2096,7 +2234,7 @@ func _update_window_military(entry: Dictionary, b: WorldState.Building) -> void:
 func _building_window_title(b: WorldState.Building) -> String:
 	var d := BuildingCatalog.get_def(b.def_id)
 	var title := String(d.get("name", b.def_id))
-	if b.owner == 1:
+	if b.owner != 0:
 		title += " (Gegner)"
 	if b.under_construction:
 		title += " (Bau)"
@@ -2609,7 +2747,7 @@ func _update_selection_panel() -> void:
 		_selection_panel.visible = true
 	var d := BuildingCatalog.get_def(selected.def_id)
 	var bname := String(d.get("name", selected.def_id))
-	if selected.owner == 1:
+	if selected.owner != 0:
 		bname += " (Gegner)"
 	# Titelleiste des Fensters zeigt den Gebäudenamen (wie im Original).
 	if _selection_panel != null and _selection_panel.has_meta("title_label"):
@@ -2879,6 +3017,11 @@ func _bq_name(bq: int) -> String:
 func _save_game() -> void:
 	var data := {
 		w = map.width, h = map.height,
+		map_source = map_source,
+		map_seed_text = map_seed_text,
+		map_seed_value = map_seed_value,
+		map_generator_version = map_generator_version,
+		map_enemy_count = map_enemy_count,
 		heights = map.heights, terr_r = map.terr_r, terr_d = map.terr_d,
 		objects = map.objects.duplicate(),
 		ore_kind = map.ore_kind.duplicate(),
@@ -2945,6 +3088,12 @@ func _load_game() -> void:
 	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
 	var data: Dictionary = f.get_var(true)
 	f.close()
+
+	map_source = String(data.get("map_source", map_source))
+	map_seed_text = String(data.get("map_seed_text", map_seed_text))
+	map_seed_value = int(data.get("map_seed_value", map_seed_value))
+	map_generator_version = String(data.get("map_generator_version", MapGenerator.MAP_GENERATOR_VERSION))
+	map_enemy_count = clampi(int(data.get("map_enemy_count", map_enemy_count)), 0, MAX_ENEMY_COUNT)
 
 	map = MapData.new(int(data.w), int(data.h))
 	map.heights = data.heights
@@ -3075,6 +3224,7 @@ func _load_game() -> void:
 	# Geladene Gebäude/Straßen werden direkt erzeugt (umgehen das inkrementelle
 	# Aufdecken) — daher hier einmalig die Sichtbarkeit voll aufbauen (Issue #30).
 	state.recompute_visibility()
+	_apply_dev_world_overrides()
 	renderer.queue_redraw()
 	_flash("Geladen.")
 

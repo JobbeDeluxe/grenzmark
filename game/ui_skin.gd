@@ -67,6 +67,17 @@ static func set_option_bool(key: String, value: bool) -> void:
 	_save_runtime()
 
 
+static func option_value(key: String, fallback = null):
+	_ensure_runtime()
+	return _options.get(key, fallback)
+
+
+static func set_option_value(key: String, value) -> void:
+	_ensure_runtime()
+	_options[key] = value
+	_save_runtime()
+
+
 static func color(key: String, fallback: Color) -> Color:
 	var raw = cfg().get("colors", {}).get(key, "")
 	if raw is String and raw != "":

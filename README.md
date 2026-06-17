@@ -147,7 +147,7 @@ das Aussehen ohne Codeänderung ersetzt werden.
 
 Wichtige Orte:
 
-- `assets/terrain/` - Terrain-Kacheln wie Wasser, Wiese, Berg, Sand und Sumpf.
+- `assets/terrain/` - Terrain-Kacheln wie Wasser, Wiese, Berg, Bergwiese, Sand und Sumpf.
 - `assets/roads/` - Straßen- und Pflastervarianten.
 - `assets/buildings/` - Gebäudesprites passend zu den Gebäude-Definitionen.
 - `assets/objects/` - Bäume, Steine, Erz und andere Kartenobjekte.
