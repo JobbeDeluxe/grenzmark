@@ -6,7 +6,20 @@ extends RefCounted
 
 const TERRAIN_CLEANUP_PASSES := 2
 const STONE_CLUSTER_AREA := 1400
-const STEEP_MEADOW_MOUNTAIN_MIN_HEIGHT := 12.0
+
+# Höhenrelief (#50): Die Höhen waren mit Amplitude ~24 zu flach gestaucht — Land lag
+# fast nur bei Nachbar-Höhendiff <=1, kaum Hütte/Haus-Plätze, Planierer (#49) ohne
+# sichtbare Arbeit. HEIGHT_SCALE dehnt das Relief (näher an RTTRs Höhenskala, sodass
+# die absoluten BQ-Schwellen 1/2/3 wieder passen) und skaliert die Terrain-Bänder
+# proportional mit, damit die Terrain-Anteile (Wiese/Berg/…) gleich bleiben.
+const HEIGHT_SCALE := 1.8
+const LAND_AMP := 24.0 * HEIGHT_SCALE        # Grundland-Amplitude (vorher 24)
+const H_WATER_MAX := 3.0 * HEIGHT_SCALE      # darunter Wasser
+const H_SAND_MAX := 5.0 * HEIGHT_SCALE       # darunter Sand
+const H_MEADOW_MAX := 17.0 * HEIGHT_SCALE    # darunter Wiese
+const H_MOUNTAIN_MAX := 24.0 * HEIGHT_SCALE  # darunter Berg, darüber Schnee
+const H_SWAMP_MAX := 11.0 * HEIGHT_SCALE     # niedrige feuchte Wiese → Sumpf
+const STEEP_MEADOW_MOUNTAIN_MIN_HEIGHT := 12.0 * HEIGHT_SCALE
 const STEEP_MEADOW_MOUNTAIN_SLOPE := 4
 
 ## Erzeugt eine MapData mit Höhen und Terrain.
@@ -24,6 +37,16 @@ static func generate(width: int, height: int, seed: int = 12345) -> MapData:
 	detail.seed = seed + 1
 	detail.frequency = 0.18
 
+	# Mittlere Oktave (#50): füllt die Lücke zwischen sehr glattem Basis-Noise (0.06)
+	# und feinem Detail (0.18). Ohne sie ist das Land fast flach (Nachbar-Höhendiff
+	# meist <=1) — mit ihr entstehen sanft rollende Hügel mit mittleren Hängen (2-3),
+	# sodass sich Hütte/Haus/Burg über die Karte real abstufen und der Planierer (#49)
+	# sichtbar wird. Gleiches Höhenbudget (Gewichte summieren zu 1) → Terrain-Bänder bleiben.
+	var hills := FastNoiseLite.new()
+	hills.noise_type = FastNoiseLite.TYPE_VALUE
+	hills.seed = seed + 7
+	hills.frequency = 0.12
+
 	# Niederfrequente Berg-Maske: erzeugt verlässlich Gebirge (mit Erz).
 	var mountain := FastNoiseLite.new()
 	mountain.noise_type = FastNoiseLite.TYPE_VALUE
@@ -37,20 +60,23 @@ static func generate(width: int, height: int, seed: int = 12345) -> MapData:
 
 	for y in height:
 		for x in width:
-			var n := noise.get_noise_2d(x, y) * 0.5 + 0.5         # 0..1
-			n += (detail.get_noise_2d(x, y) * 0.5 + 0.5) * 0.25
-			n /= 1.25
+			# Drei Oktaven mischen (Summe der Gewichte = 1 → unverändertes Höhenbudget):
+			# großräumige Form (0.06) + rollende Hügel (0.12) + feines Detail (0.18).
+			var base_n := noise.get_noise_2d(x, y) * 0.5 + 0.5    # 0..1
+			var hill_n := hills.get_noise_2d(x, y) * 0.5 + 0.5
+			var det_n := detail.get_noise_2d(x, y) * 0.5 + 0.5
+			var n := base_n * 0.55 + hill_n * 0.35 + det_n * 0.10
 			var dx := (x - cx) / max_r
 			var dy := (y - cy) / max_r
 			var dist: float = sqrt(dx * dx + dy * dy)
 			var falloff: float = clampf(1.18 - dist, 0.0, 1.0)
-			var h := int(n * falloff * 24.0)   # Grundland 0..~24
+			var h := int(n * falloff * LAND_AMP)   # Grundland 0..~LAND_AMP
 			# Gebirge: Maske hebt Landflächen in den Berg-/Schnee-Bereich.
 			if falloff > 0.3:
 				var mn: float = mountain.get_noise_2d(x, y) * 0.5 + 0.5
 				if mn > 0.60:
 					var boost: float = (mn - 0.60) / 0.40   # 0..1
-					h = maxi(h, 18 + int(boost * 12.0))      # 18..30 → Berg/Schnee
+					h = maxi(h, int((18.0 + boost * 12.0) * HEIGHT_SCALE))  # → Berg/Schnee
 			map.set_height(x, y, h)
 
 	# Feuchtigkeits-Maske: niedrige, feuchte Flächen werden Sumpf (nicht bebaubar).
@@ -159,13 +185,13 @@ static func _classify_node_terrain(map: MapData, wet: FastNoiseLite) -> PackedBy
 		for x in map.width:
 			var h := _smoothed_node_height(map, x, y)
 			var t: int
-			if h < 3.0:
+			if h < H_WATER_MAX:
 				t = Terrain.WATER
-			elif h < 5.0:
+			elif h < H_SAND_MAX:
 				t = Terrain.SAND
-			elif h < 17.0:
+			elif h < H_MEADOW_MAX:
 				t = Terrain.MEADOW
-			elif h < 24.0:
+			elif h < H_MOUNTAIN_MAX:
 				t = Terrain.MOUNTAIN
 			else:
 				t = Terrain.SNOW
@@ -176,7 +202,7 @@ static func _classify_node_terrain(map: MapData, wet: FastNoiseLite) -> PackedBy
 			if t == Terrain.MEADOW and h >= STEEP_MEADOW_MOUNTAIN_MIN_HEIGHT \
 					and map.max_slope(x, y) >= STEEP_MEADOW_MOUNTAIN_SLOPE:
 				t = Terrain.MOUNTAIN
-			if t == Terrain.MEADOW and h < 11.0 and wet != null:
+			if t == Terrain.MEADOW and h < H_SWAMP_MAX and wet != null:
 				var w: float = wet.get_noise_2d(x, y) * 0.5 + 0.5
 				if w > 0.64:
 					t = Terrain.SWAMP
@@ -281,18 +307,18 @@ static func _assign_tri(map: MapData, x: int, y: int, kind: int, wet: FastNoiseL
 		return
 	var avg := _smoothed_tri_height(map, corners)
 	var t: int
-	if avg < 3.0:
+	if avg < H_WATER_MAX:
 		t = Terrain.WATER
-	elif avg < 5.0:
+	elif avg < H_SAND_MAX:
 		t = Terrain.SAND
-	elif avg < 17.0:
+	elif avg < H_MEADOW_MAX:
 		t = Terrain.MEADOW
-	elif avg < 24.0:
+	elif avg < H_MOUNTAIN_MAX:
 		t = Terrain.MOUNTAIN
 	else:
 		t = Terrain.SNOW
 	# Niedrige, feuchte Wiesen nahe dem Wasser werden zu Sumpf (begehbar, nicht bebaubar).
-	if t == Terrain.MEADOW and avg < 11.0 and wet != null:
+	if t == Terrain.MEADOW and avg < H_SWAMP_MAX and wet != null:
 		var w: float = wet.get_noise_2d(x, y) * 0.5 + 0.5
 		if w > 0.64:
 			t = Terrain.SWAMP

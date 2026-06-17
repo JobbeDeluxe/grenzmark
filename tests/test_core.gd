@@ -115,11 +115,14 @@ func _test_map_generation() -> void:
 
 	# Hohe, steile Wiesenflanken sollen als Bergkante erscheinen, nicht als
 	# fruchtbare Wiese. Sonst wirken Felder/Gebäude auf Bergwänden erlaubt.
+	# Höhen oberhalb der Steilwiesen-Schwelle (#50: skaliert mit HEIGHT_SCALE), aber
+	# unter dem Schnee-Band, mit einer steilen Kante (Diff >= STEEP_SLOPE) am Knoten.
 	var steep := _flat_map(8, 8)
+	var steep_base := int(MapGenerator.STEEP_MEADOW_MOUNTAIN_MIN_HEIGHT) + 3
 	for yy in steep.height:
 		for xx in steep.width:
-			steep.set_height(xx, yy, 13)
-	steep.set_height(5, 4, 17)
+			steep.set_height(xx, yy, steep_base)
+	steep.set_height(5, 4, steep_base + MapGenerator.STEEP_MEADOW_MOUNTAIN_SLOPE + 1)
 	var terrain := MapGenerator._classify_node_terrain(steep, null)
 	_check(int(terrain[steep.idx(4, 4)]) == Terrain.MOUNTAIN,
 		"Kartengenerator: hohe Steilwiese wird Bergkante")
