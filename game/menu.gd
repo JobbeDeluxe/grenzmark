@@ -7,15 +7,9 @@ const SAVE_PATH := "user://settlers_save.dat"
 const MENU_BACKGROUND_PATH := "res://assets/ui/main_menu_background.png"
 const UISkin := preload("res://game/ui_skin.gd")
 const DEV_UNLOCK_CODE := "jobbedeluxe"
-const MAP_SOURCE_OPTIONS := [
-	{ id = "random", label = "Zufall / Seed" },
-	{ id = "devmap", label = "DEVMAP" },
-]
-const MAP_SIZE_OPTIONS := [
-	{ id = "small", label = "Klein 64x64", w = 64, h = 64 },
-	{ id = "medium", label = "Mittel 96x96", w = 96, h = 96 },
-	{ id = "large", label = "Gross 128x128", w = 128, h = 128 },
-]
+# Vorschlaege fuer die Kartengroesse — frei eingebbar bleibt das Textfeld trotzdem.
+const MAP_SIZE_PRESETS := ["64x64", "96x96", "128x128", "256x128"]
+const DEFAULT_SIZE_TEXT := "96x96"
 
 static var _open_settings_after_reload := false
 
@@ -244,15 +238,136 @@ func _input(event: InputEvent) -> void:
 
 
 func _add_map_settings_controls(box: Container) -> void:
-	var source := _option_button(box, "Kartenquelle", "map_source", "random", MAP_SOURCE_OPTIONS)
-	_register_map_control("option", source, "map_source", "random", MAP_SOURCE_OPTIONS)
-	var seed := _line_edit(box, "Seed (leer = zufaellig)", "map_seed_text", "")
+	_ensure_seed_initialized()
+
+	# --- Welt-Seed (teilbarer Code) + Wuerfel-Button ---
+	var seed_caption := Label.new()
+	seed_caption.text = "Welt-Seed (zum Teilen)  —  DEVMAP = Testkarte"
+	UISkin.apply_label(seed_caption, true, 11)
+	box.add_child(seed_caption)
+
+	var seed_row := HBoxContainer.new()
+	seed_row.add_theme_constant_override("separation", roundi(4.0 * UISkin.ui_scale()))
+	box.add_child(seed_row)
+
+	var seed := LineEdit.new()
+	seed.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	seed.text = String(UISkin.option_value("map_seed_text", ""))
+	seed.add_theme_font_size_override("font_size", maxi(9, roundi(12.0 * UISkin.ui_scale())))
+	seed.text_changed.connect(func(text: String):
+		UISkin.set_option_value("map_seed_text", text)
+		_sync_controls_from_seed(text, seed)
+	)
+	seed_row.add_child(seed)
 	_register_map_control("line", seed, "map_seed_text", "")
-	var size := _option_button(box, "Kartengroesse", "map_size", "medium", MAP_SIZE_OPTIONS)
-	_register_map_control("option", size, "map_size", "medium", MAP_SIZE_OPTIONS)
-	var enemies := _spin_int(box, "Gegner", "map_enemy_count", 1, 0, 5)
-	_register_map_control("spin", enemies, "map_enemy_count", 1, [], 0, 5)
+
+	var dice := Button.new()
+	dice.text = "🎲"
+	dice.tooltip_text = "Neuen Zufalls-Seed wuerfeln"
+	UISkin.apply_button(dice)
+	dice.custom_minimum_size = Vector2(40, 30) * UISkin.ui_scale()
+	dice.pressed.connect(_on_new_seed)
+	seed_row.add_child(dice)
+
+	# --- Kartengroesse: frei eingebbar + Vorschlag-Buttons ---
+	var size_caption := Label.new()
+	size_caption.text = "Kartengroesse (frei, z. B. 200x100)"
+	UISkin.apply_label(size_caption, true, 11)
+	box.add_child(size_caption)
+
+	var size_edit := LineEdit.new()
+	size_edit.text = String(UISkin.option_value("map_size_text", DEFAULT_SIZE_TEXT))
+	size_edit.placeholder_text = DEFAULT_SIZE_TEXT
+	size_edit.add_theme_font_size_override("font_size", maxi(9, roundi(12.0 * UISkin.ui_scale())))
+	size_edit.text_changed.connect(func(text: String):
+		UISkin.set_option_value("map_size_text", text)
+		_recompose_world_code(size_edit)
+	)
+	box.add_child(size_edit)
+	_register_map_control("line", size_edit, "map_size_text", DEFAULT_SIZE_TEXT)
+
+	var preset_row := HBoxContainer.new()
+	preset_row.add_theme_constant_override("separation", roundi(4.0 * UISkin.ui_scale()))
+	box.add_child(preset_row)
+	for preset in MAP_SIZE_PRESETS:
+		var pb := Button.new()
+		pb.text = preset
+		UISkin.apply_button(pb)
+		pb.custom_minimum_size = Vector2(54, 26) * UISkin.ui_scale()
+		pb.pressed.connect(func():
+			UISkin.set_option_value("map_size_text", preset)
+			_recompose_world_code()
+		)
+		preset_row.add_child(pb)
+
+	# --- Gegnerzahl ---
+	var enemies := _spin_int(box, "Gegner", "map_enemy_count", 1, 0, MapGenerator.MAP_MAX_ENEMIES)
+	enemies.value_changed.connect(func(_v: float): _recompose_world_code())
+	_register_map_control("spin", enemies, "map_enemy_count", 1, [], 0, MapGenerator.MAP_MAX_ENEMIES)
 	_refresh_map_controls()
+
+
+## Sorgt fuer einen sinnvollen Vorbelegungs-Code beim ersten Anzeigen.
+func _ensure_seed_initialized() -> void:
+	var raw := String(UISkin.option_value("map_seed_text", "")).strip_edges()
+	var parsed := MapGenerator.parse_world_code(raw)
+	if parsed.devmap:
+		return
+	if raw == "" or not bool(parsed.has_size):
+		var size := MapGenerator.parse_size_text(
+			String(UISkin.option_value("map_size_text", DEFAULT_SIZE_TEXT)))
+		var enemies := clampi(int(UISkin.option_value("map_enemy_count", 1)), 0, MapGenerator.MAP_MAX_ENEMIES)
+		var token := String(parsed.token)
+		if token == "":
+			token = MapGenerator.random_world_token()
+		var code := MapGenerator.format_world_code(size.x, size.y, enemies, token)
+		UISkin.set_option_value("map_seed_text", code)
+		UISkin.set_option_value("map_size_text", "%dx%d" % [size.x, size.y])
+		UISkin.set_option_value("map_enemy_count", enemies)
+
+
+## Liefert den aktuell aktiven Karten-Token (DEVMAP bleibt DEVMAP).
+func _current_token() -> String:
+	var parsed := MapGenerator.parse_world_code(String(UISkin.option_value("map_seed_text", "")))
+	if parsed.devmap:
+		return MapGenerator.DEVMAP_CODE
+	var t := String(parsed.token)
+	if t == "":
+		t = MapGenerator.random_world_token()
+	return t
+
+
+## Baut den Welt-Code aus aktueller Groesse/Gegner/Token neu zusammen und zeigt ihn an.
+func _recompose_world_code(skip: Control = null) -> void:
+	if String(_current_token()) == MapGenerator.DEVMAP_CODE:
+		return  # DEVMAP ignoriert Groesse/Gegner — Code unveraendert lassen.
+	var size := MapGenerator.parse_size_text(
+		String(UISkin.option_value("map_size_text", DEFAULT_SIZE_TEXT)))
+	var enemies := clampi(int(UISkin.option_value("map_enemy_count", 1)), 0, MapGenerator.MAP_MAX_ENEMIES)
+	var code := MapGenerator.format_world_code(size.x, size.y, enemies, _current_token())
+	UISkin.set_option_value("map_seed_text", code)
+	_refresh_map_controls(skip)
+
+
+## Wuerfelt einen neuen Token (Groesse/Gegner bleiben).
+func _on_new_seed() -> void:
+	var size := MapGenerator.parse_size_text(
+		String(UISkin.option_value("map_size_text", DEFAULT_SIZE_TEXT)))
+	var enemies := clampi(int(UISkin.option_value("map_enemy_count", 1)), 0, MapGenerator.MAP_MAX_ENEMIES)
+	var code := MapGenerator.format_world_code(size.x, size.y, enemies, MapGenerator.random_world_token())
+	UISkin.set_option_value("map_seed_text", code)
+	UISkin.set_option_value("map_size_text", "%dx%d" % [size.x, size.y])
+	_refresh_map_controls()
+
+
+## Tippt jemand einen vollstaendigen Code ins Seed-Feld, uebernehmen Groesse/Gegner mit.
+func _sync_controls_from_seed(text: String, skip: Control) -> void:
+	var parsed := MapGenerator.parse_world_code(text)
+	if parsed.devmap or not bool(parsed.has_size):
+		return
+	UISkin.set_option_value("map_size_text", "%dx%d" % [int(parsed.width), int(parsed.height)])
+	UISkin.set_option_value("map_enemy_count", clampi(int(parsed.enemies), 0, MapGenerator.MAP_MAX_ENEMIES))
+	_refresh_map_controls(skip)
 
 
 func _register_map_control(kind: String, control: Control, key: String, fallback,
@@ -298,47 +413,6 @@ func _refresh_map_controls(skip_control: Control = null) -> void:
 				if spin != null:
 					spin.value = clampi(int(UISkin.option_value(key, entry.fallback)), int(entry.min), int(entry.max))
 		control.set_block_signals(false)
-
-
-func _option_button(box: Container, label: String, key: String, fallback: String, choices: Array) -> OptionButton:
-	var caption := Label.new()
-	caption.text = label
-	UISkin.apply_label(caption, true, 11)
-	box.add_child(caption)
-	var btn := OptionButton.new()
-	UISkin.apply_button(btn)
-	var current := String(UISkin.option_value(key, fallback))
-	var selected := 0
-	for i in choices.size():
-		var choice: Dictionary = choices[i]
-		btn.add_item(String(choice.label))
-		if String(choice.id) == current:
-			selected = i
-	btn.selected = selected
-	btn.item_selected.connect(func(idx: int):
-		var choice: Dictionary = choices[idx]
-		UISkin.set_option_value(key, String(choice.id))
-		_refresh_map_controls(btn)
-	)
-	box.add_child(btn)
-	return btn
-
-
-func _line_edit(box: Container, label: String, key: String, fallback: String) -> LineEdit:
-	var caption := Label.new()
-	caption.text = label
-	UISkin.apply_label(caption, true, 11)
-	box.add_child(caption)
-	var edit := LineEdit.new()
-	edit.text = String(UISkin.option_value(key, fallback))
-	edit.placeholder_text = fallback
-	edit.add_theme_font_size_override("font_size", maxi(9, roundi(12.0 * UISkin.ui_scale())))
-	edit.text_changed.connect(func(text: String):
-		UISkin.set_option_value(key, text)
-		_refresh_map_controls(edit)
-	)
-	box.add_child(edit)
-	return edit
 
 
 func _spin_int(box: Container, label: String, key: String, fallback: int,

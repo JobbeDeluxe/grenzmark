@@ -15,6 +15,7 @@ func _initialize() -> void:
 	_test_triangles_around()
 	_test_map_generation()
 	_test_seed_hash()
+	_test_world_code()
 	_test_worldgen_96()
 	_test_mountain_meadow_plateaus()
 	_test_mapgen_cleanup_and_stone_clusters()
@@ -141,12 +142,53 @@ func _test_seed_hash() -> void:
 	_check(map_a.heights == map_b.heights and map_a.terr_r == map_b.terr_r \
 			and map_a.terr_d == map_b.terr_d and map_a.objects == map_b.objects,
 		"Seed-Hash: gleiche Kartenoptionen erzeugen gleiche Startkarte")
-	var world := World.new()
-	var effective_a := world._effective_world_seed("random", "SIEDLER", Vector2i(96, 96), 1)
-	var effective_b := world._effective_world_seed("random", "SIEDLER", Vector2i(96, 96), 2)
-	_check(effective_a != effective_b,
-		"Welt-Seed: Gegnerzahl ist Teil des effektiven Welt-Hashes")
-	world.free()
+
+
+## Welt-Code (Issue #27): teilbarer String aus Groesse, Gegnerzahl und Karten-Token.
+func _test_world_code() -> void:
+	# Kanonisches Format zusammenbauen und wieder zerlegen (Roundtrip).
+	var code := MapGenerator.format_world_code(200, 100, 3, "K7P3QZ")
+	_check(code == "200x100-3-K7P3QZ", "Welt-Code: kanonisches Format BxH-G-TOKEN (%s)" % code)
+	var p := MapGenerator.parse_world_code(code)
+	_check(bool(p.has_size) and not bool(p.devmap), "Welt-Code: voller Code wird als Groessen-Code erkannt")
+	_check(int(p.width) == 200 and int(p.height) == 100 and int(p.enemies) == 3 \
+			and String(p.token) == "K7P3QZ", "Welt-Code: Roundtrip erhaelt alle Teile")
+
+	# Geteilter Code reproduziert dieselbe Welt: gleicher Token -> gleicher Terrain-Seed.
+	var p2 := MapGenerator.parse_world_code("200x100-3-K7P3QZ")
+	_check(MapGenerator.stable_seed_from_string(String(p.token))
+			== MapGenerator.stable_seed_from_string(String(p2.token)),
+		"Welt-Code: gleicher Code ergibt gleichen Terrain-Seed")
+
+	# Gegnerzahl steckt im teilbaren Code (anderer String), veraendert aber das Terrain nicht.
+	var enemies_diff := MapGenerator.format_world_code(200, 100, 5, "K7P3QZ")
+	_check(enemies_diff != code, "Welt-Code: andere Gegnerzahl ergibt anderen Code")
+	_check(MapGenerator.stable_seed_from_string("K7P3QZ")
+			== MapGenerator.stable_seed_from_string(String(MapGenerator.parse_world_code(enemies_diff).token)),
+		"Welt-Code: Gegnerzahl veraendert den Terrain-Token nicht")
+
+	# DEVMAP wird als Sonderquelle erkannt.
+	_check(bool(MapGenerator.parse_world_code("devmap").devmap), "Welt-Code: DEVMAP erkannt (klein)")
+	_check(bool(MapGenerator.parse_world_code(" DEVMAP ").devmap), "Welt-Code: DEVMAP mit Leerzeichen")
+
+	# Blanker Token ohne Groesse: has_size = false, ganzer String ist der Token.
+	var bare := MapGenerator.parse_world_code("SIEDLER")
+	_check(not bool(bare.has_size) and not bool(bare.devmap) and String(bare.token) == "SIEDLER",
+		"Welt-Code: blanker Token ohne Groesse")
+
+	# Freie Groessen-Eingabe parsen.
+	_check(MapGenerator.parse_size_text("200x100") == Vector2i(200, 100), "Groesse: freie Eingabe 200x100")
+	_check(MapGenerator.parse_size_text("128") == Vector2i(128, 128), "Groesse: einzelne Zahl = quadratisch")
+	_check(MapGenerator.parse_size_text("quatsch", Vector2i(96, 96)) == Vector2i(96, 96),
+		"Groesse: Unsinn faellt auf Fallback zurueck")
+	# Clamping in sinnvolle Grenzen.
+	var clamped := MapGenerator.parse_size_text("9999x1")
+	_check(clamped.x == MapGenerator.MAP_MAX_DIM and clamped.y == MapGenerator.MAP_MIN_DIM,
+		"Groesse: extreme Werte werden geclamped")
+
+	# Token ist case-insensitiv normalisiert (Gross), damit Teilen robust bleibt.
+	_check(String(MapGenerator.parse_world_code("96x96-1-abc").token) == "ABC",
+		"Welt-Code: Token wird auf Grossbuchstaben normalisiert")
 
 
 func _test_bq_and_flags() -> void:

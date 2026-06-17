@@ -108,44 +108,51 @@ func _ready() -> void:
 		_new_game()
 
 
+## Liest den Welt-Code (Issue #27) aus den Optionen und leitet Groesse, Gegnerzahl,
+## Kartenquelle und den Terrain-Seed ab. Quelle der Wahrheit ist EIN String
+## `map_seed_text` (z. B. "96x96-2-K7P3QZ" oder "DEVMAP").
 func _resolve_new_game_options() -> Vector2i:
 	map_generator_version = MapGenerator.MAP_GENERATOR_VERSION
-	map_source = String(UISkin.option_value("map_source", "random"))
-	var size_id := String(UISkin.option_value("map_size", "medium"))
-	var map_size := _map_size_for(size_id)
-	map_enemy_count = clampi(int(UISkin.option_value("map_enemy_count", DEFAULT_ENEMY_COUNT)),
-		0, MAX_ENEMY_COUNT)
-	var requested_seed := String(UISkin.option_value("map_seed_text", "")).strip_edges()
-	if requested_seed.to_upper() == "DEVMAP":
+	var raw := String(UISkin.option_value("map_seed_text", "")).strip_edges()
+	var parsed := MapGenerator.parse_world_code(raw)
+	var map_size: Vector2i
+	var token: String
+
+	if parsed.devmap:
 		map_source = "devmap"
-	if map_source == "devmap":
-		map_seed_text = "DEVMAP"
+		token = MapGenerator.DEVMAP_CODE
+		# Dev-/Testkarte: feste Groesse fuer reproduzierbare Tests.
+		map_size = Vector2i(MAP_W, MAP_H)
+		map_enemy_count = clampi(int(UISkin.option_value("map_enemy_count", DEFAULT_ENEMY_COUNT)),
+			0, MAX_ENEMY_COUNT)
+		map_seed_text = MapGenerator.DEVMAP_CODE
 	else:
 		map_source = "random"
-		if requested_seed == "":
-			var rng := RandomNumberGenerator.new()
-			rng.randomize()
-			map_seed_text = str(int(rng.randi()) & 0x7fffffff)
+		if bool(parsed.has_size):
+			map_size = Vector2i(int(parsed.width), int(parsed.height))
+			map_enemy_count = clampi(int(parsed.enemies), 0, MAX_ENEMY_COUNT)
+			token = String(parsed.token)
 		else:
-			map_seed_text = requested_seed
+			# Nur ein Token (oder leer) eingegeben -> Groesse/Gegner aus den UI-Optionen.
+			map_size = MapGenerator.parse_size_text(
+				String(UISkin.option_value("map_size_text", "%dx%d" % [MAP_W, MAP_H])),
+				Vector2i(MAP_W, MAP_H))
+			map_enemy_count = clampi(int(UISkin.option_value("map_enemy_count", DEFAULT_ENEMY_COUNT)),
+				0, MAX_ENEMY_COUNT)
+			token = String(parsed.token)
+		if token == "":
+			token = MapGenerator.random_world_token()
+		# Kanonischen Code zurueckschreiben, damit Anzeige/Savegame den teilbaren String fuehrt.
+		map_seed_text = MapGenerator.format_world_code(
+			map_size.x, map_size.y, map_enemy_count, token)
+
+	UISkin.set_option_value("map_seed_text", map_seed_text)
+	UISkin.set_option_value("map_size_text", "%dx%d" % [map_size.x, map_size.y])
+	UISkin.set_option_value("map_enemy_count", map_enemy_count)
 	UISkin.set_option_value("map_last_seed_text", map_seed_text)
-	map_seed_value = _effective_world_seed(map_source, map_seed_text, map_size, map_enemy_count)
+	# Terrain haengt am Token (+ Kartengroesse ueber generate()); Gegnerzahl nicht.
+	map_seed_value = MapGenerator.stable_seed_from_string(token)
 	return map_size
-
-
-func _effective_world_seed(source: String, seed_text: String, size: Vector2i, enemies: int) -> int:
-	var key := "%s|%s|%dx%d|enemies:%d|%s" % [
-		source, seed_text.strip_edges(), size.x, size.y, enemies, map_generator_version]
-	return MapGenerator.stable_seed_from_string(key)
-
-
-func _map_size_for(size_id: String) -> Vector2i:
-	match size_id:
-		"small":
-			return Vector2i(64, 64)
-		"large":
-			return Vector2i(128, 128)
-	return Vector2i(MAP_W, MAP_H)
 
 
 func _new_game() -> void:
@@ -1757,10 +1764,9 @@ func _hide_management_panels(except: Control = null) -> void:
 
 
 func _map_settings_text() -> String:
-	var source_label := "DEVMAP" if map_source == "devmap" else "Zufall/Seed"
 	var size_label := "%dx%d" % [map.width, map.height] if map != null else "?"
-	return "Karte: %s | Seed: %s | Hash: %d\nGroesse: %s | Gegner: %d | Generator: %s\n" % [
-		source_label, map_seed_text, map_seed_value, size_label, map_enemy_count,
+	return "Welt-Seed: %s | Hash: %d\nGroesse: %s | Gegner: %d | Generator: %s\n" % [
+		map_seed_text, map_seed_value, size_label, map_enemy_count,
 		map_generator_version]
 
 

@@ -114,6 +114,87 @@ static func stable_seed_from_string(text: String) -> int:
 	return int(h & 0x7fffffff)
 
 
+# --- Welt-Code (Issue #27) -------------------------------------------------
+# Ein teilbarer String buendelt Kartengroesse, Gegnerzahl und den eigentlichen
+# Karten-Token: "BxH-G-TOKEN", z. B. "96x96-2-K7P3QZ". Wer den Code eintippt,
+# bekommt exakt dieselbe Welt. Groesse/Gegner sind feste Werte VOR dem Token;
+# der Token allein steuert das Terrain (Gegnerzahl veraendert die Landschaft nicht).
+const DEVMAP_CODE := "DEVMAP"
+const WORLD_TOKEN_LEN := 6
+# Alphabet ohne verwechselbare Zeichen (kein 0/O/1/I) — leichter abzulesen/zu teilen.
+const WORLD_CODE_ALPHABET := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+const MAP_MIN_DIM := 32
+const MAP_MAX_DIM := 512
+const MAP_MAX_ENEMIES := 8
+
+## Wuerfelt einen neuen zufaelligen Karten-Token (nur den TOKEN-Teil des Welt-Codes).
+static func random_world_token(rng: RandomNumberGenerator = null) -> String:
+	if rng == null:
+		rng = RandomNumberGenerator.new()
+		rng.randomize()
+	var out := ""
+	for _i in WORLD_TOKEN_LEN:
+		out += WORLD_CODE_ALPHABET[rng.randi() % WORLD_CODE_ALPHABET.length()]
+	return out
+
+
+## Baut den kanonischen Welt-Code aus seinen Teilen.
+static func format_world_code(width: int, height: int, enemies: int, token: String) -> String:
+	var w := clampi(width, MAP_MIN_DIM, MAP_MAX_DIM)
+	var h := clampi(height, MAP_MIN_DIM, MAP_MAX_DIM)
+	var e := clampi(enemies, 0, MAP_MAX_ENEMIES)
+	var t := token.strip_edges().to_upper()
+	if t == "":
+		t = random_world_token()
+	return "%dx%d-%d-%s" % [w, h, e, t]
+
+
+## Zerlegt einen eingetippten Welt-Code in seine Teile. Toleranter Parser:
+## - "DEVMAP"                -> { devmap = true }
+## - "BxH-G-TOKEN"           -> volle Angabe (has_size = true)
+## - alles andere ("SIEDLER")-> nur Token, Groesse/Gegner offen (has_size = false)
+## Rueckgabe: { devmap, has_size, width, height, enemies, token }
+static func parse_world_code(code: String) -> Dictionary:
+	var raw := code.strip_edges()
+	var result := {
+		"devmap": false, "has_size": false,
+		"width": 0, "height": 0, "enemies": 0, "token": "",
+	}
+	if raw.to_upper() == DEVMAP_CODE:
+		result.devmap = true
+		return result
+	var parts := raw.split("-", false)
+	if parts.size() >= 3:
+		var size_part := String(parts[0]).to_lower()
+		var xy := size_part.split("x", false)
+		if xy.size() == 2 and String(xy[0]).is_valid_int() and String(xy[1]).is_valid_int() \
+				and String(parts[1]).is_valid_int():
+			# Token = Rest ab dem dritten Feld (darf weitere "-" enthalten).
+			var token := raw.substr(size_part.length() + String(parts[1]).length() + 2)
+			result.has_size = true
+			result.width = clampi(int(xy[0]), MAP_MIN_DIM, MAP_MAX_DIM)
+			result.height = clampi(int(xy[1]), MAP_MIN_DIM, MAP_MAX_DIM)
+			result.enemies = clampi(int(parts[1]), 0, MAP_MAX_ENEMIES)
+			result.token = token.strip_edges().to_upper()
+			return result
+	# Kein voller Code -> ganzer String ist der Token.
+	result.token = raw.to_upper()
+	return result
+
+
+## Zerlegt eine freie Groessen-Eingabe wie "200x100" oder "96" in WxH (geclamped).
+static func parse_size_text(text: String, fallback: Vector2i = Vector2i(96, 96)) -> Vector2i:
+	var t := text.strip_edges().to_lower()
+	var xy := t.split("x", false)
+	if xy.size() == 2 and String(xy[0]).is_valid_int() and String(xy[1]).is_valid_int():
+		return Vector2i(clampi(int(xy[0]), MAP_MIN_DIM, MAP_MAX_DIM),
+			clampi(int(xy[1]), MAP_MIN_DIM, MAP_MAX_DIM))
+	if xy.size() == 1 and String(xy[0]).is_valid_int():
+		var d := clampi(int(xy[0]), MAP_MIN_DIM, MAP_MAX_DIM)
+		return Vector2i(d, d)
+	return fallback
+
+
 ## Endlicher Fischbestand (Issue #6) auf allen Küstenknoten (Knoten mit Wasser UND
 ## Land im Dreiecksring). Reine Tiefwasserknoten bleiben leer — dort fischt niemand.
 ## Überschreibt vorhandene Werte nicht (idempotent, auch für nachträglich gegrabene
