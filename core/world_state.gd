@@ -18,6 +18,12 @@ enum { OBJ_NONE, OBJ_FLAG, OBJ_BUILDING, OBJ_ROAD }
 # Kerngebiet schlucken; Expansion Richtung Grenze bleibt aber erlaubt.
 const MILITARY_MIN_DIST := 5
 
+# Bauqualität/Hangregel (#42, RTTR BQCalculator): nicht max_slope über alle 6
+# Nachbarn, sondern v. a. die Höhe der SE-Eingangsflagge entscheidet. Liegt sie zu
+# weit ÜBER dem Bauknoten, geht nur eine Flagge.
+const MINE_MAX_ENTRY_RISE := 3   # Mine: SE-Eingang darf max. +3 höher liegen
+const BUILD_MAX_ENTRY_RISE := 1  # Normales Gebäude: SE-Eingang max. +1 höher
+
 
 class Flag:
 	extends RefCounted
@@ -275,9 +281,18 @@ func compute_bq(x: int, y: int) -> int:
 		return BQ_NOTHING
 
 	var slope := map.max_slope(x, y)
+	var h0 := map.get_height(x, y)
 
 	if all_mountain:
-		return BQ_MINE if slope <= 4 else BQ_FLAG
+		# RTTR BQCalculator: Minen hängen NICHT an max_slope über alle 6 Nachbarn
+		# (das erzeugte auf zerklüfteten Massiven Flaggenwüsten, #42), sondern nur an
+		# der SE-Eingangsflagge — liegt sie zu weit über dem Minenknoten, geht nur Flagge.
+		var se_m := map.neighbor(x, y, Grid.SE)
+		if se_m.x < 0 or not node_walkable(se_m.x, se_m.y):
+			return BQ_FLAG
+		if map.get_height(se_m.x, se_m.y) - h0 > MINE_MAX_ENTRY_RISE:
+			return BQ_FLAG
+		return BQ_MINE
 
 	if all_build:
 		var base := BQ_FLAG
@@ -287,10 +302,13 @@ func compute_bq(x: int, y: int) -> int:
 			base = BQ_HOUSE
 		elif slope <= 3:
 			base = BQ_HUT
-		# Ein Gebäude braucht rechts unten (SE) einen gültigen Flaggenplatz.
+		# Ein Gebäude braucht rechts unten (SE) einen gültigen Flaggenplatz, der nicht
+		# zu hoch liegt (RTTR: SE-Eingang max. +1 höher, sonst nur Flagge).
 		if base >= BQ_HUT:
 			var se := map.neighbor(x, y, Grid.SE)
 			if se.x < 0 or not node_walkable(se.x, se.y):
+				base = BQ_FLAG
+			elif map.get_height(se.x, se.y) - h0 > BUILD_MAX_ENTRY_RISE:
 				base = BQ_FLAG
 		# S2 (RTTR BQCalculator, BlockingManner::FlagsAround): direkt neben einem
 		# wachsenden Getreidefeld ist nur eine Flagge möglich, kein Gebäude.

@@ -27,6 +27,7 @@ func _initialize() -> void:
 	_test_inventory_model()
 	_test_visibility()
 	_test_bq_and_flags()
+	_test_mine_bq_on_mountains()
 	_test_building_spacing()
 	_test_road_and_route()
 	_test_route_cache_invalidation()
@@ -144,6 +145,39 @@ func _test_bq_and_flags() -> void:
 		if placed:
 			break
 	_check(placed, "Es gibt mindestens einen bebaubaren Knoten")
+
+
+## #42: Bauqualität auf Bergen nach RTTR — Minen hängen NICHT an max_slope über alle
+## 6 Nachbarn, sondern an der SE-Eingangsflagge. Ein zerklüfteter Berg (ein Nachbar
+## viel höher) bietet weiter Minenplätze; nur eine zu hoch liegende SE-Flagge sperrt.
+func _test_mine_bq_on_mountains() -> void:
+	var mm := _flat_map(12, 12)
+	for yy in mm.height:
+		for xx in mm.width:
+			mm.set_tri(Vector2i(xx, yy), Grid.TRI_R, Terrain.MOUNTAIN)
+			mm.set_tri(Vector2i(xx, yy), Grid.TRI_D, Terrain.MOUNTAIN)
+			mm.set_height(xx, yy, 10)
+	var st := WorldState.new(mm)
+	var p := Vector2i(6, 6)
+	_check(st.compute_bq(p.x, p.y) == WorldState.BQ_MINE, "BQ-Berg: flaches Massiv → Mine")
+
+	# Zerklüftet: ein NICHT-SE-Nachbar liegt viel höher (max_slope > 4). Früher wurde
+	# der Knoten dadurch zur Flagge; jetzt bleibt er Mine.
+	var nw := mm.neighbor(p.x, p.y, Grid.NW)
+	mm.set_height(nw.x, nw.y, 18)
+	_check(mm.max_slope(p.x, p.y) > 4, "BQ-Berg: Testaufbau erzeugt steile Kante (max_slope > 4)")
+	_check(st.compute_bq(p.x, p.y) == WorldState.BQ_MINE,
+		"BQ-Berg: zerklüfteter Berg bietet weiter eine Mine (keine Flaggenwüste)")
+	mm.set_height(nw.x, nw.y, 10)
+
+	# Zu hohe SE-Eingangsflagge (> +3) → nur Flagge.
+	var se := mm.neighbor(p.x, p.y, Grid.SE)
+	mm.set_height(se.x, se.y, 15)
+	_check(st.compute_bq(p.x, p.y) == WorldState.BQ_FLAG,
+		"BQ-Berg: zu hohe SE-Eingangsflagge → nur Flagge")
+	mm.set_height(se.x, se.y, 12)  # +2 ≤ 3
+	_check(st.compute_bq(p.x, p.y) == WorldState.BQ_MINE,
+		"BQ-Berg: leicht erhöhter SE-Eingang (+2) erlaubt weiter die Mine")
 
 
 func _test_road_and_route() -> void:
