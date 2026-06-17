@@ -71,7 +71,8 @@ static func generate(width: int, height: int, seed: int = 12345) -> MapData:
 			var dist: float = sqrt(dx * dx + dy * dy)
 			var falloff: float = clampf(1.18 - dist, 0.0, 1.0)
 			var h := int(n * falloff * LAND_AMP)   # Grundland 0..~LAND_AMP
-			# Gebirge: Maske hebt Landflächen in den Berg-/Schnee-Bereich.
+			# Gebirge: Maske hebt Landflächen in den Berg-/Schnee-Bereich (Plateaus für
+			# Minen). Steilheit der Bergränder wird separat visuell getunt (#51).
 			if falloff > 0.3:
 				var mn: float = mountain.get_noise_2d(x, y) * 0.5 + 0.5
 				if mn > 0.60:

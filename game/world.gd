@@ -182,25 +182,30 @@ func _ensure_test_pond_near(hq: Vector2i) -> void:
 			break
 	if center.x < 0:
 		return
-	for dy in range(-4, 5):
-		for dx in range(-4, 5):
+	# Sanfte Mulde statt Steilstrand (#50-Regress): die Höhe rampt vom umgebenden
+	# Landniveau (Rand, d=5) zum Wasserboden (Mitte) ab, sodass das Ufer begehbar
+	# bleibt. Terrain: Wasser innen (d<=2), Sandstrand (d==3), außen Wiese.
+	var rim := maxi(map.get_height(center.x, center.y), 10)
+	var water_floor := 2
+	for dy in range(-6, 7):
+		for dx in range(-6, 7):
 			var p := center + Vector2i(dx, dy)
 			if not map.in_bounds(p.x, p.y):
 				continue
 			if state._occ(p.x, p.y) != WorldState.OBJ_NONE:
 				continue
 			var d := WorldState.hex_distance(center, p)
-			if d <= 3:
-				MapGenerator.paint_hex_terrain(map, p, Terrain.SAND, 4, true)
-	for dy in range(-3, 4):
-		for dx in range(-3, 4):
-			var p := center + Vector2i(dx, dy)
-			if not map.in_bounds(p.x, p.y):
-				continue
-			if state._occ(p.x, p.y) != WorldState.OBJ_NONE:
-				continue
-			if WorldState.hex_distance(center, p) <= 2:
-				MapGenerator.paint_hex_terrain(map, p, Terrain.WATER, 2, true)
+			if d <= 2:
+				# Flache Wasserfläche.
+				MapGenerator.paint_hex_terrain(map, p, Terrain.WATER, water_floor, true)
+			elif d <= 6:
+				# Uferböschung: Höhe rampt über 4 Knoten vom Wasserboden zum Landniveau.
+				var f: float = clampf(float(d - 2) / 4.0, 0.0, 1.0)
+				var hh := int(round(lerpf(float(water_floor), float(rim), f)))
+				if d == 3:
+					MapGenerator.paint_hex_terrain(map, p, Terrain.SAND, hh, true)
+				else:
+					map.set_height(p.x, p.y, hh)  # nur Höhe glätten, Wiese bleibt
 
 
 func _ensure_stone_cluster_in_territory(owner: int) -> void:
@@ -2809,7 +2814,19 @@ func _clear_preview() -> void:
 
 
 func _pick_node(world_pos: Vector2) -> Vector2i:
+	# Höhenkompensierte Näherung: der gerenderte Knoten ist um h*HEIGHT_PER_LEVEL nach
+	# OBEN verschoben; world_to_node_approx ignoriert die Höhe und liegt bei hohem
+	# Gelände viele Zeilen daneben (#50-Regress). Geschätzte Höhe iterativ einrechnen,
+	# danach die kleine Feinsuche (mit echter Höhe) wie gehabt.
 	var approx := Grid.world_to_node_approx(world_pos)
+	for _i in 4:
+		var cx := clampi(approx.x, 0, map.width - 1)
+		var cy := clampi(approx.y, 0, map.height - 1)
+		var hh := map.get_height(cx, cy)
+		var corrected := Grid.world_to_node_approx(world_pos + Vector2(0.0, hh * Grid.HEIGHT_PER_LEVEL))
+		if corrected == approx:
+			break
+		approx = corrected
 	var best := Vector2i(-1, -1)
 	var best_d := INF
 	for dy in range(-2, 3):
