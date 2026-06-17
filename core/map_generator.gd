@@ -6,7 +6,7 @@ extends RefCounted
 
 const TERRAIN_CLEANUP_PASSES := 2
 const STONE_CLUSTER_AREA := 1400
-const MAP_GENERATOR_VERSION := "grenzmark-map-v4"
+const MAP_GENERATOR_VERSION := "grenzmark-map-v5"
 const MOUNTAIN_MEADOW_PATCH_AREA := 1800
 const MOUNTAIN_MEADOW_RADIUS := 2
 const MOUNTAIN_MEADOW_MIN_SEPARATION := 10
@@ -24,6 +24,8 @@ const H_MEADOW_MAX := 17.0 * HEIGHT_SCALE    # darunter Wiese
 const H_MOUNTAIN_MAX := 24.0 * HEIGHT_SCALE  # Referenz für Bergwiesen-Plateauhöhe
 const H_SNOW_MIN := 33.0 * HEIGHT_SCALE      # darüber Schnee/Fels — nur echte Gipfel
 const H_SWAMP_MAX := 11.0 * HEIGHT_SCALE     # niedrige feuchte Wiese → Sumpf
+const SWAMP_WET_MIN := 0.66                   # höhere Feuchte-Schwelle → kleinere Flächen
+const SWAMP_WATER_RADIUS := 3                 # Sumpf nur in Ufernähe (Hex-Reichweite)
 const STEEP_MEADOW_MOUNTAIN_MIN_HEIGHT := 12.0 * HEIGHT_SCALE
 const STEEP_MEADOW_MOUNTAIN_SLOPE := 4
 
@@ -37,6 +39,12 @@ const ORE_AMOUNT_SPAN := 9          # Menge 3..12, skaliert mit Aderstärke
 const ORE_GOLD_THRESHOLD := 0.628   # eigene Maske > Schwelle → Gold-Cluster (~9 %)
 const ORE_GRANITE_THRESHOLD := 0.607  # eigene Maske > Schwelle → Granit-Cluster (~15 %)
 const ORE_COAL_IRON_SPLIT := 0.478  # Basis-Adern: darunter Kohle, darüber Eisen
+
+# Kartentyp-Modifikatoren (#27).
+const ISLAND_LAND_MIN := 0.37     # Kontinentmaske darunter → versinkt Richtung Meer
+const ISLAND_LAND_SPAN := 0.05    # Breite des Küsten-Übergangs (schmal = klare Küsten)
+const ISLAND_SEA_DEPTH := 12.0    # wie tief Nicht-Insel-Flächen abgesenkt werden
+const RIVER_BRANCH_CHANCE := 0.010
 
 # Gebirgs-Aufbau (#50/#51): additive Gipfel statt Plateau-Klemme.
 const MOUNTAIN_MASK_MIN := 0.50   # ab diesem Maskenwert beginnt Bergland
@@ -114,6 +122,15 @@ static func generate(width: int, height: int, seed: int = 12345, options: Dictio
 					h += peak * falloff
 			map.set_height(x, y, maxi(0, int(round(h))))
 
+	# Kartentyp (#27): Höhen vor der Klassifizierung anpassen. "flach" lässt sie wie sie
+	# sind; "insel" senkt Bereiche mit niedriger Kontinentmaske unter den Meeresspiegel
+	# (Archipel); "fluss" gräbt gewundene Wasserläufe ein.
+	var map_type := String(options.get("map_type", DEFAULT_MAP_TYPE)).to_lower()
+	if map_type == "insel":
+		_apply_island_mask(map, seed)
+	elif map_type == "fluss":
+		_carve_rivers(map, seed)
+
 	# Feuchtigkeits-Maske: niedrige, feuchte Flächen werden Sumpf (nicht bebaubar).
 	var wet := FastNoiseLite.new()
 	wet.noise_type = FastNoiseLite.TYPE_VALUE
@@ -122,9 +139,10 @@ static func generate(width: int, height: int, seed: int = 12345, options: Dictio
 
 	# --- Terrain als S2-naehere Knoten-/Regionenmaske ableiten und dann mit
 	# Hex-Brushes auf Dreiecke malen. So entstehen Flaechen statt Zackenketten.
-	var node_terrain := _classify_node_terrain(map, wet)
+	var node_terrain := _classify_node_terrain(map)
 	_smooth_node_terrain(map, node_terrain, 2)
 	_apply_shore_ring(map, node_terrain)
+	_apply_swamp(map, node_terrain, wet)
 	_seed_mountain_meadows(map, node_terrain, seed)
 	_paint_node_terrain(map, node_terrain)
 	_cleanup_terrain(map)
@@ -132,6 +150,65 @@ static func generate(width: int, height: int, seed: int = 12345, options: Dictio
 	_scatter_objects(map, seed, options)
 	seed_coastal_fish(map)
 	return map
+
+
+## Inselkarte (#27): senkt Flächen mit niedriger Kontinentmaske unter den Meeresspiegel,
+## sodass mehrere getrennte Landmassen (Archipel) übrig bleiben. Berge auf den Inseln
+## bleiben erhalten (nur abgesenkt, wenn die Maske niedrig ist).
+static func _apply_island_mask(map: MapData, seed: int) -> void:
+	var continent := FastNoiseLite.new()
+	continent.noise_type = FastNoiseLite.TYPE_VALUE
+	continent.seed = seed + 31
+	continent.frequency = 0.028
+	continent.fractal_type = FastNoiseLite.FRACTAL_FBM
+	continent.fractal_octaves = 3
+	for y in map.height:
+		for x in map.width:
+			var c: float = continent.get_noise_2d(x, y) * 0.5 + 0.5
+			var landness: float = clampf((c - ISLAND_LAND_MIN) / ISLAND_LAND_SPAN, 0.0, 1.0)
+			var h: float = float(map.get_height(x, y))
+			# landness 1 → unverändert, 0 → tief unter Wasser; dazwischen Küste.
+			var nh: float = lerp(-ISLAND_SEA_DEPTH, h, landness)
+			map.set_height(x, y, maxi(0, int(round(nh))))
+
+
+## Flusskarte (#27): gräbt einige gewundene Wasserläufe in die Höhenkarte (Höhe unter
+## den Wasserspiegel). Anzahl skaliert mit der Kartengröße; sanftes Wandern + seltene
+## Verzweigung (wie RTTRs CreateStream/splitRate, vereinfacht).
+static func _carve_rivers(map: MapData, seed: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed + 41
+	var count := clampi(int((map.width + map.height) / 90), 1, 4)
+	var level := maxi(0, int(H_WATER_MAX) - 1)   # garantiert < H_WATER_MAX → Wasser
+	for _i in count:
+		var start := Vector2(
+			rng.randf_range(map.width * 0.2, map.width * 0.8),
+			rng.randf_range(map.height * 0.2, map.height * 0.8))
+		var ang := rng.randf() * TAU
+		_carve_stream(map, rng, start, ang, level, int((map.width + map.height) * 0.8), true)
+
+
+static func _carve_stream(map: MapData, rng: RandomNumberGenerator, start: Vector2,
+		ang: float, level: int, length: int, may_branch: bool) -> void:
+	var pos := start
+	var width := rng.randf_range(0.9, 1.8)   # Knoten-Radius des Flussbetts
+	for _step in length:
+		var px := int(round(pos.x))
+		var py := int(round(pos.y))
+		var r := int(ceil(width))
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var nx := px + dx
+				var ny := py + dy
+				if map.in_bounds(nx, ny) and Vector2(dx, dy).length() <= width:
+					map.set_height(nx, ny, mini(map.get_height(nx, ny), level))
+		ang += rng.randf_range(-0.4, 0.4)
+		pos += Vector2(cos(ang), sin(ang))
+		if pos.x < 1 or pos.x > map.width - 2 or pos.y < 1 or pos.y > map.height - 2:
+			return
+		if may_branch and rng.randf() < RIVER_BRANCH_CHANCE:
+			_carve_stream(map, rng, pos, ang + rng.randf_range(-1.2, 1.2),
+				level, int(length * 0.5), false)
 
 
 ## Stabile String->Seed-Abbildung fuer Spieler-Seeds. Nicht Godots hash() nutzen:
@@ -156,6 +233,11 @@ const WORLD_CODE_ALPHABET := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 const MAP_MIN_DIM := 32
 const MAP_MAX_DIM := 512
 const MAP_MAX_ENEMIES := 8
+# Kartentypen (#27): Teil des Welt-Codes. "zufall" löst deterministisch in einen der
+# konkreten Typen auf (aus dem Token), damit ein geteilter Code dieselbe Welt ergibt.
+const CONCRETE_MAP_TYPES := ["flach", "fluss", "insel"]
+const MAP_TYPES := ["flach", "fluss", "insel", "zufall"]
+const DEFAULT_MAP_TYPE := "flach"
 
 ## Wuerfelt einen neuen zufaelligen Karten-Token (nur den TOKEN-Teil des Welt-Codes).
 static func random_world_token(rng: RandomNumberGenerator = null) -> String:
@@ -168,27 +250,33 @@ static func random_world_token(rng: RandomNumberGenerator = null) -> String:
 	return out
 
 
-## Baut den kanonischen Welt-Code aus seinen Teilen.
-static func format_world_code(width: int, height: int, enemies: int, token: String) -> String:
+## Baut den kanonischen Welt-Code aus seinen Teilen: BxH-G-TYP-TOKEN.
+static func format_world_code(width: int, height: int, enemies: int, token: String,
+		map_type: String = DEFAULT_MAP_TYPE) -> String:
 	var w := clampi(width, MAP_MIN_DIM, MAP_MAX_DIM)
 	var h := clampi(height, MAP_MIN_DIM, MAP_MAX_DIM)
 	var e := clampi(enemies, 0, MAP_MAX_ENEMIES)
+	var mt := map_type.strip_edges().to_lower()
+	if not MAP_TYPES.has(mt):
+		mt = DEFAULT_MAP_TYPE
 	var t := token.strip_edges().to_upper()
 	if t == "":
 		t = random_world_token()
-	return "%dx%d-%d-%s" % [w, h, e, t]
+	return "%dx%d-%d-%s-%s" % [w, h, e, mt, t]
 
 
 ## Zerlegt einen eingetippten Welt-Code in seine Teile. Toleranter Parser:
-## - "DEVMAP"                -> { devmap = true }
-## - "BxH-G-TOKEN"           -> volle Angabe (has_size = true)
-## - alles andere ("SIEDLER")-> nur Token, Groesse/Gegner offen (has_size = false)
-## Rueckgabe: { devmap, has_size, width, height, enemies, token }
+## - "DEVMAP"                  -> { devmap = true }
+## - "BxH-G-TYP-TOKEN"         -> volle Angabe inkl. Typ (has_size = true)
+## - "BxH-G-TOKEN"             -> alt, ohne Typ -> map_type = flach (has_size = true)
+## - alles andere ("SIEDLER")  -> nur Token, Groesse/Gegner offen (has_size = false)
+## Rueckgabe: { devmap, has_size, width, height, enemies, map_type, token }
 static func parse_world_code(code: String) -> Dictionary:
 	var raw := code.strip_edges()
 	var result := {
 		"devmap": false, "has_size": false,
-		"width": 0, "height": 0, "enemies": 0, "token": "",
+		"width": 0, "height": 0, "enemies": 0,
+		"map_type": DEFAULT_MAP_TYPE, "token": "",
 	}
 	if raw.to_upper() == DEVMAP_CODE:
 		result.devmap = true
@@ -199,17 +287,30 @@ static func parse_world_code(code: String) -> Dictionary:
 		var xy := size_part.split("x", false)
 		if xy.size() == 2 and String(xy[0]).is_valid_int() and String(xy[1]).is_valid_int() \
 				and String(parts[1]).is_valid_int():
-			# Token = Rest ab dem dritten Feld (darf weitere "-" enthalten).
-			var token := raw.substr(size_part.length() + String(parts[1]).length() + 2)
 			result.has_size = true
 			result.width = clampi(int(xy[0]), MAP_MIN_DIM, MAP_MAX_DIM)
 			result.height = clampi(int(xy[1]), MAP_MIN_DIM, MAP_MAX_DIM)
 			result.enemies = clampi(int(parts[1]), 0, MAP_MAX_ENEMIES)
-			result.token = token.strip_edges().to_upper()
+			# Rest nach "WxH-G-": optional ein Typ-Feld, dann der Token.
+			var rest := raw.substr(size_part.length() + String(parts[1]).length() + 2)
+			var rest_parts := rest.split("-", false)
+			if rest_parts.size() >= 2 and MAP_TYPES.has(String(rest_parts[0]).to_lower()):
+				result.map_type = String(rest_parts[0]).to_lower()
+				rest = rest.substr(String(rest_parts[0]).length() + 1)
+			result.token = rest.strip_edges().to_upper()
 			return result
 	# Kein voller Code -> ganzer String ist der Token.
 	result.token = raw.to_upper()
 	return result
+
+
+## Löst den (evtl. "zufall") Kartentyp deterministisch in einen konkreten Typ auf.
+static func resolve_map_type(map_type: String, token: String) -> String:
+	var mt := map_type.strip_edges().to_lower()
+	if CONCRETE_MAP_TYPES.has(mt):
+		return mt
+	var pick := stable_seed_from_string("type:" + token.to_upper()) % CONCRETE_MAP_TYPES.size()
+	return String(CONCRETE_MAP_TYPES[pick])
 
 
 ## Zerlegt eine freie Groessen-Eingabe wie "200x100" oder "96" in WxH (geclamped).
@@ -324,7 +425,7 @@ static func _pick_ore_kind(gold_v: float, granite_v: float, vein_v: float,
 	return MapData.ORE_COAL if vein_v < ORE_COAL_IRON_SPLIT else MapData.ORE_IRON
 
 
-static func _classify_node_terrain(map: MapData, wet: FastNoiseLite) -> PackedByteArray:
+static func _classify_node_terrain(map: MapData) -> PackedByteArray:
 	var out := PackedByteArray()
 	out.resize(map.width * map.height)
 	for y in map.height:
@@ -348,12 +449,46 @@ static func _classify_node_terrain(map: MapData, wet: FastNoiseLite) -> PackedBy
 			if t == Terrain.MEADOW and h >= STEEP_MEADOW_MOUNTAIN_MIN_HEIGHT \
 					and map.max_slope(x, y) >= STEEP_MEADOW_MOUNTAIN_SLOPE:
 				t = Terrain.MOUNTAIN
-			if t == Terrain.MEADOW and h < H_SWAMP_MAX and wet != null:
-				var w: float = wet.get_noise_2d(x, y) * 0.5 + 0.5
-				if w > 0.64:
-					t = Terrain.SWAMP
 			out[map.idx(x, y)] = t
 	return out
+
+
+## Sumpf (#50-Folge): kleine feuchte Senken NAHE dem Wasser, nicht großflächig im
+## Inland. Läuft NACH dem Ufer-Ring — direkt am Wasser liegt Sand, der Sumpf bildet
+## das Band knapp dahinter. Bedingungen: niedrige, feuchte Wiese mit Wasser/Sand in
+## kurzer Reichweite. Höhere Feuchte-Schwelle als zuvor → deutlich kleinere Flächen.
+static func _apply_swamp(map: MapData, terrain: PackedByteArray, wet: FastNoiseLite) -> void:
+	if wet == null:
+		return
+	var next := terrain.duplicate()
+	for y in map.height:
+		for x in map.width:
+			var i := map.idx(x, y)
+			if int(terrain[i]) != Terrain.MEADOW:
+				continue
+			if _smoothed_node_height(map, x, y) >= H_SWAMP_MAX:
+				continue
+			if (wet.get_noise_2d(x, y) * 0.5 + 0.5) <= SWAMP_WET_MIN:
+				continue
+			if _water_within_radius(map, terrain, x, y, SWAMP_WATER_RADIUS):
+				next[i] = Terrain.SWAMP
+	for i in terrain.size():
+		terrain[i] = next[i]
+
+
+## Wasser oder Sand (= Küste) in Hex-Reichweite r? Bindet Sumpf ans Ufer.
+static func _water_within_radius(map: MapData, terrain: PackedByteArray,
+		cx: int, cy: int, r: int) -> bool:
+	var center := Vector2i(cx, cy)
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			var p := center + Vector2i(dx, dy)
+			if not map.in_bounds(p.x, p.y) or _hex_distance(center, p) > r:
+				continue
+			var nt := int(terrain[map.idx(p.x, p.y)])
+			if nt == Terrain.WATER or nt == Terrain.SAND:
+				return true
+	return false
 
 
 static func _smooth_node_terrain(map: MapData, terrain: PackedByteArray, passes: int) -> void:

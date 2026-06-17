@@ -10,6 +10,13 @@ const DEV_UNLOCK_CODE := "jobbedeluxe"
 # Vorschlaege fuer die Kartengroesse — frei eingebbar bleibt das Textfeld trotzdem.
 const MAP_SIZE_PRESETS := ["64x64", "96x96", "128x128", "256x128"]
 const DEFAULT_SIZE_TEXT := "96x96"
+# Kartentyp (#27) — Teil des Welt-Codes.
+const MAP_TYPE_OPTIONS := [
+	{ id = "flach", label = "Flach" },
+	{ id = "fluss", label = "Flüsse" },
+	{ id = "insel", label = "Inseln" },
+	{ id = "zufall", label = "Zufällig" },
+]
 
 static var _open_settings_after_reload := false
 
@@ -296,6 +303,26 @@ func _add_map_settings_controls(box: Container) -> void:
 		)
 		preset_row.add_child(pb)
 
+	# --- Kartentyp ---
+	var type_caption := Label.new()
+	type_caption.text = "Kartentyp"
+	UISkin.apply_label(type_caption, true, 11)
+	box.add_child(type_caption)
+	var type_btn := OptionButton.new()
+	UISkin.apply_button(type_btn)
+	var cur_type := String(UISkin.option_value("map_type", MapGenerator.DEFAULT_MAP_TYPE))
+	for i in MAP_TYPE_OPTIONS.size():
+		var opt: Dictionary = MAP_TYPE_OPTIONS[i]
+		type_btn.add_item(String(opt.label))
+		if String(opt.id) == cur_type:
+			type_btn.selected = i
+	type_btn.item_selected.connect(func(idx: int):
+		UISkin.set_option_value("map_type", String(MAP_TYPE_OPTIONS[idx].id))
+		_recompose_world_code(type_btn)
+	)
+	box.add_child(type_btn)
+	_register_map_control("option", type_btn, "map_type", "flach", MAP_TYPE_OPTIONS)
+
 	# --- Gegnerzahl ---
 	var enemies := _spin_int(box, "Gegner", "map_enemy_count", 1, 0, MapGenerator.MAP_MAX_ENEMIES)
 	enemies.value_changed.connect(func(_v: float): _recompose_world_code())
@@ -316,10 +343,16 @@ func _ensure_seed_initialized() -> void:
 		var token := String(parsed.token)
 		if token == "":
 			token = MapGenerator.random_world_token()
-		var code := MapGenerator.format_world_code(size.x, size.y, enemies, token)
+		var code := MapGenerator.format_world_code(size.x, size.y, enemies, token, _current_map_type())
 		UISkin.set_option_value("map_seed_text", code)
 		UISkin.set_option_value("map_size_text", "%dx%d" % [size.x, size.y])
 		UISkin.set_option_value("map_enemy_count", enemies)
+
+
+## Liefert den aktuell gewählten Kartentyp (mit Validierung).
+func _current_map_type() -> String:
+	var mt := String(UISkin.option_value("map_type", MapGenerator.DEFAULT_MAP_TYPE))
+	return mt if MapGenerator.MAP_TYPES.has(mt) else MapGenerator.DEFAULT_MAP_TYPE
 
 
 ## Liefert den aktuell aktiven Karten-Token (DEVMAP bleibt DEVMAP).
@@ -340,7 +373,7 @@ func _recompose_world_code(skip: Control = null) -> void:
 	var size := MapGenerator.parse_size_text(
 		String(UISkin.option_value("map_size_text", DEFAULT_SIZE_TEXT)))
 	var enemies := clampi(int(UISkin.option_value("map_enemy_count", 1)), 0, MapGenerator.MAP_MAX_ENEMIES)
-	var code := MapGenerator.format_world_code(size.x, size.y, enemies, _current_token())
+	var code := MapGenerator.format_world_code(size.x, size.y, enemies, _current_token(), _current_map_type())
 	UISkin.set_option_value("map_seed_text", code)
 	_refresh_map_controls(skip)
 
@@ -350,7 +383,8 @@ func _on_new_seed() -> void:
 	var size := MapGenerator.parse_size_text(
 		String(UISkin.option_value("map_size_text", DEFAULT_SIZE_TEXT)))
 	var enemies := clampi(int(UISkin.option_value("map_enemy_count", 1)), 0, MapGenerator.MAP_MAX_ENEMIES)
-	var code := MapGenerator.format_world_code(size.x, size.y, enemies, MapGenerator.random_world_token())
+	var code := MapGenerator.format_world_code(
+		size.x, size.y, enemies, MapGenerator.random_world_token(), _current_map_type())
 	UISkin.set_option_value("map_seed_text", code)
 	UISkin.set_option_value("map_size_text", "%dx%d" % [size.x, size.y])
 	_refresh_map_controls()
@@ -363,6 +397,7 @@ func _sync_controls_from_seed(text: String, skip: Control) -> void:
 		return
 	UISkin.set_option_value("map_size_text", "%dx%d" % [int(parsed.width), int(parsed.height)])
 	UISkin.set_option_value("map_enemy_count", clampi(int(parsed.enemies), 0, MapGenerator.MAP_MAX_ENEMIES))
+	UISkin.set_option_value("map_type", String(parsed.map_type))
 	_refresh_map_controls(skip)
 
 

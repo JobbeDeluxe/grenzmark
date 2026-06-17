@@ -94,6 +94,8 @@ var map_seed_text := "1337"
 var map_seed_value := MAP_SEED
 var map_generator_version := MapGenerator.MAP_GENERATOR_VERSION
 var map_enemy_count := DEFAULT_ENEMY_COUNT
+var map_type := MapGenerator.DEFAULT_MAP_TYPE        # gewählt: flach/fluss/insel/zufall
+var map_resolved_type := MapGenerator.DEFAULT_MAP_TYPE  # konkret (zufall aufgelöst)
 
 ## Wird vom Hauptmenü gesetzt: true = beim Start Spielstand laden.
 static var boot_load := false
@@ -121,36 +123,42 @@ func _resolve_new_game_options() -> Vector2i:
 	if parsed.devmap:
 		map_source = "devmap"
 		token = MapGenerator.DEVMAP_CODE
-		# Dev-/Testkarte: feste Groesse fuer reproduzierbare Tests.
+		# Dev-/Testkarte: feste Groesse + flaches Terrain fuer reproduzierbare Tests.
 		map_size = Vector2i(MAP_W, MAP_H)
 		map_enemy_count = clampi(int(UISkin.option_value("map_enemy_count", DEFAULT_ENEMY_COUNT)),
 			0, MAX_ENEMY_COUNT)
+		map_type = MapGenerator.DEFAULT_MAP_TYPE
 		map_seed_text = MapGenerator.DEVMAP_CODE
 	else:
 		map_source = "random"
 		if bool(parsed.has_size):
 			map_size = Vector2i(int(parsed.width), int(parsed.height))
 			map_enemy_count = clampi(int(parsed.enemies), 0, MAX_ENEMY_COUNT)
+			map_type = String(parsed.map_type)
 			token = String(parsed.token)
 		else:
-			# Nur ein Token (oder leer) eingegeben -> Groesse/Gegner aus den UI-Optionen.
+			# Nur ein Token (oder leer) eingegeben -> Groesse/Gegner/Typ aus den UI-Optionen.
 			map_size = MapGenerator.parse_size_text(
 				String(UISkin.option_value("map_size_text", "%dx%d" % [MAP_W, MAP_H])),
 				Vector2i(MAP_W, MAP_H))
 			map_enemy_count = clampi(int(UISkin.option_value("map_enemy_count", DEFAULT_ENEMY_COUNT)),
 				0, MAX_ENEMY_COUNT)
+			map_type = String(UISkin.option_value("map_type", MapGenerator.DEFAULT_MAP_TYPE))
 			token = String(parsed.token)
 		if token == "":
 			token = MapGenerator.random_world_token()
 		# Kanonischen Code zurueckschreiben, damit Anzeige/Savegame den teilbaren String fuehrt.
 		map_seed_text = MapGenerator.format_world_code(
-			map_size.x, map_size.y, map_enemy_count, token)
+			map_size.x, map_size.y, map_enemy_count, token, map_type)
 
 	UISkin.set_option_value("map_seed_text", map_seed_text)
 	UISkin.set_option_value("map_size_text", "%dx%d" % [map_size.x, map_size.y])
 	UISkin.set_option_value("map_enemy_count", map_enemy_count)
+	UISkin.set_option_value("map_type", map_type)
 	UISkin.set_option_value("map_last_seed_text", map_seed_text)
 	# Terrain haengt am Token (+ Kartengroesse ueber generate()); Gegnerzahl nicht.
+	# "zufall" wird deterministisch aus dem Token auf einen konkreten Typ aufgelöst.
+	map_resolved_type = MapGenerator.resolve_map_type(map_type, token)
 	map_seed_value = MapGenerator.stable_seed_from_string(token)
 	return map_size
 
@@ -161,7 +169,10 @@ func _new_game() -> void:
 	var map_size := _resolve_new_game_options()
 	# Gold-durch-Kohle ist eine persönliche Schwierigkeits-Option (kein Teil des
 	# Welt-Hashes): gleicher Seed = gleiches Terrain, nur Gold-Cluster werden zu Kohle.
-	var gen_options := { "replace_gold": UISkin.option_bool("map_replace_gold", false) }
+	var gen_options := {
+		"replace_gold": UISkin.option_bool("map_replace_gold", false),
+		"map_type": map_resolved_type,
+	}
 	map = MapGenerator.generate(map_size.x, map_size.y, map_seed_value, gen_options)
 	state = WorldState.new(map)
 	economy = Economy.new(state)
@@ -1768,8 +1779,11 @@ func _hide_management_panels(except: Control = null) -> void:
 
 func _map_settings_text() -> String:
 	var size_label := "%dx%d" % [map.width, map.height] if map != null else "?"
-	return "Welt-Seed: %s | Hash: %d\nGroesse: %s | Gegner: %d | Generator: %s\n" % [
-		map_seed_text, map_seed_value, size_label, map_enemy_count,
+	var type_label := map_type
+	if map_type == "zufall":
+		type_label = "%s (zufall)" % map_resolved_type
+	return "Welt-Seed: %s | Hash: %d\nGroesse: %s | Gegner: %d | Typ: %s | Generator: %s\n" % [
+		map_seed_text, map_seed_value, size_label, map_enemy_count, type_label,
 		map_generator_version]
 
 
@@ -3030,6 +3044,11 @@ func _save_game() -> void:
 		map_seed_text = map_seed_text,
 		map_seed_value = map_seed_value,
 		map_generator_version = map_generator_version,
+		map_type = map_type,
+		map_resolved_type = map_resolved_type,
+		# Kameraposition/-zoom, damit man nach dem Laden dort weitermacht, wo man war.
+		camera_pos = camera.position if camera != null else Vector2.ZERO,
+		camera_zoom = camera.zoom if camera != null else Vector2.ONE,
 		map_enemy_count = map_enemy_count,
 		heights = map.heights, terr_r = map.terr_r, terr_d = map.terr_d,
 		objects = map.objects.duplicate(),
@@ -3103,6 +3122,8 @@ func _load_game() -> void:
 	map_seed_value = int(data.get("map_seed_value", map_seed_value))
 	map_generator_version = String(data.get("map_generator_version", MapGenerator.MAP_GENERATOR_VERSION))
 	map_enemy_count = clampi(int(data.get("map_enemy_count", map_enemy_count)), 0, MAX_ENEMY_COUNT)
+	map_type = String(data.get("map_type", map_type))
+	map_resolved_type = String(data.get("map_resolved_type", map_type))
 
 	map = MapData.new(int(data.w), int(data.h))
 	map.heights = data.heights
@@ -3234,6 +3255,16 @@ func _load_game() -> void:
 	# Aufdecken) — daher hier einmalig die Sichtbarkeit voll aufbauen (Issue #30).
 	state.recompute_visibility()
 	_apply_dev_world_overrides()
+	# Kamera dorthin zurück, wo gespeichert wurde (sonst Start oben links). Alt-Spielstände
+	# ohne Sektion: aufs HQ zentrieren statt 0,0.
+	if camera != null:
+		if data.has("camera_pos"):
+			camera.position = data.camera_pos
+			camera.zoom = data.get("camera_zoom", camera.zoom)
+		else:
+			var hq := _owner_hq_pos(0)
+			if hq.x >= 0:
+				camera.position = map.node_world(hq.x, hq.y)
 	renderer.queue_redraw()
 	_flash("Geladen.")
 

@@ -16,6 +16,7 @@ func _initialize() -> void:
 	_test_map_generation()
 	_test_seed_hash()
 	_test_world_code()
+	_test_map_types()
 	_test_worldgen_96()
 	_test_mountain_meadow_plateaus()
 	_test_mapgen_cleanup_and_stone_clusters()
@@ -127,7 +128,7 @@ func _test_map_generation() -> void:
 		for xx in steep.width:
 			steep.set_height(xx, yy, steep_base)
 	steep.set_height(5, 4, steep_base + MapGenerator.STEEP_MEADOW_MOUNTAIN_SLOPE + 1)
-	var terrain := MapGenerator._classify_node_terrain(steep, null)
+	var terrain := MapGenerator._classify_node_terrain(steep)
 	_check(int(terrain[steep.idx(4, 4)]) == Terrain.MOUNTAIN,
 		"Kartengenerator: hohe Steilwiese wird Bergkante")
 
@@ -148,21 +149,40 @@ func _test_seed_hash() -> void:
 ## Welt-Code (Issue #27): teilbarer String aus Groesse, Gegnerzahl und Karten-Token.
 func _test_world_code() -> void:
 	# Kanonisches Format zusammenbauen und wieder zerlegen (Roundtrip).
-	var code := MapGenerator.format_world_code(200, 100, 3, "K7P3QZ")
-	_check(code == "200x100-3-K7P3QZ", "Welt-Code: kanonisches Format BxH-G-TOKEN (%s)" % code)
+	var code := MapGenerator.format_world_code(200, 100, 3, "K7P3QZ", "insel")
+	_check(code == "200x100-3-insel-K7P3QZ", "Welt-Code: Format BxH-G-TYP-TOKEN (%s)" % code)
 	var p := MapGenerator.parse_world_code(code)
 	_check(bool(p.has_size) and not bool(p.devmap), "Welt-Code: voller Code wird als Groessen-Code erkannt")
 	_check(int(p.width) == 200 and int(p.height) == 100 and int(p.enemies) == 3 \
-			and String(p.token) == "K7P3QZ", "Welt-Code: Roundtrip erhaelt alle Teile")
+			and String(p.token) == "K7P3QZ" and String(p.map_type) == "insel",
+		"Welt-Code: Roundtrip erhaelt alle Teile inkl. Typ")
+
+	# Ohne Typ-Argument -> Default flach.
+	_check(MapGenerator.format_world_code(96, 96, 1, "ABC") == "96x96-1-flach-ABC",
+		"Welt-Code: Default-Typ flach")
+	# Alter Code OHNE Typ wird noch erkannt -> map_type = flach.
+	var old := MapGenerator.parse_world_code("96x96-2-ABCDEF")
+	_check(bool(old.has_size) and String(old.map_type) == "flach" and String(old.token) == "ABCDEF",
+		"Welt-Code: alter 3-Teiler ohne Typ bleibt lesbar (flach)")
 
 	# Geteilter Code reproduziert dieselbe Welt: gleicher Token -> gleicher Terrain-Seed.
-	var p2 := MapGenerator.parse_world_code("200x100-3-K7P3QZ")
+	var p2 := MapGenerator.parse_world_code("200x100-3-insel-K7P3QZ")
 	_check(MapGenerator.stable_seed_from_string(String(p.token))
 			== MapGenerator.stable_seed_from_string(String(p2.token)),
 		"Welt-Code: gleicher Code ergibt gleichen Terrain-Seed")
 
+	# Typ ist Teil des teilbaren Codes; Änderung ändert den Code.
+	var type_diff := MapGenerator.format_world_code(200, 100, 3, "K7P3QZ", "fluss")
+	_check(type_diff != code, "Welt-Code: anderer Typ ergibt anderen Code")
+
+	# "zufall" löst deterministisch in einen konkreten Typ auf.
+	var rt := MapGenerator.resolve_map_type("zufall", "K7P3QZ")
+	_check(MapGenerator.CONCRETE_MAP_TYPES.has(rt), "Welt-Code: zufall -> konkreter Typ (%s)" % rt)
+	_check(rt == MapGenerator.resolve_map_type("zufall", "K7P3QZ"),
+		"Welt-Code: zufall-Auflösung ist deterministisch je Token")
+
 	# Gegnerzahl steckt im teilbaren Code (anderer String), veraendert aber das Terrain nicht.
-	var enemies_diff := MapGenerator.format_world_code(200, 100, 5, "K7P3QZ")
+	var enemies_diff := MapGenerator.format_world_code(200, 100, 5, "K7P3QZ", "insel")
 	_check(enemies_diff != code, "Welt-Code: andere Gegnerzahl ergibt anderen Code")
 	_check(MapGenerator.stable_seed_from_string("K7P3QZ")
 			== MapGenerator.stable_seed_from_string(String(MapGenerator.parse_world_code(enemies_diff).token)),
@@ -190,6 +210,42 @@ func _test_world_code() -> void:
 	# Token ist case-insensitiv normalisiert (Gross), damit Teilen robust bleibt.
 	_check(String(MapGenerator.parse_world_code("96x96-1-abc").token) == "ABC",
 		"Welt-Code: Token wird auf Grossbuchstaben normalisiert")
+
+
+## Kartentypen (#27): flach / Flüsse / Inseln erzeugen unterschiedlich viel Wasser,
+## sind deterministisch, und Sumpf ist klein & ans Wasser gebunden.
+func _test_map_types() -> void:
+	var flat := MapGenerator.generate(128, 128, 4242, { "map_type": "flach" })
+	var river := MapGenerator.generate(128, 128, 4242, { "map_type": "fluss" })
+	var island := MapGenerator.generate(128, 128, 4242, { "map_type": "insel" })
+	var n := 128 * 128
+	var water_flat := _count_terrain(flat, Terrain.WATER)
+	var water_river := _count_terrain(river, Terrain.WATER)
+	var water_island := _count_terrain(island, Terrain.WATER)
+	_check(water_river > water_flat, "Typ Flüsse: mehr Wasser als flach (%d > %d)" % [water_river, water_flat])
+	_check(water_island > water_flat + n / 10, "Typ Inseln: deutlich mehr Wasser (%d vs %d)" % [
+		water_island, water_flat])
+	# Inseln sollen trotzdem spielbares Land behalten (nicht reines Meer).
+	var land_island := _count_terrain(island, Terrain.MEADOW) + _count_terrain(island, Terrain.MOUNTAIN)
+	_check(land_island > n / 5, "Typ Inseln: genug Land übrig (%d)" % land_island)
+
+	# Determinismus: gleiche Optionen -> identische Karte.
+	var island2 := MapGenerator.generate(128, 128, 4242, { "map_type": "insel" })
+	_check(island.heights == island2.heights and island.terr_r == island2.terr_r,
+		"Typ: gleiche Optionen erzeugen identische Karte")
+
+	# Sumpf ist jetzt klein (vorher ~5-9 %) und nur in Ufernähe.
+	var swamp_pct := 100.0 * float(_count_terrain(flat, Terrain.SWAMP)) / float(n)
+	_check(swamp_pct < 4.0, "Sumpf: deutlich kleiner als früher (%.1f%%)" % swamp_pct)
+
+
+func _count_terrain(map: MapData, kind: int) -> int:
+	var c := 0
+	for y in map.height:
+		for x in map.width:
+			if int(map.get_tri(Vector2i(x, y), Grid.TRI_R)) == kind:
+				c += 1
+	return c
 
 
 func _test_bq_and_flags() -> void:
