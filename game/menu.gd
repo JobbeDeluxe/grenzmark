@@ -191,6 +191,8 @@ func _build_settings_panel(box: Container) -> void:
 	_checkbox(inner, "Warenleiste oben anzeigen", "show_resource_bar", false)
 	# Waren an Flaggen: dicht gestapelt (Original) oder als übersichtliches Raster (#38).
 	_checkbox(inner, "Waren dicht stapeln (Original)", "goods_cluster_layout", true)
+	# Schwierigkeits-Option (#54): kein Gold auf der Karte — Gold-Vorkommen werden Kohle.
+	_checkbox(inner, "Gold durch Kohle ersetzen (schwerer)", "map_replace_gold", false)
 
 	# Karteneinstellungen gehören nur ins "Neues Spiel"-Tab — hier raus.
 	inner.add_child(HSeparator.new())

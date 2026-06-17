@@ -21,6 +21,7 @@ func _initialize() -> void:
 	_test_mapgen_cleanup_and_stone_clusters()
 	_test_start_territory_stone_guarantee()
 	_test_ore_types()
+	_test_ore_distribution()
 	_test_ore_deposit_mining()
 	_test_mine_food()
 	_test_fishery_fish()
@@ -1192,6 +1193,53 @@ func _test_worldgen_96() -> void:
 			if state.compute_bq(xx, yy) >= WorldState.BQ_CASTLE:
 				castle += 1
 	_check(castle >= 2, "Mindestens zwei Burgplätze (Spieler + Gegner): %d" % castle)
+
+
+## #54: Bodenschätze auf Bergen — alle vier Sorten vorhanden, RTTR-nahe Anteile,
+## hohe Abdeckung und die "Gold durch Kohle"-Schwierigkeitsoption.
+func _test_ore_distribution() -> void:
+	var map := MapGenerator.generate(128, 128, 4242)
+	var counts := { MapData.ORE_COAL: 0, MapData.ORE_IRON: 0,
+		MapData.ORE_GOLD: 0, MapData.ORE_GRANITE: 0 }
+	var mountain_nodes := 0
+	var with_dep := 0
+	for y in map.height:
+		for x in map.width:
+			var terr := map.terrains_around(x, y)
+			var all_m := true
+			for t in terr:
+				if t != Terrain.MOUNTAIN:
+					all_m = false
+					break
+			if not all_m:
+				continue
+			mountain_nodes += 1
+			var k := map.ore_deposit_kind_at(x, y)
+			if k >= 0:
+				with_dep += 1
+				counts[k] = int(counts[k]) + 1
+	_check(counts[MapData.ORE_COAL] > 0 and counts[MapData.ORE_IRON] > 0 \
+			and counts[MapData.ORE_GOLD] > 0 and counts[MapData.ORE_GRANITE] > 0,
+		"Erz: alle vier Sorten vorhanden (C=%d I=%d Go=%d Gr=%d)" % [
+			counts[MapData.ORE_COAL], counts[MapData.ORE_IRON],
+			counts[MapData.ORE_GOLD], counts[MapData.ORE_GRANITE]])
+	# Granit und Gold sind keine Rundungsreste mehr (vorher Gold 0 %, Granit ~1 %).
+	var granite_pct := 100.0 * float(counts[MapData.ORE_GRANITE]) / float(maxi(with_dep, 1))
+	var gold_pct := 100.0 * float(counts[MapData.ORE_GOLD]) / float(maxi(with_dep, 1))
+	_check(granite_pct >= 8.0 and granite_pct <= 22.0, "Erz: Granit-Anteil ~15 %% (%.0f%%)" % granite_pct)
+	_check(gold_pct >= 4.0 and gold_pct <= 14.0, "Erz: Gold-Anteil ~9 %% (%.0f%%)" % gold_pct)
+	# Der Großteil der Berge trägt Erz (S2-nah), nicht nur ~30 %.
+	var coverage := 100.0 * float(with_dep) / float(maxi(mountain_nodes, 1))
+	_check(coverage >= 70.0, "Erz: hohe Bergabdeckung (%.0f%%)" % coverage)
+
+	# Schwierigkeitsoption: Gold durch Kohle ersetzen -> kein Gold mehr auf der Karte.
+	var hard := MapGenerator.generate(128, 128, 4242, { "replace_gold": true })
+	var hard_gold := 0
+	for y in hard.height:
+		for x in hard.width:
+			if hard.ore_deposit_kind_at(x, y) == MapData.ORE_GOLD:
+				hard_gold += 1
+	_check(hard_gold == 0, "Erz: 'Gold durch Kohle' entfernt alles Gold (%d übrig)" % hard_gold)
 
 
 func _test_mountain_meadow_plateaus() -> void:

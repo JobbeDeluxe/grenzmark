@@ -6,7 +6,7 @@ extends RefCounted
 
 const TERRAIN_CLEANUP_PASSES := 2
 const STONE_CLUSTER_AREA := 1400
-const MAP_GENERATOR_VERSION := "grenzmark-map-v3"
+const MAP_GENERATOR_VERSION := "grenzmark-map-v4"
 const MOUNTAIN_MEADOW_PATCH_AREA := 1800
 const MOUNTAIN_MEADOW_RADIUS := 2
 const MOUNTAIN_MEADOW_MIN_SEPARATION := 10
@@ -27,6 +27,17 @@ const H_SWAMP_MAX := 11.0 * HEIGHT_SCALE     # niedrige feuchte Wiese → Sumpf
 const STEEP_MEADOW_MOUNTAIN_MIN_HEIGHT := 12.0 * HEIGHT_SCALE
 const STEEP_MEADOW_MOUNTAIN_SLOPE := 4
 
+# Bodenschätze auf Bergen (#54): RTTR-nahe Verteilung Kohle 40 / Eisen 36 / Granit 15
+# / Gold 9. Granit & Gold bekommen eigene Noise-Masken (eigener Seed), weil das
+# Value-Noise praktisch nur ~0.25..0.76 erreicht und schwellenbasierte Bänder auf EINER
+# Maske die seltenen Erze sonst verhungern lassen (vorher Gold 0 %, Granit ~1 %).
+const ORE_DEPOSIT_MIN := 0.32       # darüber Vorkommen — deckt den Großteil der Berge ab
+const ORE_AMOUNT_MIN := 3
+const ORE_AMOUNT_SPAN := 9          # Menge 3..12, skaliert mit Aderstärke
+const ORE_GOLD_THRESHOLD := 0.628   # eigene Maske > Schwelle → Gold-Cluster (~9 %)
+const ORE_GRANITE_THRESHOLD := 0.607  # eigene Maske > Schwelle → Granit-Cluster (~15 %)
+const ORE_COAL_IRON_SPLIT := 0.478  # Basis-Adern: darunter Kohle, darüber Eisen
+
 # Gebirgs-Aufbau (#50/#51): additive Gipfel statt Plateau-Klemme.
 const MOUNTAIN_MASK_MIN := 0.50   # ab diesem Maskenwert beginnt Bergland
 const MOUNTAIN_PEAK_EXP := 1.3    # Potenzkurve: konzentriert Höhe Richtung Gipfel
@@ -34,7 +45,7 @@ const MOUNTAIN_PEAK_AMP := 65.0   # max. Gipfelanhebung über dem Grundland
 const MOUNTAIN_ROUGHNESS := 9.0   # Zerklüftung der Gipfel (feines Detail)
 
 ## Erzeugt eine MapData mit Höhen und Terrain.
-static func generate(width: int, height: int, seed: int = 12345) -> MapData:
+static func generate(width: int, height: int, seed: int = 12345, options: Dictionary = {}) -> MapData:
 	var map := MapData.new(width, height)
 
 	# --- Höhen: zwei Lagen Value-Noise, deterministisch ---
@@ -118,7 +129,7 @@ static func generate(width: int, height: int, seed: int = 12345) -> MapData:
 	_paint_node_terrain(map, node_terrain)
 	_cleanup_terrain(map)
 
-	_scatter_objects(map, seed)
+	_scatter_objects(map, seed, options)
 	seed_coastal_fish(map)
 	return map
 
@@ -233,7 +244,8 @@ static func seed_coastal_fish(map: MapData) -> void:
 
 
 ## Bäume auf Wiesen, Stein-Haufen, Erz in den Bergen — deterministisch.
-static func _scatter_objects(map: MapData, seed: int) -> void:
+static func _scatter_objects(map: MapData, seed: int, options: Dictionary = {}) -> void:
+	var replace_gold := bool(options.get("replace_gold", false))
 	var forest := FastNoiseLite.new()
 	forest.noise_type = FastNoiseLite.TYPE_VALUE
 	forest.seed = seed + 2
@@ -254,6 +266,17 @@ static func _scatter_objects(map: MapData, seed: int) -> void:
 	deposit.seed = seed + 13
 	deposit.frequency = 0.09
 
+	# Eigene Masken für die seltenen Erze (#54): so lassen sich Gold/Granit als echte
+	# Cluster verteilen, ohne dass sie im gemeinsamen Adern-Noise verhungern.
+	var gold_mask := FastNoiseLite.new()
+	gold_mask.noise_type = FastNoiseLite.TYPE_VALUE
+	gold_mask.seed = seed + 17
+	gold_mask.frequency = 0.10
+	var granite_mask := FastNoiseLite.new()
+	granite_mask.noise_type = FastNoiseLite.TYPE_VALUE
+	granite_mask.seed = seed + 19
+	granite_mask.frequency = 0.09
+
 	var stone_candidates: Array[Vector2i] = []
 	for y in map.height:
 		for x in map.width:
@@ -266,12 +289,17 @@ static func _scatter_objects(map: MapData, seed: int) -> void:
 				if t != Terrain.MOUNTAIN: all_mountain = false
 			if all_mountain:
 				# Erz ist UNTERIRDISCH: kein sichtbares Objekt, sondern ein
-				# verstecktes Vorkommen. Adern entstehen aus der glatten Maske,
+				# verstecktes Vorkommen. Der Großteil der Berge trägt Erz (S2-nah),
 				# die Menge skaliert mit der Aderstärke (endlicher Abbau).
 				var dv := deposit.get_noise_2d(x, y) * 0.5 + 0.5
-				if dv > 0.55:
-					var kind := _ore_kind_for(vein.get_noise_2d(x, y) * 0.5 + 0.5)
-					var amount := 3 + int((dv - 0.55) / 0.45 * 7.0)   # 3..10
+				if dv > ORE_DEPOSIT_MIN:
+					var kind := _pick_ore_kind(
+						gold_mask.get_noise_2d(x, y) * 0.5 + 0.5,
+						granite_mask.get_noise_2d(x, y) * 0.5 + 0.5,
+						vein.get_noise_2d(x, y) * 0.5 + 0.5,
+						replace_gold)
+					var amount := ORE_AMOUNT_MIN + int(
+						(dv - ORE_DEPOSIT_MIN) / (1.0 - ORE_DEPOSIT_MIN) * float(ORE_AMOUNT_SPAN))
 					map.set_ore_deposit(x, y, kind, amount)
 			elif all_meadow:
 				var f := forest.get_noise_2d(x, y) * 0.5 + 0.5
@@ -283,15 +311,17 @@ static func _scatter_objects(map: MapData, seed: int) -> void:
 	_place_stone_clusters(map, rng, stone_candidates)
 
 
-## Erzsorte aus dem Adern-Rauschwert (0..1): Kohle häufig, Gold selten.
-static func _ore_kind_for(v: float) -> int:
-	if v < 0.42:
-		return MapData.ORE_COAL
-	elif v < 0.72:
-		return MapData.ORE_IRON
-	elif v < 0.90:
+## Erzsorte für einen Bergknoten (#54). Seltene Erze (Gold/Granit) haben eigene Masken
+## und bekommen Vorrang als Cluster; sonst Basis-Adern Kohle/Eisen. Zielverteilung
+## RTTR-nah: Kohle ~40 / Eisen ~36 / Granit ~15 / Gold ~9 %. `replace_gold` macht das
+## Spiel schwerer: Gold-Cluster werden zu Kohle (kein Gold auf der Karte).
+static func _pick_ore_kind(gold_v: float, granite_v: float, vein_v: float,
+		replace_gold: bool) -> int:
+	if gold_v > ORE_GOLD_THRESHOLD:
+		return MapData.ORE_COAL if replace_gold else MapData.ORE_GOLD
+	if granite_v > ORE_GRANITE_THRESHOLD:
 		return MapData.ORE_GRANITE
-	return MapData.ORE_GOLD
+	return MapData.ORE_COAL if vein_v < ORE_COAL_IRON_SPLIT else MapData.ORE_IRON
 
 
 static func _classify_node_terrain(map: MapData, wet: FastNoiseLite) -> PackedByteArray:

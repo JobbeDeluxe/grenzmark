@@ -159,7 +159,10 @@ func _new_game() -> void:
 	selected = null
 	paused = false
 	var map_size := _resolve_new_game_options()
-	map = MapGenerator.generate(map_size.x, map_size.y, map_seed_value)
+	# Gold-durch-Kohle ist eine persönliche Schwierigkeits-Option (kein Teil des
+	# Welt-Hashes): gleicher Seed = gleiches Terrain, nur Gold-Cluster werden zu Kohle.
+	var gen_options := { "replace_gold": UISkin.option_bool("map_replace_gold", false) }
+	map = MapGenerator.generate(map_size.x, map_size.y, map_seed_value, gen_options)
 	state = WorldState.new(map)
 	economy = Economy.new(state)
 	_wire_world()
