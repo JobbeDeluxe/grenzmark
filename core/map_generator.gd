@@ -6,7 +6,7 @@ extends RefCounted
 
 const TERRAIN_CLEANUP_PASSES := 2
 const STONE_CLUSTER_AREA := 1400
-const MAP_GENERATOR_VERSION := "grenzmark-map-v2"
+const MAP_GENERATOR_VERSION := "grenzmark-map-v3"
 const MOUNTAIN_MEADOW_PATCH_AREA := 1800
 const MOUNTAIN_MEADOW_RADIUS := 2
 const MOUNTAIN_MEADOW_MIN_SEPARATION := 10
@@ -21,10 +21,17 @@ const LAND_AMP := 24.0 * HEIGHT_SCALE        # Grundland-Amplitude (vorher 24)
 const H_WATER_MAX := 3.0 * HEIGHT_SCALE      # darunter Wasser
 const H_SAND_MAX := 5.0 * HEIGHT_SCALE       # darunter Sand
 const H_MEADOW_MAX := 17.0 * HEIGHT_SCALE    # darunter Wiese
-const H_MOUNTAIN_MAX := 24.0 * HEIGHT_SCALE  # darunter Berg, darüber Schnee
+const H_MOUNTAIN_MAX := 24.0 * HEIGHT_SCALE  # Referenz für Bergwiesen-Plateauhöhe
+const H_SNOW_MIN := 33.0 * HEIGHT_SCALE      # darüber Schnee/Fels — nur echte Gipfel
 const H_SWAMP_MAX := 11.0 * HEIGHT_SCALE     # niedrige feuchte Wiese → Sumpf
 const STEEP_MEADOW_MOUNTAIN_MIN_HEIGHT := 12.0 * HEIGHT_SCALE
 const STEEP_MEADOW_MOUNTAIN_SLOPE := 4
+
+# Gebirgs-Aufbau (#50/#51): additive Gipfel statt Plateau-Klemme.
+const MOUNTAIN_MASK_MIN := 0.50   # ab diesem Maskenwert beginnt Bergland
+const MOUNTAIN_PEAK_EXP := 1.3    # Potenzkurve: konzentriert Höhe Richtung Gipfel
+const MOUNTAIN_PEAK_AMP := 65.0   # max. Gipfelanhebung über dem Grundland
+const MOUNTAIN_ROUGHNESS := 9.0   # Zerklüftung der Gipfel (feines Detail)
 
 ## Erzeugt eine MapData mit Höhen und Terrain.
 static func generate(width: int, height: int, seed: int = 12345) -> MapData:
@@ -51,11 +58,16 @@ static func generate(width: int, height: int, seed: int = 12345) -> MapData:
 	hills.seed = seed + 7
 	hills.frequency = 0.12
 
-	# Niederfrequente Berg-Maske: erzeugt verlässlich Gebirge (mit Erz).
+	# Niederfrequente Berg-Maske: erzeugt verlässlich Gebirge (mit Erz). Ridged-Fractal
+	# bildet S2-typische Bergketten/Grate mit scharfen Gipfeln statt runder Kuppeln und
+	# liefert eine Maske, die bis ~1.0 reicht (Value-Noise blieb zu flach gestaucht).
 	var mountain := FastNoiseLite.new()
 	mountain.noise_type = FastNoiseLite.TYPE_VALUE
 	mountain.seed = seed + 5
 	mountain.frequency = 0.045
+	mountain.fractal_type = FastNoiseLite.FRACTAL_RIDGED
+	mountain.fractal_octaves = 4
+	mountain.fractal_gain = 0.5
 
 	# Randabfall zum Wasser hin (Inselform) — sanft, damit viel Land bleibt.
 	var cx := width * 0.5
@@ -74,15 +86,22 @@ static func generate(width: int, height: int, seed: int = 12345) -> MapData:
 			var dy := (y - cy) / max_r
 			var dist: float = sqrt(dx * dx + dy * dy)
 			var falloff: float = clampf(1.18 - dist, 0.0, 1.0)
-			var h := int(n * falloff * LAND_AMP)   # Grundland 0..~LAND_AMP
-			# Gebirge: Maske hebt Landflächen in den Berg-/Schnee-Bereich (Plateaus für
-			# Minen). Steilheit der Bergränder wird separat visuell getunt (#51).
+			var h: float = n * falloff * LAND_AMP   # Grundland 0..~LAND_AMP
+			# Gebirge (#50/#51): NICHT mehr auf ein flaches Plateau klemmen (das erzeugte
+			# Berge wie Tafelberge mit Steilkante rundum und flacher Schneefläche). Wie in
+			# RTTRs Generator wird die Höhe stattdessen additiv zu echten Gipfeln angehoben:
+			# eine Potenzkurve konzentriert die Höhe auf den Maskenkern, sodass die Flanken
+			# stetig abfallen (keine Ringklippe) und nur die Spitzen die Schnee-Höhe erreichen.
 			if falloff > 0.3:
 				var mn: float = mountain.get_noise_2d(x, y) * 0.5 + 0.5
-				if mn > 0.60:
-					var boost: float = (mn - 0.60) / 0.40   # 0..1
-					h = maxi(h, int((18.0 + boost * 12.0) * HEIGHT_SCALE))  # → Berg/Schnee
-			map.set_height(x, y, h)
+				if mn > MOUNTAIN_MASK_MIN:
+					var b: float = (mn - MOUNTAIN_MASK_MIN) / (1.0 - MOUNTAIN_MASK_MIN)  # 0..1
+					var peak: float = pow(b, MOUNTAIN_PEAK_EXP) * MOUNTAIN_PEAK_AMP
+					# Zerklüftung: feines Detail nur auf Bergen, damit Gipfel keine glatten
+					# Kuppeln sind. Mit b skaliert → am Fuß sanft, oben schroff.
+					peak += (det_n - 0.5) * MOUNTAIN_ROUGHNESS * b
+					h += peak * falloff
+			map.set_height(x, y, maxi(0, int(round(h))))
 
 	# Feuchtigkeits-Maske: niedrige, feuchte Flächen werden Sumpf (nicht bebaubar).
 	var wet := FastNoiseLite.new()
@@ -288,7 +307,7 @@ static func _classify_node_terrain(map: MapData, wet: FastNoiseLite) -> PackedBy
 				t = Terrain.SAND
 			elif h < H_MEADOW_MAX:
 				t = Terrain.MEADOW
-			elif h < H_MOUNTAIN_MAX:
+			elif h < H_SNOW_MIN:
 				t = Terrain.MOUNTAIN
 			else:
 				t = Terrain.SNOW
@@ -503,7 +522,7 @@ static func _assign_tri(map: MapData, x: int, y: int, kind: int, wet: FastNoiseL
 		t = Terrain.SAND
 	elif avg < H_MEADOW_MAX:
 		t = Terrain.MEADOW
-	elif avg < H_MOUNTAIN_MAX:
+	elif avg < H_SNOW_MIN:
 		t = Terrain.MOUNTAIN
 	else:
 		t = Terrain.SNOW

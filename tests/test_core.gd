@@ -2214,11 +2214,14 @@ func _flat_map(w: int, h: int) -> MapData:
 	return map
 
 
-func _find_buildable(state: WorldState, sx: int, sy: int) -> Vector2i:
+func _find_buildable(state: WorldState, sx: int, sy: int, min_bq: int = WorldState.BQ_CASTLE) -> Vector2i:
+	# Sucht spiralförmig einen Platz, der mindestens min_bq trägt. Default BURG, weil die
+	# meisten Aufrufer hier ein HQ setzen — auf relief­reicherem Terrain (Generator v3)
+	# darf der Treffer kein knapper Hüttenplatz an einer Bergflanke sein.
 	var map := state.map
-	for r in range(0, 8):
+	for r in range(0, 20):
 		for yy in range(maxi(2, sy - r), mini(map.height - 2, sy + r + 1)):
 			for xx in range(maxi(2, sx - r), mini(map.width - 2, sx + r + 1)):
-				if state.compute_bq(xx, yy) >= WorldState.BQ_HUT and state._occ(xx, yy) == WorldState.OBJ_NONE:
+				if state.compute_bq(xx, yy) >= min_bq and state._occ(xx, yy) == WorldState.OBJ_NONE:
 					return Vector2i(xx, yy)
 	return Vector2i(-1, -1)
