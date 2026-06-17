@@ -1401,11 +1401,13 @@ func _build_transport_panel() -> void:
 	var box := _add_window_chrome(_transport_panel, "Transport-Priorität", _toggle_transport_settings)
 
 	var hint := Label.new()
-	hint.text = "Welche Ware fährt bei Stau zuerst? Oben = höchste Priorität. ▲/▼ verschiebt."
+	hint.text = "Welche Ware fährt bei Stau zuerst? Oben = höchste Priorität. ▲/▼ verschiebt, ⤒ ganz nach oben."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.mouse_filter = Control.MOUSE_FILTER_PASS
 	UISkin.apply_label(hint, true, 10)
 	box.add_child(hint)
+	var reset_btn := _tbutton(box, "Zurücksetzen", _reset_transport)
+	reset_btn.tooltip_text = "Transport-Priorität auf die Standardreihenfolge zurücksetzen."
 	box.add_child(HSeparator.new())
 
 	var scroll := ScrollContainer.new()
@@ -1452,6 +1454,9 @@ func _rebuild_transport_list() -> void:
 		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		UISkin.apply_label(name_lbl, false, 10)
 		row.add_child(name_lbl)
+		var top := _step_btn(row, "⤒", _step_transport_top.bind(g))
+		top.disabled = rank == 0
+		top.tooltip_text = "Ganz nach oben (höchste Priorität)"
 		var up := _step_btn(row, "▲", _step_transport.bind(g, -1))
 		up.disabled = rank == 0
 		var down := _step_btn(row, "▼", _step_transport.bind(g, 1))
@@ -1462,6 +1467,20 @@ func _step_transport(g: int, dir: int) -> void:
 	if economy == null:
 		return
 	economy.move_transport(g, dir)
+	_rebuild_transport_list()
+
+
+func _step_transport_top(g: int) -> void:
+	if economy == null:
+		return
+	economy.move_transport_top(g)
+	_rebuild_transport_list()
+
+
+func _reset_transport() -> void:
+	if economy == null:
+		return
+	economy.reset_transport_default()
 	_rebuild_transport_list()
 
 

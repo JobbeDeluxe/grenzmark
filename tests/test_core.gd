@@ -787,6 +787,19 @@ func _test_transport_priority() -> void:
 	eco.move_transport(top, -1)
 	_check(int(eco.transport_order[0]) == top, "Transport: oberste Ware bleibt bei ▲ oben (Rand)")
 
+	# „Ganz nach oben": eine niedrig priorisierte Ware an die Spitze setzen.
+	var low_good := int(eco.transport_order[eco.transport_order.size() - 1])
+	eco.move_transport_top(low_good)
+	_check(int(eco.transport_order[0]) == low_good and eco._transport_rank(low_good) == 0,
+		"Transport: ⤒ setzt die Ware ganz nach oben")
+	_check(eco.transport_order.size() == Goods.COUNT, "Transport: ⤒ verliert keine Ware")
+
+	# „Zurücksetzen": Standardreihenfolge wiederherstellen.
+	eco.reset_transport_default()
+	_check(eco._transport_rank(Goods.COINS) < eco._transport_rank(Goods.STONE) \
+		and eco.transport_order.size() == Goods.COUNT,
+		"Transport: Zurücksetzen stellt die Standardreihenfolge wieder her")
+
 	# Aufnahme nach Priorität: HQ + Holzfäller per Straße verbunden.
 	var hq := state.place_building(15, 20, WorldState.BQ_CASTLE, true, "hq", 0, false)
 	var wc := state.place_building(15, 14, WorldState.BQ_HOUSE, false, "woodcutter", 0, false)

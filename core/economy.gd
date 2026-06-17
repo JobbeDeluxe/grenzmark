@@ -317,6 +317,20 @@ func move_transport(g: int, dir: int) -> void:
 	transport_order[j] = tmp
 
 
+## Ware an die Spitze der Transport-Priorität setzen (#43, „ganz nach oben").
+func move_transport_top(g: int) -> void:
+	var i := transport_order.find(g)
+	if i <= 0:
+		return
+	transport_order.remove_at(i)
+	transport_order.insert(0, g)
+
+
+## Transport-Priorität auf die Standardreihenfolge zurücksetzen (#43, „zurücksetzen").
+func reset_transport_default() -> void:
+	transport_order = Tuning.transport_order_default()
+
+
 # --------------------------------------------------------------------------
 #  Synchronisation (nach jedem Bauen/Abreißen)
 # --------------------------------------------------------------------------
