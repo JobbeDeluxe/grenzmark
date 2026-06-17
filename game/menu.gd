@@ -192,13 +192,7 @@ func _build_settings_panel(box: Container) -> void:
 	# Waren an Flaggen: dicht gestapelt (Original) oder als übersichtliches Raster (#38).
 	_checkbox(inner, "Waren dicht stapeln (Original)", "goods_cluster_layout", true)
 
-	inner.add_child(HSeparator.new())
-	var map_title := Label.new()
-	map_title.text = "Karteneinstellungen"
-	UISkin.apply_label(map_title, false, 14)
-	inner.add_child(map_title)
-	_add_map_settings_controls(inner)
-
+	# Karteneinstellungen gehören nur ins "Neues Spiel"-Tab — hier raus.
 	inner.add_child(HSeparator.new())
 	_dev_section = VBoxContainer.new()
 	_dev_section.add_theme_constant_override("separation", roundi(6.0 * UISkin.ui_scale()))
