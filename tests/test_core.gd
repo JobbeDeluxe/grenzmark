@@ -61,6 +61,7 @@ func _initialize() -> void:
 	_test_building_needs_territory_margin()
 	_test_road_traffic_upgrade()
 	_test_swamp()
+	_test_mapgen_water_and_banks()
 	_test_tree_types_and_stone_stages()
 	_test_construction_stages()
 	_test_build_needs_connection()
@@ -2020,6 +2021,44 @@ func _test_swamp() -> void:
 			sm.set_tri(Vector2i(xx, yy), Grid.TRI_D, Terrain.SWAMP)
 	var ss := WorldState.new(sm)
 	_check(ss.compute_bq(10, 10) < WorldState.BQ_HUT, "Auf reinem Sumpf kein Gebäude")
+
+
+## Fisch-Teich (#59) + Wiesenufer/Gewässergröße (#58).
+func _test_mapgen_water_and_banks() -> void:
+	# #59: Jede generierte Karte hat fischbares Wasser — auch sonst trockene "flach"-Karten
+	# bekommen über _ensure_fishing_water mindestens einen Teich.
+	for s in [101, 202, 303, 404]:
+		var m := MapGenerator.generate(64, 64, s, {"map_type": "flach"})
+		var fish := 0
+		for yy in m.height:
+			for xx in m.width:
+				fish += m.fish_at(xx, yy)
+		_check(fish > 0, "MapGen flach Seed %d hat Fischgründe (%d)" % [s, fish])
+
+	# #58: Gewässer-Komponentengröße trennt Meer (groß) von Teich/Fluss (klein).
+	var map := _flat_map(40, 40)
+	var terr := PackedByteArray()
+	terr.resize(map.width * map.height)
+	for i in terr.size():
+		terr[i] = Terrain.MEADOW
+	# Kleiner Teich: zwei benachbarte Wasserknoten.
+	terr[map.idx(5, 5)] = Terrain.WATER
+	terr[map.idx(5, 6)] = Terrain.WATER
+	# Großes Gewässer: 11x11 Block (>= SEA_MIN_SIZE).
+	for yy in range(15, 26):
+		for xx in range(15, 26):
+			terr[map.idx(xx, yy)] = Terrain.WATER
+	var sizes := MapGenerator._water_region_sizes(map, terr)
+	_check(sizes[map.idx(5, 5)] == 2, "Gewässergröße: Teich = 2 Knoten")
+	_check(sizes[map.idx(20, 20)] >= MapGenerator.SEA_MIN_SIZE,
+		"Gewässergröße: Meer >= SEA_MIN_SIZE")
+
+	# Ufersand am kleinen Teich wird zu Wiese, am Meer bleibt er Sand.
+	terr[map.idx(6, 6)] = Terrain.SAND   # neben dem Teich
+	terr[map.idx(14, 20)] = Terrain.SAND # neben dem Meer
+	MapGenerator._grass_narrow_water_banks(map, terr, sizes)
+	_check(int(terr[map.idx(6, 6)]) == Terrain.MEADOW, "Fluss/Teich-Ufer wird Wiese")
+	_check(int(terr[map.idx(14, 20)]) == Terrain.SAND, "Meeresufer bleibt Sand")
 
 
 func _test_tree_types_and_stone_stages() -> void:

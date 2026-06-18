@@ -45,6 +45,18 @@ const ISLAND_LAND_MIN := 0.37     # Kontinentmaske darunter → versinkt Richtun
 const ISLAND_LAND_SPAN := 0.05    # Breite des Küsten-Übergangs (schmal = klare Küsten)
 const ISLAND_SEA_DEPTH := 12.0    # wie tief Nicht-Insel-Flächen abgesenkt werden
 const RIVER_BRANCH_CHANCE := 0.010
+# Flussufer (#58): abgestufter Hang statt Klippe. Banken steigen je Knoten um
+# RIVER_BANK_RISE Höheneinheiten über RIVER_BANK_WIDTH Knoten hinweg an.
+const RIVER_BANK_WIDTH := 3        # Knoten breiter Uferhang beidseits des Betts
+const RIVER_BANK_RISE := 1.6       # Höhenanstieg pro Uferknoten (kleiner = sanfter)
+# Gewässer-Größe (#58): schmale Gewässer (Flüsse, kleine Teiche) sind kleiner als
+# SEA_MIN_SIZE Knoten und bekommen Wiesenufer statt Strand; größere = Meer/See.
+const SEA_MIN_SIZE := 48
+const RIVER_BANK_GRASS_RADIUS := 2  # bis hierher wird Ufersand kleiner Gewässer zu Wiese
+# Fisch-Teich (#59): hat eine Karte weniger als diesen Wasseranteil, wird mindestens
+# ein kleiner Teich eingebrannt, damit es Fischgründe gibt.
+const MIN_WATER_FRACTION := 0.012
+const POND_RADIUS := 3              # Knoten-Radius der Not-Teiche
 
 # Gebirgs-Aufbau (#50/#51): additive Gipfel statt Plateau-Klemme.
 const MOUNTAIN_MASK_MIN := 0.50   # ab diesem Maskenwert beginnt Bergland
@@ -131,6 +143,9 @@ static func generate(width: int, height: int, seed: int = 12345, options: Dictio
 	elif map_type == "fluss":
 		_carve_rivers(map, seed)
 
+	# Fisch-Teich (#59): garantiert Fischgründe, falls die Karte zu trocken geriet.
+	_ensure_fishing_water(map, seed)
+
 	# Feuchtigkeits-Maske: niedrige, feuchte Flächen werden Sumpf (nicht bebaubar).
 	var wet := FastNoiseLite.new()
 	wet.noise_type = FastNoiseLite.TYPE_VALUE
@@ -141,7 +156,9 @@ static func generate(width: int, height: int, seed: int = 12345, options: Dictio
 	# Hex-Brushes auf Dreiecke malen. So entstehen Flaechen statt Zackenketten.
 	var node_terrain := _classify_node_terrain(map)
 	_smooth_node_terrain(map, node_terrain, 2)
-	_apply_shore_ring(map, node_terrain)
+	var water_region_size := _water_region_sizes(map, node_terrain)
+	_apply_shore_ring(map, node_terrain, water_region_size)
+	_grass_narrow_water_banks(map, node_terrain, water_region_size)
 	_apply_swamp(map, node_terrain, wet)
 	_seed_mountain_meadows(map, node_terrain, seed)
 	_paint_node_terrain(map, node_terrain)
@@ -195,13 +212,22 @@ static func _carve_stream(map: MapData, rng: RandomNumberGenerator, start: Vecto
 	for _step in length:
 		var px := int(round(pos.x))
 		var py := int(round(pos.y))
-		var r := int(ceil(width))
+		# Abgestufte Ufer (#58): Flussbett auf Wasserniveau, danach steigt der Boden
+		# je Knoten nur um RIVER_BANK_RISE an (sanfter Hang statt Klippe). mini() senkt
+		# nur ab — höher liegendes Land bleibt, sodass das Bett sich ins Gelände schmiegt.
+		var r := int(ceil(width)) + RIVER_BANK_WIDTH
 		for dy in range(-r, r + 1):
 			for dx in range(-r, r + 1):
 				var nx := px + dx
 				var ny := py + dy
-				if map.in_bounds(nx, ny) and Vector2(dx, dy).length() <= width:
+				if not map.in_bounds(nx, ny):
+					continue
+				var d := Vector2(dx, dy).length()
+				if d <= width:
 					map.set_height(nx, ny, mini(map.get_height(nx, ny), level))
+				elif d <= width + RIVER_BANK_WIDTH:
+					var bank := level + int(ceil((d - width) * RIVER_BANK_RISE))
+					map.set_height(nx, ny, mini(map.get_height(nx, ny), bank))
 		ang += rng.randf_range(-0.4, 0.4)
 		pos += Vector2(cos(ang), sin(ang))
 		if pos.x < 1 or pos.x > map.width - 2 or pos.y < 1 or pos.y > map.height - 2:
@@ -209,6 +235,51 @@ static func _carve_stream(map: MapData, rng: RandomNumberGenerator, start: Vecto
 		if may_branch and rng.randf() < RIVER_BRANCH_CHANCE:
 			_carve_stream(map, rng, pos, ang + rng.randf_range(-1.2, 1.2),
 				level, int(length * 0.5), false)
+
+
+## Fisch-Teich (#59): Manche Karten (v. a. "flach", hoher Seed) geraten fast wasserlos —
+## ohne Wasser keine Fischgründe. Liegt der Wasseranteil unter MIN_WATER_FRACTION,
+## brennen wir 1–2 kleine Teiche an geeigneten Landstellen (Wiesenhöhe, flach, fern vom
+## Rand) ein. Deterministisch über den Seed; Ufer werden später zu Wiese (kein Strand).
+static func _ensure_fishing_water(map: MapData, seed: int) -> void:
+	var water := 0
+	for y in map.height:
+		for x in map.width:
+			if map.get_height(x, y) < H_WATER_MAX:
+				water += 1
+	var total := map.width * map.height
+	if total > 0 and float(water) / float(total) >= MIN_WATER_FRACTION:
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed + 73
+	var level := maxi(0, int(H_WATER_MAX) - 1)
+	var placed := 0
+	for _try in 200:
+		if placed >= 2:
+			break
+		var px := rng.randi_range(POND_RADIUS + 2, map.width - POND_RADIUS - 3)
+		var py := rng.randi_range(POND_RADIUS + 2, map.height - POND_RADIUS - 3)
+		var h := map.get_height(px, py)
+		# Nur auf bebaubarer Wiesenhöhe und nicht dort, wo schon Wasser/Berg ist.
+		if h < int(H_SAND_MAX) or h >= int(H_MEADOW_MAX):
+			continue
+		_carve_pond(map, px, py, level)
+		placed += 1
+
+
+static func _carve_pond(map: MapData, px: int, py: int, level: int) -> void:
+	for dy in range(-POND_RADIUS, POND_RADIUS + 1):
+		for dx in range(-POND_RADIUS, POND_RADIUS + 1):
+			var nx := px + dx
+			var ny := py + dy
+			if not map.in_bounds(nx, ny):
+				continue
+			var d := Vector2(dx, dy).length()
+			if d <= POND_RADIUS - 1:
+				map.set_height(nx, ny, mini(map.get_height(nx, ny), level))
+			elif d <= POND_RADIUS:
+				# abgestuftes Ufer (analog Flüsse): kein Steilrand
+				map.set_height(nx, ny, mini(map.get_height(nx, ny), level + 1))
 
 
 ## Stabile String->Seed-Abbildung fuer Spieler-Seeds. Nicht Godots hash() nutzen:
@@ -520,7 +591,10 @@ static func _smooth_node_terrain(map: MapData, terrain: PackedByteArray, passes:
 			terrain[i] = next[i]
 
 
-static func _apply_shore_ring(map: MapData, terrain: PackedByteArray) -> void:
+## Strandsaum nur an GROSSEN Gewässern (#58): Meer/große Seen bekommen Sand, schmale
+## Flüsse/Teiche nicht — die behalten Wiesenufer (siehe _grass_narrow_water_banks).
+static func _apply_shore_ring(map: MapData, terrain: PackedByteArray,
+		region_size: PackedInt32Array) -> void:
 	var next := terrain.duplicate()
 	for y in map.height:
 		for x in map.width:
@@ -528,12 +602,96 @@ static func _apply_shore_ring(map: MapData, terrain: PackedByteArray) -> void:
 			var t := int(terrain[i])
 			if t == Terrain.WATER or t == Terrain.MOUNTAIN or t == Terrain.SNOW:
 				continue
-			if _node_neighbor_has_terrain(map, terrain, x, y, Terrain.WATER):
+			if _node_neighbor_has_large_water(map, terrain, region_size, x, y):
 				next[i] = Terrain.SAND
 			elif t == Terrain.SAND and not _node_neighbor_has_terrain(map, terrain, x, y, Terrain.WATER):
 				next[i] = Terrain.MEADOW
 	for i in terrain.size():
 		terrain[i] = next[i]
+
+
+## Wiesenufer an schmalen Gewässern (#58): wandelt Ufersand, der NUR an kleine Wasser-
+## komponenten (Flüsse/Teiche) grenzt, zurück zu Wiese. Sand an großen Gewässern bleibt.
+static func _grass_narrow_water_banks(map: MapData, terrain: PackedByteArray,
+		region_size: PackedInt32Array) -> void:
+	var next := terrain.duplicate()
+	for y in map.height:
+		for x in map.width:
+			var i := map.idx(x, y)
+			if int(terrain[i]) != Terrain.SAND:
+				continue
+			if _near_water_of_size(map, terrain, region_size, x, y,
+					RIVER_BANK_GRASS_RADIUS, false) \
+					and not _near_water_of_size(map, terrain, region_size, x, y,
+					RIVER_BANK_GRASS_RADIUS, true):
+				next[i] = Terrain.MEADOW
+	for i in terrain.size():
+		terrain[i] = next[i]
+
+
+## Flood-Fill der Wasserknoten: liefert je Knoten die Größe seiner Wasserkomponente
+## (0 für Land). So lassen sich Meer/See (groß) von Fluss/Teich (klein) trennen.
+static func _water_region_sizes(map: MapData, terrain: PackedByteArray) -> PackedInt32Array:
+	var size := PackedInt32Array()
+	size.resize(map.width * map.height)
+	var visited := PackedByteArray()
+	visited.resize(map.width * map.height)
+	for y in map.height:
+		for x in map.width:
+			var start := map.idx(x, y)
+			if int(terrain[start]) != Terrain.WATER or visited[start] != 0:
+				continue
+			var stack: Array[int] = [start]
+			var component: Array[int] = []
+			visited[start] = 1
+			while not stack.is_empty():
+				var cur: int = stack.pop_back()
+				component.append(cur)
+				var cx := cur % map.width
+				@warning_ignore("integer_division")
+				var cy := cur / map.width
+				for dir in Grid.DIRS:
+					var n := map.neighbor(cx, cy, dir)
+					if n.x < 0:
+						continue
+					var ni := map.idx(n.x, n.y)
+					if visited[ni] == 0 and int(terrain[ni]) == Terrain.WATER:
+						visited[ni] = 1
+						stack.append(ni)
+			for ci in component:
+				size[ci] = component.size()
+	return size
+
+
+static func _node_neighbor_has_large_water(map: MapData, terrain: PackedByteArray,
+		region_size: PackedInt32Array, x: int, y: int) -> bool:
+	for dir in Grid.DIRS:
+		var n := map.neighbor(x, y, dir)
+		if n.x < 0:
+			continue
+		var ni := map.idx(n.x, n.y)
+		if int(terrain[ni]) == Terrain.WATER and region_size[ni] >= SEA_MIN_SIZE:
+			return true
+	return false
+
+
+## Liegt in Hex-Reichweite r ein Wasserknoten, dessen Komponente groß (want_large=true)
+## bzw. klein (false) ist?
+static func _near_water_of_size(map: MapData, terrain: PackedByteArray,
+		region_size: PackedInt32Array, cx: int, cy: int, r: int, want_large: bool) -> bool:
+	var center := Vector2i(cx, cy)
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			var p := center + Vector2i(dx, dy)
+			if not map.in_bounds(p.x, p.y) or _hex_distance(center, p) > r:
+				continue
+			var ni := map.idx(p.x, p.y)
+			if int(terrain[ni]) != Terrain.WATER:
+				continue
+			var large := region_size[ni] >= SEA_MIN_SIZE
+			if large == want_large:
+				return true
+	return false
 
 
 static func _node_neighbor_has_terrain(map: MapData, terrain: PackedByteArray,
