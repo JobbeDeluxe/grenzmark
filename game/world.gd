@@ -15,7 +15,8 @@ const START_CLEAR_RADIUS := 4        # Bäume/Steine im HQ-Nahbereich roden (Sta
 const HQ_SPAWN_SALT := 0x48511       # Seed-Salz für reproduzierbare Spieler-Startvariation
 const PLAYER_ANCHOR_JITTER := 0.18   # Spieler-Start max. ~18% vom Zentrum versetzt
 const ENEMY_DIST_FRAC := 0.7         # Gegner zufällig aus den 70%+ entferntesten Plätzen
-const SPAWN_LAND_FRAC := 0.5         # Spawn nur auf Landmasse >= 50% der größten (#63)
+const SPAWN_BUILD_MIN := 300         # Spawn nur in zusammenhängender Baufläche >= so vielen
+                                     # Wiesen-Knoten (#63) — Platz für HQ + Wachhaus + Ausbau
 const TICK_HZ := 30.0
 const BUILD_TILE_SIZE := Vector2(92, 108)
 
@@ -243,10 +244,11 @@ func _place_headquarters() -> Vector2i:
 	var anchor := Vector2i(
 		int(round(map.width * (0.5 + rng.randf_range(-PLAYER_ANCHOR_JITTER, PLAYER_ANCHOR_JITTER)))),
 		int(round(map.height * (0.5 + rng.randf_range(-PLAYER_ANCHOR_JITTER, PLAYER_ANCHOR_JITTER)))))
-	# Spawn nur auf großer Landmasse (#63): kleine (Fluss-)Inseln sind abgeschnitten/
-	# unspielbar. Mindestgröße = Bruchteil der größten begehbaren Land-Komponente.
-	_land_comp = _land_component_sizes()
-	var min_land := int(_max_int(_land_comp) * SPAWN_LAND_FRAC)
+	# Spawn nur in großer zusammenhängender BAUFLÄCHE (#63): die bloße Begehbarkeit reicht
+	# nicht — über Berge/Ufer ist fast alles verbunden, der lokale Wiesenfleck kann winzig
+	# sein (kein Wachhaus baubar). Daher Flood-Fill über Wiesen-Knoten.
+	_land_comp = _buildable_region_sizes()
+	var min_land := mini(SPAWN_BUILD_MIN, _max_int(_land_comp))
 	var spot := _find_castle_spot_near(anchor, rng, min_land)
 	if spot.x < 0:  # Fallback: ab Mitte
 		spot = _find_castle_spot_near(Vector2i(map.width / 2, map.height / 2), rng, min_land)
@@ -331,9 +333,10 @@ func _clear_start_area(hq: Vector2i, radius: int) -> void:
 				map.set_height(p.x, p.y, nh)
 
 
-## Größe der begehbaren Land-Komponente je Knoten (#63), via Flood-Fill über begehbare
-## Knoten. So lassen sich kleine Inseln (kleine Komponente) vom Festland trennen.
-func _land_component_sizes() -> PackedInt32Array:
+## Größe der zusammenhängenden BAUFLÄCHE je Knoten (#63): Flood-Fill über Wiesen-Knoten
+## (alle umgebenden Dreiecke Wiese = solide bebaubar, Objekte werden ja gerodet). So zählt
+## nur echte Baufläche — ein über Berge/Ufer verbundener Mini-Wiesenfleck fällt durch.
+func _buildable_region_sizes() -> PackedInt32Array:
 	var sizes := PackedInt32Array()
 	sizes.resize(map.width * map.height)
 	var visited := PackedByteArray()
@@ -341,7 +344,7 @@ func _land_component_sizes() -> PackedInt32Array:
 	for y in map.height:
 		for x in map.width:
 			var s := map.idx(x, y)
-			if visited[s] != 0 or not state.node_walkable(x, y):
+			if visited[s] != 0 or not _node_all_terrain(Vector2i(x, y), Terrain.MEADOW):
 				continue
 			var stack: Array[int] = [s]
 			var comp: Array[int] = []
@@ -357,7 +360,7 @@ func _land_component_sizes() -> PackedInt32Array:
 					if n.x < 0:
 						continue
 					var ni := map.idx(n.x, n.y)
-					if visited[ni] == 0 and state.node_walkable(n.x, n.y):
+					if visited[ni] == 0 and _node_all_terrain(n, Terrain.MEADOW):
 						visited[ni] = 1
 						stack.append(ni)
 			for ci in comp:
@@ -576,7 +579,7 @@ func _place_enemy_at(spot: Vector2i, owner: int) -> void:
 ## hinreichend weit entfernten Plätzen (>= ENEMY_DIST_FRAC der Maximaldistanz zu allen
 ## bereits vergebenen Ankern). So variieren die Gegner-Spawns, bleiben aber fern.
 func _enemy_castle_spot(anchors: Array[Vector2i], rng: RandomNumberGenerator) -> Vector2i:
-	var min_land := int(_max_int(_land_comp) * SPAWN_LAND_FRAC)  # #63: keine Mini-Inseln
+	var min_land := mini(SPAWN_BUILD_MIN, _max_int(_land_comp))  # #63: keine Mini-Bauflächen
 	var cands: Array = []   # je Eintrag [pos, nearest_distance]
 	var max_nearest := 0
 	for y in range(2, map.height - 2):
