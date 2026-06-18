@@ -22,6 +22,11 @@ var show_ore_debug := false     # Dev/Test: unterirdische Erzvorkommen anzeigen
 # automatisch → pro Frame nur sichtbare Chunks. Terrain bleibt statisch (einmal je Chunk).
 const TERRAIN_CHUNK := 24       # Knoten je Chunk-Kante
 var _terrain_chunks: Array[Node2D] = []
+# Viewport-Culling (#30): nur den sichtbaren Weltausschnitt zeichnen; neu zeichnen, wenn
+# sich der Ausschnitt (Schwenk/Zoom) ändert. Spart auf großen Karten die GPU-Last für
+# off-screen Objekte/Territorium/Fog.
+var _cull_rect := Rect2()
+var _last_cull_rect := Rect2(-1e9, -1e9, 0, 0)
 
 var fog_enabled := false        # Nebel des Krieges an/aus (zum Testen)
 var show_build_spots := false   # Bauplätze einblenden (Leertaste)
@@ -79,6 +84,12 @@ func refresh_terrain() -> void:
 
 
 func _process(_delta: float) -> void:
+	# Viewport-Culling (#30): Bei Kamerabewegung/Zoom neu zeichnen, damit der gezeichnete
+	# (und damit pro Frame an die GPU gehende) Inhalt nur den sichtbaren Ausschnitt umfasst.
+	# Im Stillstand wird NICHT neu gezeichnet → die GPU rastert nur die sichtbaren Primitive.
+	var r := _visible_world_rect()
+	if not _rect_close(r, _last_cull_rect):
+		queue_redraw()
 	# Läuft ein budgetierter Bauplatz-Aufbau, Redraws erzwingen, damit er zügig fertig
 	# wird (statt an den unregelmäßigen dirty-Redraws zu hängen). Nur wenn das Overlay
 	# sichtbar ist — sonst pausiert der Aufbau, bis es wieder eingeblendet wird.
@@ -86,9 +97,58 @@ func _process(_delta: float) -> void:
 		queue_redraw()
 
 
+## Sichtbarer Weltausschnitt (+großzügiger Rand für hohe Sprites/Bäume). Berücksichtigt
+## Kamera-Schwenk und -Zoom über die Canvas-Transform des Viewports.
+func _visible_world_rect() -> Rect2:
+	var vp := get_viewport()
+	if vp == null:
+		return Rect2()
+	var inv := vp.get_canvas_transform().affine_inverse()
+	var vis := vp.get_visible_rect()
+	var c0 := inv * vis.position
+	var c1 := inv * Vector2(vis.end.x, vis.position.y)
+	var c2 := inv * Vector2(vis.position.x, vis.end.y)
+	var c3 := inv * vis.end
+	var r := Rect2(c0, Vector2.ZERO).expand(c1).expand(c2).expand(c3)
+	# Rand: seitlich/oben extra, weil Bäume/Gebäude deutlich über ihrem Fußknoten ragen.
+	return r.grow_individual(96.0, 200.0, 96.0, 96.0)
+
+
+func _rect_close(a: Rect2, b: Rect2) -> bool:
+	return a.position.distance_to(b.position) < 1.0 and a.size.distance_to(b.size) < 1.0
+
+
+## Sichtbarer Knotenbereich (für die ganzkartigen Schleifen Territorium/Fog).
+func _visible_node_range() -> Rect2i:
+	var map := state.map
+	if _cull_rect.size == Vector2.ZERO:  # Viewport nicht bereit → ganze Karte
+		return Rect2i(0, 0, map.width, map.height)
+	var minx := map.width
+	var miny := map.height
+	var maxx := 0
+	var maxy := 0
+	for c in [_cull_rect.position, Vector2(_cull_rect.end.x, _cull_rect.position.y),
+			Vector2(_cull_rect.position.x, _cull_rect.end.y), _cull_rect.end]:
+		var n := Grid.world_to_node_approx(c)
+		minx = mini(minx, n.x); maxx = maxi(maxx, n.x)
+		miny = mini(miny, n.y); maxy = maxi(maxy, n.y)
+	minx = clampi(minx - 2, 0, map.width)
+	miny = clampi(miny - 2, 0, map.height)
+	maxx = clampi(maxx + 2, 0, map.width)
+	maxy = clampi(maxy + 2, 0, map.height)
+	return Rect2i(minx, miny, maxi(maxx - minx, 0), maxi(maxy - miny, 0))
+
+
+func _in_view(p: Vector2) -> bool:
+	# Leeres Rechteck (Viewport noch nicht bereit) → nicht cullen (alles zeichnen).
+	return _cull_rect.size == Vector2.ZERO or _cull_rect.has_point(p)
+
+
 func _draw() -> void:
 	if state == null:
 		return
+	_cull_rect = _visible_world_rect()
+	_last_cull_rect = _cull_rect
 	# Terrain liegt in den Terrain-Chunks (show_behind_parent=true) — pro Chunk gezeichnet.
 	# Reihenfolge: Straßen zuerst (flach auf Boden), dann Objekte (Bäume davor), dann Gebäude.
 	_draw_roads()
@@ -99,10 +159,11 @@ func _draw() -> void:
 	# Gebäude/Flaggen pauschal über allen Bäumen, weil sie danach gezeichnet wurden.
 	_draw_billboards()
 	_draw_border()
-	# Baum-Okkluder für die Bauplatz-Overlays (werden über allem gezeichnet, müssen
-	# aber von davorstehenden Bäumen verdeckt werden).
-	_build_tree_occ()
 	if show_build_spots:
+		# Baum-Okkluder nur bauen, wenn Bauplatz-Overlays sichtbar sind (sonst unnötiger
+		# Voll-Scan aller Bäume je Redraw). Über allem gezeichnet, aber von davorstehenden
+		# Bäumen verdeckt.
+		_build_tree_occ()
 		_draw_build_spots()
 	if show_ore_debug:
 		_draw_ore_debug()
@@ -119,6 +180,8 @@ func _draw_billboards() -> void:
 		var x := int(i) % map.width
 		var y := int(i) / map.width
 		var p := map.node_world(x, y)
+		if not _in_view(p):
+			continue
 		var oi := int(map.objects[i])
 		items.append({ y = p.y, fn = func(): _paint_object(p, oi, x, y) })
 	# Feld-Deko (Issue #26): abgeerntete/verdorrte Felder, nicht-blockierende
@@ -127,19 +190,25 @@ func _draw_billboards() -> void:
 		var x := int(i) % map.width
 		var y := int(i) / map.width
 		var p := map.node_world(x, y)
+		if not _in_view(p):
+			continue
 		var kind := int(map.field_decay[i])
 		items.append({ y = p.y, fn = func(): _draw_field_decay(p, kind) })
 	for i in state.buildings:
 		var b: WorldState.Building = state.buildings[i]
-		var bp := map.node_world(b.pos.x, b.pos.y) + GameTheme.building_offset(b.def_id)
-		var foot := map.node_world(b.pos.x, b.pos.y).y
-		items.append({ y = foot, fn = func(): _paint_building(bp, b) })
+		var foot_p := map.node_world(b.pos.x, b.pos.y)
+		if not _in_view(foot_p):
+			continue
+		var bp := foot_p + GameTheme.building_offset(b.def_id)
+		items.append({ y = foot_p.y, fn = func(): _paint_building(bp, b) })
 		if b.owner != 0 and state.flag_at(b.flag_pos) == null:
 			var fp := map.node_world(b.flag_pos.x, b.flag_pos.y)
 			items.append({ y = fp.y, fn = func(): _paint_enemy_flag(fp) })
 	for i in state.flags:
 		var f: WorldState.Flag = state.flags[i]
 		var p := map.node_world(f.pos.x, f.pos.y)
+		if not _in_view(p):
+			continue
 		items.append({ y = p.y, fn = func(): _paint_own_flag(p, f) })
 	items.sort_custom(func(a, b): return a.y < b.y)
 	for it in items:
@@ -158,6 +227,8 @@ func _build_tree_occ() -> void:
 			continue
 		var x := int(i) % map.width
 		var y := int(i) / map.width
+		if not _in_view(map.node_world(x, y)):
+			continue
 		var spr := GameTheme.tree_sprite(map.tree_type_name(map.tree_type_at(x, y)),
 			map.tree_stage_at(x, y))
 		if spr.tex == null:
@@ -382,9 +453,9 @@ func _ore_debug_label(kind: int, amount: int) -> String:
 ## Nebel des Krieges: unerkundete Dreiecke abdunkeln.
 func _draw_fog() -> void:
 	var fog := Color(0.03, 0.03, 0.05, 0.92)
-	var map := state.map
-	for y in map.height:
-		for x in map.width:
+	var nr := _visible_node_range()
+	for y in range(nr.position.y, nr.position.y + nr.size.y + 1):
+		for x in range(nr.position.x, nr.position.x + nr.size.x + 1):
 			_fog_tri(x, y, Grid.TRI_R, fog)
 			_fog_tri(x, y, Grid.TRI_D, fog)
 
@@ -446,9 +517,9 @@ func _draw_tri_on(target: CanvasItem, x: int, y: int, kind: int) -> void:
 ## Gebiet gehören. So läuft die Farbgrenze durch die Nodes (Node zu Node) und
 ## die Fläche ist einfarbig — passend zum Hexagon-Besitz von Die Siedler.
 func _draw_territory() -> void:
-	var map := state.map
-	for y in map.height:
-		for x in map.width:
+	var nr := _visible_node_range()
+	for y in range(nr.position.y, nr.position.y + nr.size.y + 1):
+		for x in range(nr.position.x, nr.position.x + nr.size.x + 1):
 			_fill_owned_tri(x, y, Grid.TRI_R, state.territory, GameTheme.territory_color())
 			_fill_owned_tri(x, y, Grid.TRI_D, state.territory, GameTheme.territory_color())
 			_fill_owned_tri(x, y, Grid.TRI_R, state.enemy_territory, GameTheme.enemy_territory_color())
@@ -477,6 +548,9 @@ func _border_stones(owned: Dictionary, col: Color, owner: int) -> void:
 	for i in owned:
 		var x := int(i) % state.map.width
 		var y := int(i) / state.map.width
+		var p0 := state.map.node_world(x, y)
+		if not _in_view(p0):
+			continue
 		for dir in Grid.DIRS:
 			var nb := Grid.neighbor(x, y, dir)
 			if not state.map.in_bounds(nb.x, nb.y) or not owned.has(state.map.idx(nb.x, nb.y)):
