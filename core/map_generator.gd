@@ -6,7 +6,7 @@ extends RefCounted
 
 const TERRAIN_CLEANUP_PASSES := 2
 const STONE_CLUSTER_AREA := 1400
-const MAP_GENERATOR_VERSION := "grenzmark-map-v5"
+const MAP_GENERATOR_VERSION := "grenzmark-map-v6"
 const MOUNTAIN_MEADOW_PATCH_AREA := 1800
 const MOUNTAIN_MEADOW_RADIUS := 2
 const MOUNTAIN_MEADOW_MIN_SEPARATION := 10
@@ -36,8 +36,10 @@ const STEEP_MEADOW_MOUNTAIN_SLOPE := 4
 const ORE_DEPOSIT_MIN := 0.32       # darüber Vorkommen — deckt den Großteil der Berge ab
 const ORE_AMOUNT_MIN := 3
 const ORE_AMOUNT_SPAN := 9          # Menge 3..12, skaliert mit Aderstärke
-const ORE_GOLD_THRESHOLD := 0.628   # eigene Maske > Schwelle → Gold-Cluster (~9 %)
-const ORE_GRANITE_THRESHOLD := 0.607  # eigene Maske > Schwelle → Granit-Cluster (~15 %)
+# Schwellen für Vollland (v6) nachkalibriert: ohne Inselabfall tragen mehr/andere Berge
+# Erz, was Gold/Granit sonst auf ~16/18 % hob → Schwellen angehoben, Ziel weiter 9/15 %.
+const ORE_GOLD_THRESHOLD := 0.664   # eigene Maske > Schwelle → Gold-Cluster (~9 %)
+const ORE_GRANITE_THRESHOLD := 0.619  # eigene Maske > Schwelle → Granit-Cluster (~15 %)
 const ORE_COAL_IRON_SPLIT := 0.478  # Basis-Adern: darunter Kohle, darüber Eisen
 
 # Kartentyp-Modifikatoren (#27).
@@ -52,14 +54,23 @@ const RIVER_BANK_RISE := 1.6       # Höhenanstieg pro Uferknoten (kleiner = san
 # Gewässer-Größe (#58): schmale Gewässer (Flüsse, kleine Teiche) sind kleiner als
 # SEA_MIN_SIZE Knoten und bekommen Wiesenufer statt Strand; größere = Meer/See.
 const SEA_MIN_SIZE := 48
-const RIVER_BANK_GRASS_RADIUS := 2  # bis hierher wird Ufersand kleiner Gewässer zu Wiese
+# Sand fleckenweise (#58, wie Sumpf): Strand nur gebrochen am Meer, plus seltene
+# Wüsten-Flecken im Trockenen. Rauschmaske statt durchgehendem Höhenband.
+const SAND_PATCH_FREQ := 0.05
+const BEACH_PATCH_MIN := 0.50    # Anteil der Meeresküste, der Sand wird (Rest Wiese)
+const DESERT_PATCH_MIN := 0.82   # darüber seltener Wüstenfleck (höher = seltener)
+const DESERT_WATER_CLEARANCE := 3  # Wüste nur fern von Wasser (Hex-Reichweite)
 # Fisch-Teich (#59): hat eine Karte weniger als diesen Wasseranteil, wird mindestens
 # ein kleiner Teich eingebrannt, damit es Fischgründe gibt.
 const MIN_WATER_FRACTION := 0.012
 const POND_RADIUS := 3              # Knoten-Radius der Not-Teiche
 
 # Gebirgs-Aufbau (#50/#51): additive Gipfel statt Plateau-Klemme.
-const MOUNTAIN_MASK_MIN := 0.50   # ab diesem Maskenwert beginnt Bergland
+const MOUNTAIN_MASK_MIN := 0.50   # Insel: ab diesem Maskenwert beginnt Bergland
+# Vollland (#58): ohne Inselabfall würde fast die halbe Karte zu Gebirge. Höhere Schwelle
+# → diskrete Bergketten statt Berg-überall; das rollende Relief (#50) bleibt (kommt aus
+# Basis+Hügeln, nicht aus dieser Maske).
+const MOUNTAIN_MASK_MIN_INLAND := 0.76
 const MOUNTAIN_PEAK_EXP := 1.3    # Potenzkurve: konzentriert Höhe Richtung Gipfel
 const MOUNTAIN_PEAK_AMP := 65.0   # max. Gipfelanhebung über dem Grundland
 const MOUNTAIN_ROUGHNESS := 9.0   # Zerklüftung der Gipfel (feines Detail)
@@ -100,10 +111,15 @@ static func generate(width: int, height: int, seed: int = 12345, options: Dictio
 	mountain.fractal_octaves = 4
 	mountain.fractal_gain = 0.5
 
-	# Randabfall zum Wasser hin (Inselform) — sanft, damit viel Land bleibt.
+	# Kartenform (#58): NUR "insel" bekommt den radialen Randabfall (Archipel). "flach"/
+	# "fluss" füllen die Karte mit Land (Wasser nur aus Flüssen/Not-Teich) — der alte
+	# globale Abfall ertränkte v. a. breite Karten (256x128 → ~83% Wasser → sah aus wie
+	# Inseln statt Flüsse). Pro Achse normiert (dx/cx, dy/cy), damit der Inselabfall vom
+	# Seitenverhältnis unabhängig ist; quadratische Inselkarten bleiben wie zuvor (cx==cy).
+	var map_type := String(options.get("map_type", DEFAULT_MAP_TYPE)).to_lower()
+	var island_shape := map_type == "insel"
 	var cx := width * 0.5
 	var cy := height * 0.5
-	var max_r := minf(cx, cy)
 
 	for y in height:
 		for x in width:
@@ -113,20 +129,23 @@ static func generate(width: int, height: int, seed: int = 12345, options: Dictio
 			var hill_n := hills.get_noise_2d(x, y) * 0.5 + 0.5
 			var det_n := detail.get_noise_2d(x, y) * 0.5 + 0.5
 			var n := base_n * 0.55 + hill_n * 0.35 + det_n * 0.10
-			var dx := (x - cx) / max_r
-			var dy := (y - cy) / max_r
-			var dist: float = sqrt(dx * dx + dy * dy)
-			var falloff: float = clampf(1.18 - dist, 0.0, 1.0)
+			var falloff: float = 1.0
+			if island_shape:
+				var dx := (x - cx) / cx
+				var dy := (y - cy) / cy
+				var dist: float = sqrt(dx * dx + dy * dy)
+				falloff = clampf(1.18 - dist, 0.0, 1.0)
 			var h: float = n * falloff * LAND_AMP   # Grundland 0..~LAND_AMP
 			# Gebirge (#50/#51): NICHT mehr auf ein flaches Plateau klemmen (das erzeugte
 			# Berge wie Tafelberge mit Steilkante rundum und flacher Schneefläche). Wie in
 			# RTTRs Generator wird die Höhe stattdessen additiv zu echten Gipfeln angehoben:
 			# eine Potenzkurve konzentriert die Höhe auf den Maskenkern, sodass die Flanken
 			# stetig abfallen (keine Ringklippe) und nur die Spitzen die Schnee-Höhe erreichen.
+			var mtn_min: float = MOUNTAIN_MASK_MIN if island_shape else MOUNTAIN_MASK_MIN_INLAND
 			if falloff > 0.3:
 				var mn: float = mountain.get_noise_2d(x, y) * 0.5 + 0.5
-				if mn > MOUNTAIN_MASK_MIN:
-					var b: float = (mn - MOUNTAIN_MASK_MIN) / (1.0 - MOUNTAIN_MASK_MIN)  # 0..1
+				if mn > mtn_min:
+					var b: float = (mn - mtn_min) / (1.0 - mtn_min)  # 0..1
 					var peak: float = pow(b, MOUNTAIN_PEAK_EXP) * MOUNTAIN_PEAK_AMP
 					# Zerklüftung: feines Detail nur auf Bergen, damit Gipfel keine glatten
 					# Kuppeln sind. Mit b skaliert → am Fuß sanft, oben schroff.
@@ -137,7 +156,6 @@ static func generate(width: int, height: int, seed: int = 12345, options: Dictio
 	# Kartentyp (#27): Höhen vor der Klassifizierung anpassen. "flach" lässt sie wie sie
 	# sind; "insel" senkt Bereiche mit niedriger Kontinentmaske unter den Meeresspiegel
 	# (Archipel); "fluss" gräbt gewundene Wasserläufe ein.
-	var map_type := String(options.get("map_type", DEFAULT_MAP_TYPE)).to_lower()
 	if map_type == "insel":
 		_apply_island_mask(map, seed)
 	elif map_type == "fluss":
@@ -157,8 +175,7 @@ static func generate(width: int, height: int, seed: int = 12345, options: Dictio
 	var node_terrain := _classify_node_terrain(map)
 	_smooth_node_terrain(map, node_terrain, 2)
 	var water_region_size := _water_region_sizes(map, node_terrain)
-	_apply_shore_ring(map, node_terrain, water_region_size)
-	_grass_narrow_water_banks(map, node_terrain, water_region_size)
+	_apply_sand_patches(map, node_terrain, water_region_size, seed)
 	_apply_swamp(map, node_terrain, wet)
 	_seed_mountain_meadows(map, node_terrain, seed)
 	_paint_node_terrain(map, node_terrain)
@@ -503,10 +520,10 @@ static func _classify_node_terrain(map: MapData) -> PackedByteArray:
 		for x in map.width:
 			var h := _smoothed_node_height(map, x, y)
 			var t: int
+			# Kein Sand-Höhenband mehr (#58): niedriges Land ist Wiese; Sand entsteht
+			# nur noch fleckenweise (_apply_sand_patches: Strandflecken + Wüste).
 			if h < H_WATER_MAX:
 				t = Terrain.WATER
-			elif h < H_SAND_MAX:
-				t = Terrain.SAND
 			elif h < H_MEADOW_MAX:
 				t = Terrain.MEADOW
 			elif h < H_SNOW_MIN:
@@ -591,40 +608,32 @@ static func _smooth_node_terrain(map: MapData, terrain: PackedByteArray, passes:
 			terrain[i] = next[i]
 
 
-## Strandsaum nur an GROSSEN Gewässern (#58): Meer/große Seen bekommen Sand, schmale
-## Flüsse/Teiche nicht — die behalten Wiesenufer (siehe _grass_narrow_water_banks).
-static func _apply_shore_ring(map: MapData, terrain: PackedByteArray,
-		region_size: PackedInt32Array) -> void:
+## Sand fleckenweise statt flächig (#58, wie vom Spieler gewünscht): KEIN durchgehender
+## Strandsaum mehr. Stattdessen zwei rauschgesteuerte Quellen, analog zum Sumpf:
+##  (a) gebrochene Strandflecken nur an GROSSEN Gewässern (Meer/große Seen),
+##  (b) seltene Wüsten-Flecken im Trockenen, fern von Wasser (S2 hat Wüste/Savanne).
+## Flüsse/Teiche behalten dadurch Wiesenufer.
+static func _apply_sand_patches(map: MapData, terrain: PackedByteArray,
+		region_size: PackedInt32Array, seed: int) -> void:
+	var sand := FastNoiseLite.new()
+	sand.noise_type = FastNoiseLite.TYPE_VALUE
+	sand.seed = seed + 23
+	sand.frequency = SAND_PATCH_FREQ
+	sand.fractal_type = FastNoiseLite.FRACTAL_FBM
+	sand.fractal_octaves = 3
 	var next := terrain.duplicate()
 	for y in map.height:
 		for x in map.width:
 			var i := map.idx(x, y)
-			var t := int(terrain[i])
-			if t == Terrain.WATER or t == Terrain.MOUNTAIN or t == Terrain.SNOW:
+			if int(terrain[i]) != Terrain.MEADOW:
 				continue
+			var s: float = sand.get_noise_2d(x, y) * 0.5 + 0.5
 			if _node_neighbor_has_large_water(map, terrain, region_size, x, y):
-				next[i] = Terrain.SAND
-			elif t == Terrain.SAND and not _node_neighbor_has_terrain(map, terrain, x, y, Terrain.WATER):
-				next[i] = Terrain.MEADOW
-	for i in terrain.size():
-		terrain[i] = next[i]
-
-
-## Wiesenufer an schmalen Gewässern (#58): wandelt Ufersand, der NUR an kleine Wasser-
-## komponenten (Flüsse/Teiche) grenzt, zurück zu Wiese. Sand an großen Gewässern bleibt.
-static func _grass_narrow_water_banks(map: MapData, terrain: PackedByteArray,
-		region_size: PackedInt32Array) -> void:
-	var next := terrain.duplicate()
-	for y in map.height:
-		for x in map.width:
-			var i := map.idx(x, y)
-			if int(terrain[i]) != Terrain.SAND:
-				continue
-			if _near_water_of_size(map, terrain, region_size, x, y,
-					RIVER_BANK_GRASS_RADIUS, false) \
-					and not _near_water_of_size(map, terrain, region_size, x, y,
-					RIVER_BANK_GRASS_RADIUS, true):
-				next[i] = Terrain.MEADOW
+				if s > BEACH_PATCH_MIN:          # gebrochener Strand am Meer
+					next[i] = Terrain.SAND
+			elif s > DESERT_PATCH_MIN \
+					and not _water_within_radius(map, terrain, x, y, DESERT_WATER_CLEARANCE):
+				next[i] = Terrain.SAND           # seltener Wüstenfleck im Trockenen
 	for i in terrain.size():
 		terrain[i] = next[i]
 
@@ -672,25 +681,6 @@ static func _node_neighbor_has_large_water(map: MapData, terrain: PackedByteArra
 		var ni := map.idx(n.x, n.y)
 		if int(terrain[ni]) == Terrain.WATER and region_size[ni] >= SEA_MIN_SIZE:
 			return true
-	return false
-
-
-## Liegt in Hex-Reichweite r ein Wasserknoten, dessen Komponente groß (want_large=true)
-## bzw. klein (false) ist?
-static func _near_water_of_size(map: MapData, terrain: PackedByteArray,
-		region_size: PackedInt32Array, cx: int, cy: int, r: int, want_large: bool) -> bool:
-	var center := Vector2i(cx, cy)
-	for dy in range(-r, r + 1):
-		for dx in range(-r, r + 1):
-			var p := center + Vector2i(dx, dy)
-			if not map.in_bounds(p.x, p.y) or _hex_distance(center, p) > r:
-				continue
-			var ni := map.idx(p.x, p.y)
-			if int(terrain[ni]) != Terrain.WATER:
-				continue
-			var large := region_size[ni] >= SEA_MIN_SIZE
-			if large == want_large:
-				return true
 	return false
 
 

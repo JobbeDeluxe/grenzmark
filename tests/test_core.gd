@@ -2003,8 +2003,10 @@ func _test_swamp() -> void:
 	# Eigenschaften des Terrains.
 	_check(Terrain.is_walkable(Terrain.SWAMP), "Sumpf ist begehbar (Straßen/Träger)")
 	_check(not Terrain.is_buildable(Terrain.SWAMP), "Sumpf ist NICHT bebaubar")
-	# Der Generator erzeugt tatsächlich Sumpf auf der echten Karte.
-	var map := MapGenerator.generate(96, 96, 1337)
+	# Der Generator erzeugt tatsächlich Sumpf auf der echten Karte. Sumpf bildet sich nur
+	# in Ufernähe (#50-Folge) — auf "flach" gibt es ab v6 kaum Wasser, daher eine
+	# wasserführende "fluss"-Karte für den Nachweis.
+	var map := MapGenerator.generate(96, 96, 1337, {"map_type": "fluss"})
 	var swamp := 0
 	for yy in map.height:
 		for xx in map.width:
@@ -2036,7 +2038,7 @@ func _test_mapgen_water_and_banks() -> void:
 		_check(fish > 0, "MapGen flach Seed %d hat Fischgründe (%d)" % [s, fish])
 
 	# #58: Gewässer-Komponentengröße trennt Meer (groß) von Teich/Fluss (klein).
-	var map := _flat_map(40, 40)
+	var map := _flat_map(60, 60)
 	var terr := PackedByteArray()
 	terr.resize(map.width * map.height)
 	for i in terr.size():
@@ -2044,21 +2046,36 @@ func _test_mapgen_water_and_banks() -> void:
 	# Kleiner Teich: zwei benachbarte Wasserknoten.
 	terr[map.idx(5, 5)] = Terrain.WATER
 	terr[map.idx(5, 6)] = Terrain.WATER
-	# Großes Gewässer: 11x11 Block (>= SEA_MIN_SIZE).
-	for yy in range(15, 26):
-		for xx in range(15, 26):
+	# Großes Gewässer: 30x30 Block (>= SEA_MIN_SIZE, lange Küste für Rausch-Variation).
+	for yy in range(15, 45):
+		for xx in range(15, 45):
 			terr[map.idx(xx, yy)] = Terrain.WATER
 	var sizes := MapGenerator._water_region_sizes(map, terr)
 	_check(sizes[map.idx(5, 5)] == 2, "Gewässergröße: Teich = 2 Knoten")
 	_check(sizes[map.idx(20, 20)] >= MapGenerator.SEA_MIN_SIZE,
 		"Gewässergröße: Meer >= SEA_MIN_SIZE")
 
-	# Ufersand am kleinen Teich wird zu Wiese, am Meer bleibt er Sand.
-	terr[map.idx(6, 6)] = Terrain.SAND   # neben dem Teich
-	terr[map.idx(14, 20)] = Terrain.SAND # neben dem Meer
-	MapGenerator._grass_narrow_water_banks(map, terr, sizes)
-	_check(int(terr[map.idx(6, 6)]) == Terrain.MEADOW, "Fluss/Teich-Ufer wird Wiese")
-	_check(int(terr[map.idx(14, 20)]) == Terrain.SAND, "Meeresufer bleibt Sand")
+	# Sand fleckenweise (#58): _apply_sand_patches macht NUR an großen Gewässern (gebrochen)
+	# bzw. als seltene Wüste Sand — schmale Teiche/Flüsse behalten Wiesenufer.
+	MapGenerator._apply_sand_patches(map, terr, sizes, 12345)
+	# Direkt am kleinen Teich darf kein Strand entstehen.
+	var pond_bank_sand := 0
+	for d in [Vector2i(4,5), Vector2i(6,5), Vector2i(4,6), Vector2i(6,6), Vector2i(5,4), Vector2i(5,7)]:
+		if int(terr[map.idx(d.x, d.y)]) == Terrain.SAND:
+			pond_bank_sand += 1
+	_check(pond_bank_sand == 0, "Teich-Ufer bleibt strandfrei (Wiese)")
+	# Am Meer entsteht GEBROCHENER Strand: einige Küstenknoten Sand, aber nicht alle.
+	var coast := 0
+	var coast_sand := 0
+	for yy in range(14, 46):
+		for xx in range(14, 46):
+			if int(terr[map.idx(xx, yy)]) != Terrain.WATER \
+					and MapGenerator._node_neighbor_has_large_water(map, terr, sizes, xx, yy):
+				coast += 1
+				if int(terr[map.idx(xx, yy)]) == Terrain.SAND:
+					coast_sand += 1
+	_check(coast_sand > 0 and coast_sand < coast,
+		"Meeresküste hat gebrochenen Strand (%d/%d Sand)" % [coast_sand, coast])
 
 
 func _test_tree_types_and_stone_stages() -> void:
