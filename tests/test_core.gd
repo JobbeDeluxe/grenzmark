@@ -62,6 +62,7 @@ func _initialize() -> void:
 	_test_road_traffic_upgrade()
 	_test_swamp()
 	_test_mapgen_water_and_banks()
+	_test_start_clearing_enables_roads()
 	_test_tree_types_and_stone_stages()
 	_test_construction_stages()
 	_test_build_needs_connection()
@@ -2076,6 +2077,30 @@ func _test_mapgen_water_and_banks() -> void:
 					coast_sand += 1
 	_check(coast_sand > 0 and coast_sand < coast,
 		"Meeresküste hat gebrochenen Strand (%d/%d Sand)" % [coast_sand, coast])
+
+
+## Startlichtung (#61): eine von Bäumen umschlossene Flagge kann keine Straße bauen;
+## nach dem Roden der Nachbarknoten geht es wieder. Modelliert den „Wald vorm HQ"-Bug.
+func _test_start_clearing_enables_roads() -> void:
+	var map := _flat_map(24, 24)
+	var st := WorldState.new(map)
+	var a := Vector2i(10, 10)
+	var b := Vector2i(14, 10)
+	st.ensure_flag(a.x, a.y, 0)
+	st.ensure_flag(b.x, b.y, 0)
+	_check(st.can_build_road(a, b), "Straße auf freiem Land baubar (Kontrolle)")
+	# Flagge A komplett mit Bäumen einkesseln → kein Ausgang mehr.
+	var ring: Array[Vector2i] = []
+	for dir in Grid.DIRS:
+		var n := map.neighbor(a.x, a.y, dir)
+		if n.x >= 0:
+			ring.append(n)
+			map.set_map_object(n.x, n.y, MapData.MO_TREE)
+	_check(not st.can_build_road(a, b), "Von Bäumen umschlossene Flagge: keine Straße (Bug)")
+	# „Roden" wie _clear_start_area: Objekte entfernen.
+	for n in ring:
+		map.clear_map_object(n.x, n.y)
+	_check(st.can_build_road(a, b), "Nach Roden der Startlichtung: Straße wieder baubar")
 
 
 func _test_tree_types_and_stone_stages() -> void:

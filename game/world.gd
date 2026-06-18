@@ -10,6 +10,11 @@ const MAP_H := 96
 const MAP_SEED := 1337
 const DEFAULT_ENEMY_COUNT := 1
 const MAX_ENEMY_COUNT := 5
+# Startplatzierung (#60/#61).
+const START_CLEAR_RADIUS := 3        # Bäume/Steine im HQ-Nahbereich roden (Startlichtung)
+const HQ_SPAWN_SALT := 0x48511       # Seed-Salz für reproduzierbare Spieler-Startvariation
+const PLAYER_ANCHOR_JITTER := 0.18   # Spieler-Start max. ~18% vom Zentrum versetzt
+const ENEMY_DIST_FRAC := 0.7         # Gegner zufällig aus den 70%+ entferntesten Plätzen
 const TICK_HZ := 30.0
 const BUILD_TILE_SIZE := Vector2(92, 108)
 
@@ -228,20 +233,79 @@ func _wire_world() -> void:
 
 func _place_headquarters() -> Vector2i:
 	var hq_def := BuildingCatalog.get_def("hq")
-	var cx := map.width / 2
-	var cy := map.height / 2
+	var rng := RandomNumberGenerator.new()
+	rng.seed = map_seed_value ^ HQ_SPAWN_SALT
+	# Spieler-Startanker zufällig im Inneren versetzen (#60): seed-deterministisch, nicht
+	# exakt Mitte, aber klar im Inneren (max ~PLAYER_ANCHOR_JITTER vom Zentrum weg).
+	var anchor := Vector2i(
+		int(round(map.width * (0.5 + rng.randf_range(-PLAYER_ANCHOR_JITTER, PLAYER_ANCHOR_JITTER)))),
+		int(round(map.height * (0.5 + rng.randf_range(-PLAYER_ANCHOR_JITTER, PLAYER_ANCHOR_JITTER)))))
+	var spot := _find_castle_spot_near(anchor, rng)
+	if spot.x < 0:  # Fallback: alte Suche ab Mitte
+		spot = _find_castle_spot_near(Vector2i(map.width / 2, map.height / 2), rng)
+	if spot.x < 0:
+		return Vector2i(-1, -1)
+	_clear_start_area(spot, START_CLEAR_RADIUS)  # #61: Startlichtung für Flagge/Straßen
+	var b := state.place_building(spot.x, spot.y, WorldState.BQ_CASTLE, true,
+		"hq", int(hq_def.get("influence", 9)), false)
+	if b == null:
+		return Vector2i(-1, -1)
+	b.garrison = 6
+	b.capacity = 6
+	return spot
+
+
+## Sucht ab einem Anker spiralförmig nach außen einen burgfähigen Platz. Im ersten Ring
+## mit Treffern wird der OFFENSTE (wenigste Objekte ringsum) gewählt — leicht zufällig bei
+## Gleichstand. So variiert der Start (#60) und liegt möglichst auf freier Wiese.
+func _find_castle_spot_near(anchor: Vector2i, rng: RandomNumberGenerator) -> Vector2i:
 	for r in range(0, maxi(map.width, map.height)):
+		var ring: Array[Vector2i] = []
 		for dy in range(-r, r + 1):
 			for dx in range(-r, r + 1):
-				var x := cx + dx
-				var y := cy + dy
-				if state.can_place_building(x, y, WorldState.BQ_CASTLE):
-					var b := state.place_building(x, y, WorldState.BQ_CASTLE, true,
-						"hq", int(hq_def.get("influence", 9)), false)
-					b.garrison = 6
-					b.capacity = 6
-					return Vector2i(x, y)
+				if maxi(absi(dx), absi(dy)) != r:
+					continue
+				var x := anchor.x + dx
+				var y := anchor.y + dy
+				if map.in_bounds(x, y) and state.can_place_building(x, y, WorldState.BQ_CASTLE):
+					ring.append(Vector2i(x, y))
+		if ring.is_empty():
+			continue
+		var best := Vector2i(-1, -1)
+		var best_score := -1
+		for p in ring:
+			var score := _start_openness(p) * 2 + rng.randi_range(0, 3)
+			if score > best_score:
+				best_score = score
+				best = p
+		return best
 	return Vector2i(-1, -1)
+
+
+## Maß für freie Startfläche: Anzahl objektfreier, begehbarer Knoten in Hex-Reichweite 3.
+func _start_openness(pos: Vector2i) -> int:
+	var free := 0
+	for dy in range(-3, 4):
+		for dx in range(-3, 4):
+			var p := pos + Vector2i(dx, dy)
+			if not map.in_bounds(p.x, p.y) or WorldState.hex_distance(pos, p) > 3:
+				continue
+			if not state.has_object(p.x, p.y) and state.node_walkable(p.x, p.y):
+				free += 1
+	return free
+
+
+## Startlichtung (#61): rodet Bäume/Steine im Nahbereich des HQ, damit Eingangsflagge und
+## erste Straßen immer möglich sind (S2-nah). Erz (unterirdisch, auf Bergen) bleibt.
+func _clear_start_area(hq: Vector2i, radius: int) -> void:
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var p := hq + Vector2i(dx, dy)
+			if not map.in_bounds(p.x, p.y) or WorldState.hex_distance(hq, p) > radius:
+				continue
+			var o := map.map_object(p.x, p.y)
+			if o == MapData.MO_TREE or o == MapData.MO_STONE:
+				map.clear_map_object(p.x, p.y)
 
 
 ## Testteich im Startgebiet: klein genug, um Bauland nicht zu ruinieren, nah genug
@@ -420,13 +484,16 @@ func _cycle_ai() -> void:
 
 
 func _place_enemies(player_hq: Vector2i) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = map_seed_value ^ 0x51517   # eigenes Salz → von der Spielerwahl entkoppelt
 	var anchors: Array[Vector2i] = []
 	if player_hq.x >= 0:
 		anchors.append(player_hq)
 	for owner in range(1, map_enemy_count + 1):
-		var spot := _enemy_castle_spot(anchors)
+		var spot := _enemy_castle_spot(anchors, rng)
 		if spot.x < 0:
 			break
+		_clear_start_area(spot, START_CLEAR_RADIUS)  # #61: Startlichtung auch für Gegner
 		_place_enemy_at(spot, owner)
 		anchors.append(spot)
 
@@ -441,9 +508,12 @@ func _place_enemy_at(spot: Vector2i, owner: int) -> void:
 			break
 
 
-func _enemy_castle_spot(anchors: Array[Vector2i]) -> Vector2i:
-	var best := Vector2i(-1, -1)
-	var best_score := -1
+## Gegner-Burgplatz (#60): nicht mehr strikt der weiteste, sondern zufällig unter den
+## hinreichend weit entfernten Plätzen (>= ENEMY_DIST_FRAC der Maximaldistanz zu allen
+## bereits vergebenen Ankern). So variieren die Gegner-Spawns, bleiben aber fern.
+func _enemy_castle_spot(anchors: Array[Vector2i], rng: RandomNumberGenerator) -> Vector2i:
+	var cands: Array = []   # je Eintrag [pos, nearest_distance]
+	var max_nearest := 0
 	for y in range(2, map.height - 2):
 		for x in range(2, map.width - 2):
 			if state._occ(x, y) != WorldState.OBJ_NONE:
@@ -451,17 +521,23 @@ func _enemy_castle_spot(anchors: Array[Vector2i]) -> Vector2i:
 			if state.compute_bq(x, y) < WorldState.BQ_CASTLE:
 				continue
 			var p := Vector2i(x, y)
-			var nearest := 1 << 30
-			var total := 0
-			for a in anchors:
-				var d := WorldState.hex_distance(p, a)
-				nearest = mini(nearest, d)
-				total += d
-			var score := nearest * 1000 + total
-			if score > best_score:
-				best_score = score
-				best = p
-	return best
+			var nearest := 0
+			if not anchors.is_empty():
+				nearest = 1 << 30
+				for a in anchors:
+					nearest = mini(nearest, WorldState.hex_distance(p, a))
+			cands.append([p, nearest])
+			max_nearest = maxi(max_nearest, nearest)
+	if cands.is_empty():
+		return Vector2i(-1, -1)
+	var threshold := int(max_nearest * ENEMY_DIST_FRAC)
+	var far: Array[Vector2i] = []
+	for c in cands:
+		if int(c[1]) >= threshold:
+			far.append(c[0])
+	if far.is_empty():
+		return cands[0][0]
+	return far[rng.randi_range(0, far.size() - 1)]
 
 
 ## Gegner-HQ auf dem weitest entfernten Burg-Platz vom Spieler (immer auf Land).
