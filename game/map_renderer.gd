@@ -16,7 +16,12 @@ const ROAD_TILE := 48.0    # Kachellänge der Straßentextur entlang des Wegs
 var state: WorldState
 var _font: Font = ThemeDB.fallback_font
 var show_ore_debug := false     # Dev/Test: unterirdische Erzvorkommen anzeigen
-var _terrain_layer: Node2D   # zeichnet Terrain einmalig; nie neu zeichnen da Terrain statisch
+# Terrain-Chunks (#30): Statt EINES CanvasItems über die ganze Karte (auf 256x128 =
+# ~65k Polygone, die jedes Frame an die GPU gehen) wird das statische Terrain in ein
+# Raster aus Chunk-Node2Ds zerlegt. Godot cullt off-screen Chunks über ihre Item-Box
+# automatisch → pro Frame nur sichtbare Chunks. Terrain bleibt statisch (einmal je Chunk).
+const TERRAIN_CHUNK := 24       # Knoten je Chunk-Kante
+var _terrain_chunks: Array[Node2D] = []
 
 var fog_enabled := false        # Nebel des Krieges an/aus (zum Testen)
 var show_build_spots := false   # Bauplätze einblenden (Leertaste)
@@ -40,14 +45,37 @@ func setup(world_state: WorldState) -> void:
 	state = world_state
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST  # eigene Texturen scharf
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	_terrain_layer = Node2D.new()
-	_terrain_layer.show_behind_parent = true
-	_terrain_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_terrain_layer.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	_terrain_layer.draw.connect(_on_terrain_layer_draw)
-	add_child(_terrain_layer)
-	_terrain_layer.queue_redraw()
+	_build_terrain_chunks()
 	queue_redraw()
+
+
+## Legt das Terrain-Chunk-Raster an (#30). Jeder Chunk zeichnet nur seinen Knotenbereich;
+## off-screen Chunks werden von Godot automatisch gecullt.
+func _build_terrain_chunks() -> void:
+	for c in _terrain_chunks:
+		c.queue_free()
+	_terrain_chunks.clear()
+	if state == null:
+		return
+	var map := state.map
+	var cols := int(ceil(float(map.width) / float(TERRAIN_CHUNK)))
+	var rows := int(ceil(float(map.height) / float(TERRAIN_CHUNK)))
+	for cy in rows:
+		for cx in cols:
+			var chunk := Node2D.new()
+			chunk.show_behind_parent = true
+			chunk.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			chunk.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+			chunk.draw.connect(_draw_terrain_chunk.bind(chunk, cx * TERRAIN_CHUNK, cy * TERRAIN_CHUNK))
+			add_child(chunk)
+			_terrain_chunks.append(chunk)
+			chunk.queue_redraw()
+
+
+## Zeichnet das Terrain neu (z. B. nach Geländeänderungen wie dem Test-Teich).
+func refresh_terrain() -> void:
+	for c in _terrain_chunks:
+		c.queue_redraw()
 
 
 func _process(_delta: float) -> void:
@@ -61,7 +89,7 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	if state == null:
 		return
-	# Terrain liegt im _terrain_layer (show_behind_parent=true) — nur einmal gezeichnet.
+	# Terrain liegt in den Terrain-Chunks (show_behind_parent=true) — pro Chunk gezeichnet.
 	# Reihenfolge: Straßen zuerst (flach auf Boden), dann Objekte (Bäume davor), dann Gebäude.
 	_draw_roads()
 	_draw_entrance_paths()
@@ -374,16 +402,18 @@ func _fog_tri(x: int, y: int, kind: int, col: Color) -> void:
 
 
 # --- Terrain (scharf, flach pro Dreieck) ---------------------------------
-# Terrain wird einmalig auf _terrain_layer gezeichnet; nie neu zeichnen!
+# Terrain je Chunk gezeichnet (#30); statisch, nur bei Geländeänderung neu.
 
-func _on_terrain_layer_draw() -> void:
+func _draw_terrain_chunk(chunk: Node2D, x0: int, y0: int) -> void:
 	if state == null:
 		return
 	var map := state.map
-	for y in map.height:
-		for x in map.width:
-			_draw_tri_on(_terrain_layer, x, y, Grid.TRI_R)
-			_draw_tri_on(_terrain_layer, x, y, Grid.TRI_D)
+	var x1 := mini(x0 + TERRAIN_CHUNK, map.width)
+	var y1 := mini(y0 + TERRAIN_CHUNK, map.height)
+	for y in range(y0, y1):
+		for x in range(x0, x1):
+			_draw_tri_on(chunk, x, y, Grid.TRI_R)
+			_draw_tri_on(chunk, x, y, Grid.TRI_D)
 
 
 func _draw_tri_on(target: CanvasItem, x: int, y: int, kind: int) -> void:

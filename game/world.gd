@@ -207,6 +207,7 @@ func _new_game() -> void:
 	_apply_dev_world_overrides()
 	camera.position = map.node_world(hq.x, hq.y) if hq.x >= 0 \
 		else map.node_world(map.width / 2, map.height / 2)
+	renderer.refresh_terrain()  # Terrain-Chunks nach Gelände-/Teichänderungen neu zeichnen (#30)
 	renderer.queue_redraw()
 	_update_labels()
 
