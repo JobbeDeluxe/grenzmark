@@ -173,19 +173,26 @@ func _collect_occluders() -> void:
 
 ## Verdeckt die Einheit an [param p], indem davorliegende Okkluder erneut über sie
 ## gezeichnet werden (opake Pixel verdecken, transparente lassen sie durchscheinen).
-func _occlude(p: Vector2) -> void:
+func _occlude(p: Vector2, exclude_foot := Vector2.INF) -> void:
 	# Bounding-Box der Einheit (Sprite-Hoehe + getragene Ware darueber).
 	var us := GameTheme.unit_size()
-	_occlude_box(p.y, p.x - us * 0.7, p.y - us - 18.0, p.x + us * 0.7, p.y + 3.0)
+	_occlude_box(p.y, p.x - us * 0.7, p.y - us - 18.0, p.x + us * 0.7, p.y + 3.0, exclude_foot)
 
 
 ## Zeichnet alle Okkluder, die VOR der Bezugslinie [param ref_y] stehen (größeres y),
 ## beschnitten auf das Rechteck [left,top]..[right,bottom] erneut darüber. Das Beschneiden
 ## verhindert, dass z. B. ein Baum in voller Größe über benachbarte Sprites „überspillt".
-func _occlude_box(ref_y: float, left: float, top: float, right: float, bottom: float) -> void:
+func _occlude_box(ref_y: float, left: float, top: float, right: float, bottom: float,
+		exclude_foot := Vector2.INF) -> void:
 	for o in _occluders:
 		if o.base.y <= ref_y:
 			continue  # Okkluder steht hinter/neben → Objekt bleibt davor
+		# Eigenes Gebäude ausschließen (#64): Tür-Träger läuft vor seinem HQ aus der Tür,
+		# soll also nicht vom eigenen HQ verdeckt werden — wohl aber von ANDEREN Gebäuden.
+		if exclude_foot != Vector2.INF:
+			var ofoot: Vector2 = o.get("foot", o.base)
+			if ofoot.distance_to(exclude_foot) < 1.0:
+				continue
 		if _is_building_side_lane_clear(o, ref_y, (left + right) * 0.5):
 			continue
 		var ox: float = o.base.x - o.w * 0.5
@@ -271,7 +278,10 @@ func _draw_house_carrier() -> void:
 	var p := door.lerp(flag, clampf(h.t, 0.0, 1.0))
 	var facing := (flag - door) if (h.state == Economy.H_OUT or h.state == Economy.H_FETCH) else (door - flag)
 	var carry := h.carrying.type if h.carrying != null else -1
-	_unit("carrier", p, facing, 0, carry)  # immer Vordergrund, keine Occlusion
+	_unit("carrier", p, facing, 0, carry)
+	# Vor dem EIGENEN HQ sichtbar (aus der Tür), aber von anderen davor gebauten
+	# Gebäuden korrekt verdeckt (#64).
+	_occlude(p, state.map.node_world(hqpos.x, hqpos.y))
 
 
 ## Kleine Menschen-Figur (Körper + Kopf + Schatten).
