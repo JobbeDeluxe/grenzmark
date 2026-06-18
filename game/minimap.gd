@@ -7,6 +7,7 @@ extends Control
 var state: WorldState
 var economy: Economy
 var cam: Camera2D
+var fog_enabled := false
 
 var _accum := 0.0
 
@@ -16,6 +17,19 @@ func setup(s: WorldState, e: Economy, c: Camera2D) -> void:
 	economy = e
 	cam = c
 	queue_redraw()
+
+
+func set_fog_enabled(on: bool) -> void:
+	if fog_enabled == on:
+		return
+	fog_enabled = on
+	queue_redraw()
+
+
+func shows_node(x: int, y: int) -> bool:
+	if state == null or state.map == null or not state.map.in_bounds(x, y):
+		return false
+	return _should_draw_idx(state.map.idx(x, y))
 
 
 func _process(delta: float) -> void:
@@ -34,17 +48,21 @@ func _draw() -> void:
 	var sy := size.y / h
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.7))
 
-	for y in h:
-		for x in w:
-			var t := state.map.get_tri(Vector2i(x, y), Grid.TRI_R)
-			var col := GameTheme.terrain_color(t)
-			if state.territory.has(state.map.idx(x, y)):
-				col = col.lerp(Color(0.3, 0.7, 1.0), 0.35)
-			var px := x * sx + (sx * 0.5 if (y & 1) == 1 else 0.0)
-			draw_rect(Rect2(px, y * sy, ceilf(sx), ceilf(sy)), col)
+	if fog_enabled:
+		for key in state.explored:
+			var idx := int(key)
+			if idx < 0 or idx >= w * h:
+				continue
+			_draw_map_node(idx % w, int(idx / w), sx, sy)
+	else:
+		for y in h:
+			for x in w:
+				_draw_map_node(x, y, sx, sy)
 
 	for i in state.buildings:
 		var b: WorldState.Building = state.buildings[i]
+		if not _should_draw_idx(state.map.idx(b.pos.x, b.pos.y)):
+			continue
 		var bx := b.pos.x * sx + (sx * 0.5 if (b.pos.y & 1) == 1 else 0.0)
 		var dot := Color(1, 1, 0.3) if b.is_hq else Color(1, 1, 1)
 		draw_rect(Rect2(bx - 1, b.pos.y * sy - 1, 3, 3), dot)
@@ -69,3 +87,17 @@ func _gui_input(event: InputEvent) -> void:
 		if state.map.in_bounds(x, y):
 			cam.position = state.map.node_world(x, y)
 			accept_event()
+
+
+func _should_draw_idx(idx: int) -> bool:
+	return not fog_enabled or state.explored.has(idx)
+
+
+func _draw_map_node(x: int, y: int, sx: float, sy: float) -> void:
+	var t := state.map.get_tri(Vector2i(x, y), Grid.TRI_R)
+	var col := GameTheme.terrain_color(t)
+	var idx := state.map.idx(x, y)
+	if state.territory.has(idx):
+		col = col.lerp(Color(0.3, 0.7, 1.0), 0.35)
+	var px := x * sx + (sx * 0.5 if (y & 1) == 1 else 0.0)
+	draw_rect(Rect2(px, y * sy, ceilf(sx), ceilf(sy)), col)

@@ -31,6 +31,7 @@ func _initialize() -> void:
 	_test_asset_files()
 	_test_inventory_model()
 	_test_visibility()
+	_test_minimap_respects_fog()
 	_test_bq_and_flags()
 	_test_mine_bq_on_mountains()
 	_test_building_spacing()
@@ -1459,6 +1460,20 @@ func _test_visibility() -> void:
 		_check(state.place_flag(spot.x, spot.y) != null, "Visibility: Testflagge setzbar")
 		_check(state.explored.has(map.idx(spot.x, spot.y)),
 			"Neue Flagge deckt ihren Knoten inkrementell auf (ohne resync)")
+
+
+func _test_minimap_respects_fog() -> void:
+	var map := _flat_map(12, 12)
+	var state := WorldState.new(map)
+	state.explored[map.idx(3, 3)] = true
+	var minimap := MiniMap.new()
+	minimap.setup(state, null, null)
+	minimap.set_fog_enabled(false)
+	_check(minimap.shows_node(9, 9), "Minimap: ohne Nebel ist die Karte sichtbar")
+	minimap.set_fog_enabled(true)
+	_check(minimap.shows_node(3, 3), "Minimap: erkundeter Knoten bleibt bei Nebel sichtbar")
+	_check(not minimap.shows_node(9, 9), "Minimap: unbekannter Knoten bleibt bei Nebel schwarz")
+	minimap.free()
 
 
 func _test_ore_types() -> void:

@@ -372,11 +372,14 @@ func _apply_ai() -> void:
 
 
 func _apply_start_options() -> void:
+	var fog := UISkin.option_bool("start_fog", false)
 	if renderer != null:
 		renderer.show_build_spots = UISkin.option_bool("start_build_spots", false)
-		renderer.fog_enabled = UISkin.option_bool("start_fog", false)
+		renderer.fog_enabled = fog
 		renderer.show_ore_debug = UISkin.option_bool("dev_show_ore", false)
 		renderer.queue_redraw()
+	if minimap != null:
+		minimap.set_fog_enabled(fog)
 	if economy != null:
 		economy.ai_enabled = UISkin.option_bool("start_ai", true)
 	_sync_hover_context()
@@ -400,6 +403,8 @@ func _apply_dev_world_overrides() -> void:
 		for y in map.height:
 			for x in map.width:
 				state.explored[map.idx(x, y)] = true
+		if minimap != null:
+			minimap.queue_redraw()
 
 
 func _cycle_ai() -> void:
@@ -1832,6 +1837,8 @@ func _toggle_build_spots() -> void:
 func _toggle_fog() -> void:
 	renderer.fog_enabled = not renderer.fog_enabled
 	UISkin.set_option_bool("start_fog", renderer.fog_enabled)
+	if minimap != null:
+		minimap.set_fog_enabled(renderer.fog_enabled)
 	renderer.queue_redraw()
 	_flash("Nebel " + ("AN" if renderer.fog_enabled else "AUS"))
 
