@@ -10,11 +10,12 @@ const MAP_H := 96
 const MAP_SEED := 1337
 const DEFAULT_ENEMY_COUNT := 1
 const MAX_ENEMY_COUNT := 5
-# Startplatzierung (#60/#61).
-const START_CLEAR_RADIUS := 3        # Bäume/Steine im HQ-Nahbereich roden (Startlichtung)
+# Startplatzierung (#60/#61/#63).
+const START_CLEAR_RADIUS := 4        # Bäume/Steine im HQ-Nahbereich roden (Startlichtung)
 const HQ_SPAWN_SALT := 0x48511       # Seed-Salz für reproduzierbare Spieler-Startvariation
 const PLAYER_ANCHOR_JITTER := 0.18   # Spieler-Start max. ~18% vom Zentrum versetzt
 const ENEMY_DIST_FRAC := 0.7         # Gegner zufällig aus den 70%+ entferntesten Plätzen
+const SPAWN_LAND_FRAC := 0.5         # Spawn nur auf Landmasse >= 50% der größten (#63)
 const TICK_HZ := 30.0
 const BUILD_TILE_SIZE := Vector2(92, 108)
 
@@ -98,6 +99,7 @@ var map_seed_text := "1337"
 var map_seed_value := MAP_SEED
 var map_generator_version := MapGenerator.MAP_GENERATOR_VERSION
 var map_enemy_count := DEFAULT_ENEMY_COUNT
+var _land_comp := PackedInt32Array()   # Größe der begehbaren Land-Komponente je Knoten (#63)
 var map_type := MapGenerator.DEFAULT_MAP_TYPE        # gewählt: flach/fluss/insel/zufall
 var map_resolved_type := MapGenerator.DEFAULT_MAP_TYPE  # konkret (zufall aufgelöst)
 
@@ -241,9 +243,15 @@ func _place_headquarters() -> Vector2i:
 	var anchor := Vector2i(
 		int(round(map.width * (0.5 + rng.randf_range(-PLAYER_ANCHOR_JITTER, PLAYER_ANCHOR_JITTER)))),
 		int(round(map.height * (0.5 + rng.randf_range(-PLAYER_ANCHOR_JITTER, PLAYER_ANCHOR_JITTER)))))
-	var spot := _find_castle_spot_near(anchor, rng)
-	if spot.x < 0:  # Fallback: alte Suche ab Mitte
-		spot = _find_castle_spot_near(Vector2i(map.width / 2, map.height / 2), rng)
+	# Spawn nur auf großer Landmasse (#63): kleine (Fluss-)Inseln sind abgeschnitten/
+	# unspielbar. Mindestgröße = Bruchteil der größten begehbaren Land-Komponente.
+	_land_comp = _land_component_sizes()
+	var min_land := int(_max_int(_land_comp) * SPAWN_LAND_FRAC)
+	var spot := _find_castle_spot_near(anchor, rng, min_land)
+	if spot.x < 0:  # Fallback: ab Mitte
+		spot = _find_castle_spot_near(Vector2i(map.width / 2, map.height / 2), rng, min_land)
+	if spot.x < 0:  # Notnagel: ohne Landmassen-Bedingung (sehr kleine/zerklüftete Karten)
+		spot = _find_castle_spot_near(Vector2i(map.width / 2, map.height / 2), rng, 0)
 	if spot.x < 0:
 		return Vector2i(-1, -1)
 	_clear_start_area(spot, START_CLEAR_RADIUS)  # #61: Startlichtung für Flagge/Straßen
@@ -259,7 +267,7 @@ func _place_headquarters() -> Vector2i:
 ## Sucht ab einem Anker spiralförmig nach außen einen burgfähigen Platz. Im ersten Ring
 ## mit Treffern wird der OFFENSTE (wenigste Objekte ringsum) gewählt — leicht zufällig bei
 ## Gleichstand. So variiert der Start (#60) und liegt möglichst auf freier Wiese.
-func _find_castle_spot_near(anchor: Vector2i, rng: RandomNumberGenerator) -> Vector2i:
+func _find_castle_spot_near(anchor: Vector2i, rng: RandomNumberGenerator, min_land: int) -> Vector2i:
 	for r in range(0, maxi(map.width, map.height)):
 		var ring: Array[Vector2i] = []
 		for dy in range(-r, r + 1):
@@ -268,7 +276,11 @@ func _find_castle_spot_near(anchor: Vector2i, rng: RandomNumberGenerator) -> Vec
 					continue
 				var x := anchor.x + dx
 				var y := anchor.y + dy
-				if map.in_bounds(x, y) and state.can_place_building(x, y, WorldState.BQ_CASTLE):
+				if not map.in_bounds(x, y):
+					continue
+				if min_land > 0 and _land_comp[map.idx(x, y)] < min_land:
+					continue   # zu kleine Landmasse (#63)
+				if state.can_place_building(x, y, WorldState.BQ_CASTLE):
 					ring.append(Vector2i(x, y))
 		if ring.is_empty():
 			continue
@@ -296,17 +308,68 @@ func _start_openness(pos: Vector2i) -> int:
 	return free
 
 
-## Startlichtung (#61): rodet Bäume/Steine im Nahbereich des HQ, damit Eingangsflagge und
-## erste Straßen immer möglich sind (S2-nah). Erz (unterirdisch, auf Bergen) bleibt.
+## Startlichtung (#61/#63): rodet Bäume/Steine im Nahbereich des HQ UND ebnet das Gelände
+## sanft ein, damit Eingangsflagge, erste Straßen und genug ebene Bauplätze immer möglich
+## sind (S2-nah, glatterer/größerer Start). Erz (unterirdisch, auf Bergen) bleibt; Wasser
+## wird nicht angehoben.
 func _clear_start_area(hq: Vector2i, radius: int) -> void:
+	var base_h := map.get_height(hq.x, hq.y)
 	for dy in range(-radius, radius + 1):
 		for dx in range(-radius, radius + 1):
 			var p := hq + Vector2i(dx, dy)
-			if not map.in_bounds(p.x, p.y) or WorldState.hex_distance(hq, p) > radius:
+			var d := WorldState.hex_distance(hq, p)
+			if not map.in_bounds(p.x, p.y) or d > radius:
 				continue
 			var o := map.map_object(p.x, p.y)
 			if o == MapData.MO_TREE or o == MapData.MO_STONE:
 				map.clear_map_object(p.x, p.y)
+			# Sanftes Einebnen (nur auf Land): Höhe Richtung HQ-Niveau ziehen, in der Mitte
+			# stärker, am Rand kaum — so entsteht eine glatte Bauland-Mulde ohne harte Kante.
+			if state.node_walkable(p.x, p.y):
+				var f := 0.7 * (1.0 - float(d) / float(radius + 1))
+				var nh := int(round(lerpf(float(map.get_height(p.x, p.y)), float(base_h), f)))
+				map.set_height(p.x, p.y, nh)
+
+
+## Größe der begehbaren Land-Komponente je Knoten (#63), via Flood-Fill über begehbare
+## Knoten. So lassen sich kleine Inseln (kleine Komponente) vom Festland trennen.
+func _land_component_sizes() -> PackedInt32Array:
+	var sizes := PackedInt32Array()
+	sizes.resize(map.width * map.height)
+	var visited := PackedByteArray()
+	visited.resize(map.width * map.height)
+	for y in map.height:
+		for x in map.width:
+			var s := map.idx(x, y)
+			if visited[s] != 0 or not state.node_walkable(x, y):
+				continue
+			var stack: Array[int] = [s]
+			var comp: Array[int] = []
+			visited[s] = 1
+			while not stack.is_empty():
+				var cur: int = stack.pop_back()
+				comp.append(cur)
+				var cx := cur % map.width
+				@warning_ignore("integer_division")
+				var cy := cur / map.width
+				for dir in Grid.DIRS:
+					var n := map.neighbor(cx, cy, dir)
+					if n.x < 0:
+						continue
+					var ni := map.idx(n.x, n.y)
+					if visited[ni] == 0 and state.node_walkable(n.x, n.y):
+						visited[ni] = 1
+						stack.append(ni)
+			for ci in comp:
+				sizes[ci] = comp.size()
+	return sizes
+
+
+func _max_int(arr: PackedInt32Array) -> int:
+	var m := 0
+	for v in arr:
+		m = maxi(m, v)
+	return m
 
 
 ## Testteich im Startgebiet: klein genug, um Bauland nicht zu ruinieren, nah genug
@@ -513,11 +576,15 @@ func _place_enemy_at(spot: Vector2i, owner: int) -> void:
 ## hinreichend weit entfernten Plätzen (>= ENEMY_DIST_FRAC der Maximaldistanz zu allen
 ## bereits vergebenen Ankern). So variieren die Gegner-Spawns, bleiben aber fern.
 func _enemy_castle_spot(anchors: Array[Vector2i], rng: RandomNumberGenerator) -> Vector2i:
+	var min_land := int(_max_int(_land_comp) * SPAWN_LAND_FRAC)  # #63: keine Mini-Inseln
 	var cands: Array = []   # je Eintrag [pos, nearest_distance]
 	var max_nearest := 0
 	for y in range(2, map.height - 2):
 		for x in range(2, map.width - 2):
 			if state._occ(x, y) != WorldState.OBJ_NONE:
+				continue
+			if _land_comp.size() == map.width * map.height \
+					and _land_comp[map.idx(x, y)] < min_land:
 				continue
 			if state.compute_bq(x, y) < WorldState.BQ_CASTLE:
 				continue
