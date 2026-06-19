@@ -2866,29 +2866,58 @@ func has_worker(bs: BState) -> bool:
 		and (bs.wphase == WK_OUT or bs.wphase == WK_WORK or bs.wphase == WK_BACK)
 
 
-## Weltposition des Arbeiters über die Arbeitsphasen.
+## Sichtbarer Arbeiterweg als Polylinie: aus der Tür zum Flaggenknoten, dann zum
+## Arbeitsknoten. So tritt der Arbeiter wie in S2 vorne an der Flagge aus seinem Haus,
+## statt schnurgerade vom Hausmittelpunkt quer durchs eigene Gebäude zu laufen.
+func _worker_path(bs: BState) -> Array:
+	return [
+		state.map.node_world(bs.bld.pos.x, bs.bld.pos.y),           # Tür/Bodenknoten
+		state.map.node_world(bs.bld.flag_pos.x, bs.bld.flag_pos.y), # Eingangsflagge
+		state.map.node_world(bs.worker_target.x, bs.worker_target.y),
+	]
+
+
+## Punkt + Laufrichtung auf einer Polylinie bei Bogenlängen-Anteil [param f] (0..1).
+func _sample_path(pts: Array, f: float) -> Array:
+	var total := 0.0
+	for i in range(pts.size() - 1):
+		total += (pts[i] as Vector2).distance_to(pts[i + 1])
+	if total <= 0.0:
+		return [pts[0], Vector2.ZERO]
+	var d: float = clampf(f, 0.0, 1.0) * total
+	for i in range(pts.size() - 1):
+		var a: Vector2 = pts[i]
+		var b: Vector2 = pts[i + 1]
+		var seg := a.distance_to(b)
+		if d <= seg or i == pts.size() - 2:
+			return [a.lerp(b, clampf(d / maxf(seg, 0.0001), 0.0, 1.0)), b - a]
+		d -= seg
+	return [pts[pts.size() - 1], Vector2.ZERO]
+
+
+## Weltposition des Arbeiters über die Arbeitsphasen (entlang Tür→Flagge→Ziel).
 func worker_world(bs: BState) -> Vector2:
-	var b := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
-	var t := state.map.node_world(bs.worker_target.x, bs.worker_target.y)
 	var prog: float = clampf(1.0 - (bs.ph_t / maxf(bs.ph_total, 1.0)), 0.0, 1.0)
 	match bs.wphase:
 		WK_OUT:
-			return b.lerp(t, prog)
+			return _sample_path(_worker_path(bs), prog)[0]
 		WK_WORK:
-			return t
+			return state.map.node_world(bs.worker_target.x, bs.worker_target.y)
 		WK_BACK:
-			return t.lerp(b, prog)
-	return b
+			return _sample_path(_worker_path(bs), 1.0 - prog)[0]
+	return state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
 
 
 func worker_facing(bs: BState) -> Vector2:
-	var b := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
-	var t := state.map.node_world(bs.worker_target.x, bs.worker_target.y)
+	var prog: float = clampf(1.0 - (bs.ph_t / maxf(bs.ph_total, 1.0)), 0.0, 1.0)
 	match bs.wphase:
-		WK_OUT, WK_WORK:
-			return t - b
+		WK_OUT:
+			return _sample_path(_worker_path(bs), prog)[1]
+		WK_WORK:
+			var flag := state.map.node_world(bs.bld.flag_pos.x, bs.bld.flag_pos.y)
+			return state.map.node_world(bs.worker_target.x, bs.worker_target.y) - flag
 		WK_BACK:
-			return b - t
+			return -(_sample_path(_worker_path(bs), 1.0 - prog)[1])
 	return Vector2.ZERO
 
 

@@ -66,6 +66,7 @@ func _initialize() -> void:
 	_test_tree_types_and_stone_stages()
 	_test_construction_stages()
 	_test_planer()
+	_test_worker_exits_via_flag()
 	_test_build_needs_connection()
 	_test_material_after_split()
 	_test_material_after_road_removed()
@@ -2278,6 +2279,39 @@ func _test_planer() -> void:
 			break
 	_check(saw_builder_figure, "Planer: Bauarbeiter während des Baus sichtbar an der Baustelle")
 	_check(not house.under_construction, "Planer: nach dem Einebnen wird normal fertiggebaut")
+
+
+## Ressource-Arbeiter treten vorne an der Eingangsflagge aus dem Haus (S2), statt
+## schnurgerade vom Hausmittelpunkt quer durchs eigene Gebäude zu laufen: Der
+## sichtbare Weg ist die Polylinie Tür → Flagge → Arbeitsknoten.
+func _test_worker_exits_via_flag() -> void:
+	var map := _flat_map(28, 28)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(12, 12, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	var wc := state.place_building(8, 12, WorldState.BQ_HUT, false, "woodcutter", 0, false)
+	eco.resync()
+	if wc == null:
+		_check(false, "Worker-Flag: Holzfäller platzierbar")
+		return
+	var bs: Economy.BState = eco.bstates.get(map.idx(8, 12))
+	bs.worker_target = Vector2i(5, 12)
+	var pts := eco._worker_path(bs)
+	_check(pts.size() == 3, "Worker-Flag: Weg hat 3 Punkte (Tür/Flagge/Ziel)")
+	var flagw := state.map.node_world(wc.flag_pos.x, wc.flag_pos.y)
+	_check((pts[1] as Vector2).distance_to(flagw) < 0.001,
+		"Worker-Flag: Mittelpunkt des Wegs ist die Eingangsflagge")
+	# _sample_path: Enden treffen, halbe Gesamtlänge trifft den Knickpunkt.
+	var a := Vector2(0, 0)
+	var b := Vector2(10, 0)
+	var c := Vector2(10, 10)
+	_check((eco._sample_path([a, b, c], 0.0)[0] as Vector2).distance_to(a) < 0.001,
+		"Worker-Flag: f=0 → Startpunkt")
+	_check((eco._sample_path([a, b, c], 1.0)[0] as Vector2).distance_to(c) < 0.001,
+		"Worker-Flag: f=1 → Endpunkt")
+	_check((eco._sample_path([a, b, c], 0.5)[0] as Vector2).distance_to(b) < 0.001,
+		"Worker-Flag: halbe Gesamtlänge → Knickpunkt (Flagge)")
 
 
 ## Ein Gebäude ohne Straße zum HQ bleibt Baustelle (kein „unsichtbarer" Arbeiter);
