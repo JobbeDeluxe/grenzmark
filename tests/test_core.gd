@@ -65,6 +65,7 @@ func _initialize() -> void:
 	_test_start_clearing_enables_roads()
 	_test_tree_types_and_stone_stages()
 	_test_construction_stages()
+	_test_planer()
 	_test_build_needs_connection()
 	_test_material_after_split()
 	_test_material_after_road_removed()
@@ -2164,6 +2165,83 @@ func _test_construction_stages() -> void:
 		bs2.built = 1.5
 		_check(int(eco.construct_stage_info(bs2).stage) == 2,
 			"Bau ohne Stein: zweite Hälfte ist Stufe 2")
+
+
+## Planierer (#49, RTTR nofPlaner): Haus-/Burg-Baustellen auf unebenem Grund werden
+## ERST von einem Planierer eingeebnet (umliegende Knoten auf Bauknoten-Höhe), bevor
+## Material/Bauarbeiter kommen. Hütten und ebene Plätze überspringen das.
+func _test_planer() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(20, 20, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	if hq == null:
+		_check(false, "Planer: HQ platzierbar")
+		return
+	eco.resync()
+
+	# Unebener Grund am Haus-Bauknoten (20,15): ein Nachbar liegt höher. Differenz 2
+	# hält die Bauqualität gerade noch bei HOUSE (slope<=2), ist aber > 0 → planieren.
+	map.set_height(21, 15, 12)
+	# Unebener Grund am Hütten-Bauknoten (25,20).
+	map.set_height(26, 20, 12)
+
+	# Haus (BQ_HOUSE) auf unebenem Grund → braucht Planierer.
+	var house := state.place_building(20, 15, WorldState.BQ_HOUSE, false, "sawmill", 0, true)
+	# Hütte (BQ_HUT) auf unebenem Grund → KEIN Planierer.
+	var hut := state.place_building(25, 20, WorldState.BQ_HUT, false, "woodcutter", 0, true)
+	# Haus auf ebenem Grund → KEIN Planierer.
+	var flat := state.place_building(15, 20, WorldState.BQ_HOUSE, false, "sawmill", 0, true)
+	_check(house != null and hut != null and flat != null, "Planer: Test-Gebäude platzierbar")
+	if house == null or hut == null or flat == null:
+		return
+	var road := state.build_road(hq.flag_pos, house.flag_pos)
+	_check(road != null, "Planer: Straße HQ <-> Haus baubar")
+	eco.resync()
+
+	# Lager mit Schaufel (Planierer) + Hammer (Bauarbeiter) + Baustoffen bestücken.
+	eco.hq_people = { Jobs.HELPER: 10 }
+	eco._helper_timer = 1_000_000_000
+	eco.hq_stock[Goods.SHOVEL] = 2
+	eco.hq_stock[Goods.HAMMER] = 2
+	eco.hq_stock[Goods.BOARDS] = 20
+	eco.hq_stock[Goods.STONE] = 20
+	eco.hq_stock[Goods.WOOD] = 20
+
+	var bs_house: Economy.BState = eco.bstates.get(map.idx(20, 15))
+	var bs_hut: Economy.BState = eco.bstates.get(map.idx(25, 20))
+	var bs_flat: Economy.BState = eco.bstates.get(map.idx(15, 20))
+	_check(bs_house != null and bs_house.planing and bs_house.is_construction,
+		"Planer: Haus auf unebenem Grund startet in der Planierphase")
+	_check(bs_hut != null and not bs_hut.planing, "Planer: Hütte braucht keinen Planierer")
+	_check(bs_flat != null and not bs_flat.planing, "Planer: ebenes Haus braucht keinen Planierer")
+
+	# Während des Planierens wird kein Baustoff angefordert; der Planierer (Schaufel)
+	# wird aus dem Lager rekrutiert.
+	var shovel_before: int = eco.hq_stock.get(Goods.SHOVEL, 0)
+	for t in 40:
+		eco.tick()
+	_check(bs_house.delivered.is_empty(), "Planer: solange planiert wird, kommt kein Material")
+	_check(int(eco.hq_stock.get(Goods.SHOVEL, 0)) < shovel_before,
+		"Planer: Schaufel aus dem Lager verbraucht (Planierer rekrutiert)")
+	_check(int(map.get_height(21, 15)) == 12, "Planer: Höhe vor dem Einebnen noch unverändert")
+
+	# Genug Zeit: Planierer ankommen + einebnen.
+	for t in 2000:
+		eco.tick()
+		if not bs_house.planing:
+			break
+	_check(not bs_house.planing, "Planer: Planierphase endet")
+	_check(int(map.get_height(21, 15)) == 10,
+		"Planer: Nachbarknoten auf Bauknoten-Höhe eingeebnet")
+	_check(int(map.get_height(20, 15)) == 10, "Planer: Bauknoten selbst bleibt unverändert")
+
+	# Danach läuft der normale Bau (Material + Bauarbeiter) bis zur Fertigstellung.
+	for t in 6000:
+		eco.tick()
+		if not house.under_construction:
+			break
+	_check(not house.under_construction, "Planer: nach dem Einebnen wird normal fertiggebaut")
 
 
 ## Ein Gebäude ohne Straße zum HQ bleibt Baustelle (kein „unsichtbarer" Arbeiter);

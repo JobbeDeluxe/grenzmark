@@ -693,6 +693,12 @@ func _process(delta: float) -> void:
 			economy.tick()
 			_tick_accum -= step
 			guard += 1
+	if economy.terrain_dirty:
+		# Planierer (#49) hat Gelände-Höhen geändert → statische Terrain-Chunks neu zeichnen.
+		economy.terrain_dirty = false
+		renderer.refresh_terrain()
+		if minimap != null:
+			minimap.queue_redraw()
 	if economy.dirty:
 		_apply_dev_world_overrides()
 		economy.dirty = false

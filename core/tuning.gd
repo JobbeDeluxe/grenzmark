@@ -116,6 +116,13 @@ static func road_upgrade_deliveries() -> int:
 	return maxi(1, int(_num("road_upgrade_deliveries", 24)))
 
 
+## Dauer der Geländeeinebnung durch den Planierer (#49) in Ticks, sobald er an der
+## Haus-/Burg-Baustelle angekommen ist. Danach werden die umliegenden Knoten auf die
+## Bauknoten-Höhe gezogen und erst dann Bauarbeiter + Material angefordert.
+static func planer_ticks() -> int:
+	return maxi(1, int(_num("planer_ticks", 90)))
+
+
 # --------------------------------------------------------------------------
 #  Startinventar des HQ (Waren UND Personen) — S2-Lagermodell
 #  Ein Lager hält im Original sowohl Waren als auch Personen (RTTR Inventory =

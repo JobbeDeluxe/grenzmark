@@ -333,3 +333,18 @@ func max_slope(x: int, y: int) -> int:
 		if n.x >= 0:
 			m = maxi(m, absi(get_height(n.x, n.y) - h0))
 	return m
+
+
+## Zieht die 6 Nachbarknoten von (x,y) auf dessen Höhe (Planierer #49, RTTR
+## nofPlaner: ChangeAltitude der umliegenden Knoten auf die Bauknoten-Höhe). Der
+## Bauknoten selbst bleibt unverändert. Gibt true zurück, wenn dabei mindestens ein
+## Knoten verändert wurde.
+func flatten_around(x: int, y: int) -> bool:
+	var h0 := get_height(x, y)
+	var changed := false
+	for dir in Grid.DIRS:
+		var n := neighbor(x, y, dir)
+		if n.x >= 0 and get_height(n.x, n.y) != h0:
+			set_height(n.x, n.y, h0)
+			changed = true
+	return changed

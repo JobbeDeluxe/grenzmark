@@ -144,6 +144,8 @@ class BState:
 	var def: Dictionary
 	var flag_idx: int
 	var is_construction := false
+	var planing := false     # Einebnungsphase vor dem Bau (Planierer #49)
+	var plan_t := 0          # verbleibende Planier-Ticks, sobald der Planierer da ist
 	var built := 0.0         # Baufortschritt in Material-Wert (0..Zielwert)
 	var delivered := {}      # good -> Anzahl (Baustoffe bzw. Eingangslager)
 	var incoming := {}       # good -> Anzahl unterwegs
@@ -219,6 +221,7 @@ var marchers: Array[Marcher] = []    # gerade marschierende Soldaten
 var strays: Array[Stray] = []        # verirrte Träger (Straße weg, tragen noch Ware)
 var _inc_soldiers: Dictionary = {}   # building idx -> unterwegs befindliche Soldaten
 var dirty := false                   # Karte muss neu gezeichnet werden
+var terrain_dirty := false           # Gelände-Höhen geändert (Planierer #49) → Terrain neu zeichnen
 
 var _hq_inited := false
 var _soldier_timer := SOLDIER_TICKS
@@ -402,6 +405,12 @@ func resync() -> void:
 			bs.def = BuildingCatalog.get_def(b.def_id)
 			bs.flag_idx = state.map.idx(b.flag_pos.x, b.flag_pos.y)
 			bs.is_construction = b.under_construction
+			# Planierer-Phase (#49, RTTR nofPlaner): Haus-/Burg-Baustellen auf unebenem
+			# Grund werden erst eingeebnet, bevor Material/Bauarbeiter kommen. Ebene
+			# Plätze und Hütten/Minen überspringen das (direkt zum Bauarbeiter).
+			if b.under_construction and b.owner == 0 and _needs_planing(b):
+				bs.planing = true
+				bs.plan_t = Tuning.planer_ticks()
 			# Bereits fertige Gebäude (geladen/erobert) gelten als besetzt;
 			# frisch fertiggestellte holen ihren Arbeiter vom HQ.
 			bs.staffed = not b.under_construction
@@ -1381,7 +1390,8 @@ func _dispatch_worker(bs: BState) -> void:
 	# (Baustelle = Bauarbeiter, fertiges Gebäude = Produktionsberuf). Fehlt das
 	# Personal, bleibt das Gebäude unbesetzt und wird später erneut angefordert.
 	if not bs.has_person:
-		var job := Jobs.BUILDER if bs.is_construction else BuildingCatalog.job_of(bs.bld.def_id)
+		var job := Jobs.PLANER if bs.planing \
+			else (Jobs.BUILDER if bs.is_construction else BuildingCatalog.job_of(bs.bld.def_id))
 		if job >= 0:
 			if not _take_person(job, bs.bld.owner):
 				bs.worker_sent = false
@@ -1403,7 +1413,47 @@ func _dispatch_worker(bs: BState) -> void:
 
 # --- Bau ---
 
+## Braucht die Baustelle [param b] einen Planierer? Nur Haus-/Burg-Plätze (RTTR:
+## House/Castle/Harbor) auf unebenem Grund — Hütten/Minen/Flaggen nie, ebene Plätze nie.
+func _needs_planing(b: WorldState.Building) -> bool:
+	if b.size != WorldState.BQ_HOUSE and b.size != WorldState.BQ_CASTLE:
+		return false
+	return state.map.max_slope(b.pos.x, b.pos.y) > 0
+
+
+## Einebnungsphase vor dem eigentlichen Bau (#49). Solange planiert wird, fordert die
+## Baustelle KEIN Material und keinen Bauarbeiter an — erst kommt der Planierer.
+func _tick_planing(bs: BState) -> void:
+	# Planierer vom HQ holen (Job PLANER + Schaufel). Ohne ihn passiert nichts.
+	if not bs.staffed:
+		if not bs.worker_sent:
+			_dispatch_worker(bs)
+		return
+	# Planierer ist da → einebnen (Zeit zählen).
+	if bs.plan_t > 0:
+		bs.plan_t -= 1
+		return
+	# Fertig: Plattform auf Bauknoten-Höhe ziehen, Planierer kehrt sichtbar zum HQ
+	# zurück, danach läuft der normale Baustellen-Pfad (Material + Bauarbeiter).
+	if state.map.flatten_around(bs.bld.pos.x, bs.bld.pos.y):
+		state.invalidate_routes()      # Steigungskosten/Routen-Cache verwerfen
+		state.recompute_territory()
+		terrain_dirty = true
+	_dispatch_builder_return(bs)       # Planierer läuft zurück (gleiche Mechanik wie Bauarbeiter)
+	if bs.has_person:
+		_return_person(bs.person_job, bs.bld.owner)
+		bs.has_person = false
+		bs.person_job = -1
+	bs.planing = false
+	bs.staffed = false
+	bs.worker_sent = false
+	dirty = true
+
+
 func _tick_construction(bs: BState) -> void:
+	if bs.planing:
+		_tick_planing(bs)
+		return
 	var cost: Dictionary = bs.def.get("cost", {})
 	# Material immer anfordern (kann schon unterwegs sein).
 	for g in cost:
@@ -2586,6 +2636,8 @@ func building_status(bld: WorldState.Building) -> String:
 	if bs == null:
 		return name
 	var s := name
+	if bs.planing:
+		return "%s — %s" % [s, "Planierer ebnet ein ..." if bs.staffed else "Planierer kommt vom HQ ..."]
 	if bs.is_construction:
 		var pct := int(100.0 * bs.construct_progress / float(BUILD_TIME))
 		var mats := ""
@@ -2628,6 +2680,10 @@ func building_info(bld: WorldState.Building) -> Dictionary:
 		return info
 	if bs.is_construction:
 		info.construction = true
+		if bs.planing:
+			info.status = "Planieren"
+			info.warning = "Planierer ebnet ein ..." if bs.staffed else "Planierer kommt vom HQ ..."
+			return info
 		info.status = "Baustelle %d%%" % int(100.0 * bs.construct_progress / float(BUILD_TIME))
 		var cost: Dictionary = bs.def.get("cost", {})
 		for g in cost:
