@@ -170,6 +170,9 @@ und Transparenz vor, leicht dimetrisch, Unterkante am Bodenkontakt.
 
 ### Bauplatz & 2-stufiger Baufortschritt (`assets/construction/`)
 Der Bau läuft in **zwei sichtbaren Stufen**:
+0. **Planieren** — bei unebenem Haus-/Burg-Bauplatz zeigt das Spiel zuerst
+   `planing_site.png` (flaches Planierkreuz). Nach der Einebnung wird es durch
+   den normalen Bauplatz ersetzt.
 1. **Bauplatz** — solange noch nichts hochgezogen ist, zeigt das Spiel `site.png`
    (statt des gelben Platzhalter-Gerüsts). Pro Gebäude überschreibbar mit
    `<def_id>_site.png`.

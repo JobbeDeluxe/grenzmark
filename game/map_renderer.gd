@@ -792,6 +792,8 @@ func _draw_entrance_paths() -> void:
 func _paint_building(p: Vector2, b: WorldState.Building) -> void:
 	# Baustelle: nur das Gerüst (das wachsende Gebäude zeichnet der UnitRenderer).
 	if b.under_construction:
+		if b.planing:
+			return
 		_paint_site(p, b)
 		return
 	var tex := GameTheme.building_texture(b.def_id, b.owner)

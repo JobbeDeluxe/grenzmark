@@ -41,6 +41,7 @@ class Building:
 	var def_id := ""     # Katalog-ID des Gebäudetyps
 	var influence := 0   # Einflussradius (militärisch / HQ), 0 = keiner
 	var under_construction := true  # Baustelle, bis Material geliefert ist
+	var planing := false # Baustelle wartet/arbeitet noch mit Planierer, noch kein Bauplatz
 	var garrison := 0    # stationierte Soldaten
 	var capacity := 0    # max. Soldaten (Militärgebäude)
 	var promotions := 0  # Beförderungen durch Münzen (Verteidigungs-Rüstung)

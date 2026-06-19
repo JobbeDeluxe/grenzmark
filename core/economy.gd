@@ -113,6 +113,11 @@ enum { WK_IDLE, WK_OUT, WK_WORK, WK_BACK, WK_WAIT }
 # Warum ein Produktionsgebäude gerade NICHT arbeitet (fürs Gebäudefenster).
 enum { IDLE_OK, IDLE_OUT_FULL, IDLE_NO_INPUTS, IDLE_NO_RESOURCE, IDLE_NO_OUTPUT }
 
+# Planierer-Phasen an der Baustelle: erst zum naechsten Knoten laufen, dort
+# arbeiten/schaufeln, dann weiter. Das bildet RTTR nofPlaner naeher ab als ein
+# einzelner Gesamt-Timer.
+enum { PLAN_PHASE_WALK, PLAN_PHASE_WORK }
+
 
 class HouseCarrier:
 	extends RefCounted
@@ -146,7 +151,16 @@ class BState:
 	var is_construction := false
 	var planing := false     # Einebnungsphase vor dem Bau (Planierer #49)
 	var plan_t := 0          # verbleibende Planier-Ticks, sobald der Planierer da ist
-	var plan_total := 0      # Gesamt-Planier-Ticks (für die sichtbare Umrundung)
+	var plan_total := 0      # Gesamt-Planier-Ticks (Laufen + Arbeit an den Knoten)
+	var plan_points: Array[Vector2i] = [] # Knoten, an denen der Planierer arbeitet
+	var plan_index := 0      # aktueller Eintrag in plan_points
+	var plan_phase := 0      # PLAN_PHASE_*: laeuft oder arbeitet
+	var plan_step_t := 0     # verbleibende Ticks im aktuellen Lauf-/Arbeitsabschnitt
+	var plan_step_total := 1
+	var plan_from := Vector2i(-1, -1)
+	var plan_to := Vector2i(-1, -1)
+	var plan_walk_ticks := 1
+	var plan_work_ticks := 1
 	var built := 0.0         # Baufortschritt in Material-Wert (0..Zielwert)
 	var delivered := {}      # good -> Anzahl (Baustoffe bzw. Eingangslager)
 	var incoming := {}       # good -> Anzahl unterwegs
@@ -411,9 +425,7 @@ func resync() -> void:
 			# Grund werden erst eingeebnet, bevor Material/Bauarbeiter kommen. Ebene
 			# Plätze und Hütten/Minen überspringen das (direkt zum Bauarbeiter).
 			if b.under_construction and b.owner == 0 and _needs_planing(b):
-				bs.planing = true
-				bs.plan_t = Tuning.planer_ticks()
-				bs.plan_total = bs.plan_t
+				_prepare_planing(bs)
 			# Bereits fertige Gebäude (geladen/erobert) gelten als besetzt;
 			# frisch fertiggestellte holen ihren Arbeiter vom HQ.
 			bs.staffed = not b.under_construction
@@ -1421,42 +1433,128 @@ func _dispatch_worker(bs: BState) -> void:
 func _needs_planing(b: WorldState.Building) -> bool:
 	if b.size != WorldState.BQ_HOUSE and b.size != WorldState.BQ_CASTLE:
 		return false
-	return state.map.max_slope(b.pos.x, b.pos.y) > 0
+	var h0 := state.map.get_height(b.pos.x, b.pos.y)
+	for dir in _planing_dirs_for(b.pos):
+		var n := state.map.neighbor(b.pos.x, b.pos.y, dir)
+		if n.x >= 0 and state.map.get_height(n.x, n.y) != h0:
+			return true
+	return false
+
+
+## Planier-Reihenfolge wie RTTR nofPlaner als Konzept: nicht freie Terraformierung,
+## sondern Arbeit an den Nachbarknoten rund um eine erlaubte Baustelle. Die SE-Seite
+## bleibt frei, weil dort Flagge/Eingang liegen.
+func _planing_dirs_for(pos: Vector2i) -> Array[int]:
+	var clockwise := _planing_clockwise(pos)
+	var dirs: Array[int] = []
+	if clockwise:
+		dirs = [Grid.SW, Grid.W, Grid.NW, Grid.NE, Grid.E]
+	else:
+		dirs = [Grid.E, Grid.NE, Grid.NW, Grid.W, Grid.SW]
+	return dirs
+
+
+## S2/RTTR waehlt die Umlaufrichtung zufaellig. Hier deterministisch aus der Position,
+## damit Core und spaeterer Lockstep reproduzierbar bleiben.
+func _planing_clockwise(pos: Vector2i) -> bool:
+	var h := pos.x * 73856093 ^ pos.y * 19349663 ^ state.map.width * 83492791
+	return (absi(h) & 1) == 0
+
+
+func _prepare_planing(bs: BState) -> void:
+	bs.plan_points.clear()
+	for dir in _planing_dirs_for(bs.bld.pos):
+		var n := state.map.neighbor(bs.bld.pos.x, bs.bld.pos.y, dir)
+		if n.x >= 0:
+			bs.plan_points.append(n)
+	if bs.plan_points.is_empty():
+		return
+	bs.planing = true
+	bs.bld.planing = true
+	bs.plan_index = 0
+	bs.plan_walk_ticks = Tuning.planer_walk_ticks()
+	bs.plan_work_ticks = Tuning.planer_work_ticks()
+	bs.plan_total = bs.plan_walk_ticks * (bs.plan_points.size() + 1) \
+		+ bs.plan_work_ticks * bs.plan_points.size()
+	bs.plan_t = bs.plan_total
+	_start_plan_walk(bs, bs.bld.pos, bs.plan_points[0])
+
+
+func _start_plan_walk(bs: BState, from: Vector2i, to: Vector2i) -> void:
+	bs.plan_phase = PLAN_PHASE_WALK
+	bs.plan_from = from
+	bs.plan_to = to
+	bs.plan_step_total = maxi(1, bs.plan_walk_ticks)
+	bs.plan_step_t = bs.plan_step_total
+
+
+func _start_plan_work(bs: BState) -> void:
+	bs.plan_phase = PLAN_PHASE_WORK
+	bs.plan_step_total = maxi(1, bs.plan_work_ticks)
+	bs.plan_step_t = bs.plan_step_total
+
+
+func _flatten_plan_point(bs: BState, p: Vector2i) -> void:
+	var h0 := state.map.get_height(bs.bld.pos.x, bs.bld.pos.y)
+	if state.map.get_height(p.x, p.y) == h0:
+		return
+	state.map.set_height(p.x, p.y, h0)
+	state.invalidate_routes()
+	_mark_terrain_dirty(p, 1)
 
 
 ## Einebnungsphase vor dem eigentlichen Bau (#49). Solange planiert wird, fordert die
 ## Baustelle KEIN Material und keinen Bauarbeiter an — erst kommt der Planierer.
 func _tick_planing(bs: BState) -> void:
-	# Planierer vom HQ holen (Job PLANER + Schaufel). Ohne ihn passiert nichts.
 	if not bs.staffed:
 		if not bs.worker_sent:
 			_dispatch_worker(bs)
 		return
-	# Planierer ist da → einebnen (Zeit zählen).
+	if bs.plan_points.is_empty():
+		_finish_planing(bs)
+		return
 	if bs.plan_t > 0:
 		bs.plan_t -= 1
+	if bs.plan_step_t > 0:
+		bs.plan_step_t -= 1
+		if bs.plan_step_t > 0:
+			return
+	if bs.plan_phase == PLAN_PHASE_WALK:
+		if bs.plan_index >= bs.plan_points.size():
+			_finish_planing(bs)
+		else:
+			_start_plan_work(bs)
 		return
-	# Fertig: Plattform auf Bauknoten-Höhe ziehen, Planierer kehrt sichtbar zum HQ
-	# zurück, danach läuft der normale Baustellen-Pfad (Material + Bauarbeiter).
-	if state.map.flatten_around(bs.bld.pos.x, bs.bld.pos.y):
-		state.invalidate_routes()      # Steigungskosten/Routen-Cache verwerfen
-		# NUR die betroffenen Terrain-Chunks neu zeichnen (Bauknoten ±1), nicht die ganze
-		# Karte — sonst ruckelt das Bild beim Einebnen (#49/#30). Territorium hängt an der
-		# Einfluss-Reichweite, nicht an der Höhe → kein recompute_territory nötig.
-		_mark_terrain_dirty(bs.bld.pos, 1)
-	_dispatch_builder_return(bs)       # Planierer läuft zurück (gleiche Mechanik wie Bauarbeiter)
+	var here: Vector2i = bs.plan_points[bs.plan_index]
+	_flatten_plan_point(bs, here)
+	bs.plan_index += 1
+	if bs.plan_index >= bs.plan_points.size():
+		_start_plan_walk(bs, here, bs.bld.pos)
+	else:
+		_start_plan_walk(bs, here, bs.plan_points[bs.plan_index])
+	return
+
+
+## Planierphase abgeschlossen: Planierer laeuft heim, danach fordert die Baustelle
+## wie gewohnt Material und den Bauarbeiter an.
+func _finish_planing(bs: BState) -> void:
+	_dispatch_builder_return(bs)       # Planierer laeuft zurueck (gleiche Mechanik wie Bauarbeiter)
 	if bs.has_person:
 		_return_person(bs.person_job, bs.bld.owner)
 		bs.has_person = false
 		bs.person_job = -1
 	bs.planing = false
+	bs.bld.planing = false
+	bs.plan_points.clear()
+	bs.plan_index = 0
+	bs.plan_t = 0
 	bs.staffed = false
 	bs.worker_sent = false
 	dirty = true
 
 
 ## Markiert einen Knotenbereich (Mittelpunkt [param center] ± [param radius]) als
-## gelände-dirty, damit der Renderer nur die betroffenen Terrain-Chunks neu zeichnet.
+## gelaende-dirty, damit der Renderer nur die betroffenen Terrain-Chunks neu zeichnet.
 func _mark_terrain_dirty(center: Vector2i, radius: int) -> void:
 	var r := Rect2i(center.x - radius, center.y - radius, radius * 2 + 1, radius * 2 + 1)
 	terrain_dirty_rect = r if not terrain_dirty else terrain_dirty_rect.merge(r)
@@ -2799,8 +2897,6 @@ func worker_facing(bs: BState) -> Vector2:
 # sehen, nicht nur auf dem Anmarsch. Solange die Baustelle besetzt ist, liefert das hier
 # Position/Blickrichtung einer Figur, die der Renderer zeichnet.
 
-const _PLAN_RADIUS := 20.0   # Umrundungsradius des Planierers (px, iso gestaucht)
-
 ## Ist gerade eine sichtbare Figur an dieser Baustelle (Bauarbeiter oder Planierer)?
 func has_build_figure(bs: BState) -> bool:
 	return bs.is_construction and bs.staffed
@@ -2815,10 +2911,14 @@ func build_figure_is_planer(bs: BState) -> bool:
 func build_figure_world(bs: BState) -> Vector2:
 	var b := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
 	if bs.planing:
-		# Planierer umrundet den Bauknoten einmal über die Planierdauer.
-		var prog: float = clampf(1.0 - float(bs.plan_t) / maxf(float(bs.plan_total), 1.0), 0.0, 1.0)
-		var a := prog * TAU
-		return b + Vector2(cos(a) * _PLAN_RADIUS, sin(a) * _PLAN_RADIUS * 0.5 - 6.0)
+		# Planierer laeuft punktweise zu den Nachbarknoten und arbeitet dort.
+		var from := state.map.node_world(bs.plan_from.x, bs.plan_from.y)
+		var to := state.map.node_world(bs.plan_to.x, bs.plan_to.y)
+		if bs.plan_phase == PLAN_PHASE_WALK:
+			var prog: float = clampf(1.0 - float(bs.plan_step_t) / maxf(float(bs.plan_step_total), 1.0), 0.0, 1.0)
+			return from.lerp(to, prog)
+		var swing := sin(float(bs.plan_step_total - bs.plan_step_t) * 0.35)
+		return to + Vector2(swing * 2.0, -2.0)
 	# Bauarbeiter werkelt seitlich am Bau (kleine Pendelbewegung über den Fortschritt).
 	var sway := sin(float(bs.construct_progress) * 0.4)
 	return b + Vector2(sway * 7.0 - 6.0, -4.0)
@@ -2827,7 +2927,10 @@ func build_figure_world(bs: BState) -> Vector2:
 ## Blickrichtung der Bau-/Planier-Figur (für die Lauf-/Werkel-Animation).
 func build_figure_facing(bs: BState) -> Vector2:
 	if bs.planing:
-		var prog: float = clampf(1.0 - float(bs.plan_t) / maxf(float(bs.plan_total), 1.0), 0.0, 1.0)
-		var a := prog * TAU
-		return Vector2(-sin(a), cos(a) * 0.5)   # Tangente → Laufrichtung
+		var from := state.map.node_world(bs.plan_from.x, bs.plan_from.y)
+		var to := state.map.node_world(bs.plan_to.x, bs.plan_to.y)
+		if bs.plan_phase == PLAN_PHASE_WALK:
+			return to - from
+		var b := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
+		return b - to
 	return Vector2(sin(float(bs.construct_progress) * 0.4), 0.15)

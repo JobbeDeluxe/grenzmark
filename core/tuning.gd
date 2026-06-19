@@ -116,11 +116,20 @@ static func road_upgrade_deliveries() -> int:
 	return maxi(1, int(_num("road_upgrade_deliveries", 24)))
 
 
-## Dauer der Geländeeinebnung durch den Planierer (#49) in Ticks, sobald er an der
-## Haus-/Burg-Baustelle angekommen ist. Danach werden die umliegenden Knoten auf die
-## Bauknoten-Höhe gezogen und erst dann Bauarbeiter + Material angefordert.
+## Legacy-Gesamtdauer der alten Ein-Schritt-Planierung. Bleibt als Fallback fuer
+## alte tuning.json-Dateien erhalten; neue Werte trennen Lauf- und Arbeitsschritte.
 static func planer_ticks() -> int:
 	return maxi(1, int(_num("planer_ticks", 90)))
+
+
+## Planierer (#65): Laufzeit zwischen zwei Arbeitspunkten um die Baustelle.
+static func planer_walk_ticks() -> int:
+	return maxi(1, int(_num("planer_walk_ticks", maxf(8.0, float(planer_ticks()) * 0.25))))
+
+
+## Planierer (#65): Schaufel-/Arbeitszeit an einem einzelnen Nachbarknoten.
+static func planer_work_ticks() -> int:
+	return maxi(1, int(_num("planer_work_ticks", planer_ticks())))
 
 
 # --------------------------------------------------------------------------

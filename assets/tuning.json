@@ -47,8 +47,10 @@
   "field_decay_ticks": 1800,
   "fish_per_node": 6,
   "road_upgrade_deliveries": 24,
-  "_planer_hinweis": "Planierer (Issue #49, RTTR nofPlaner): ebnet Haus-/Burg-Baustellen auf unebenem Grund ein, bevor Material/Bauarbeiter kommen. Dauer in Ticks ab Ankunft an der Baustelle.",
+  "_planer_hinweis": "Planierer (Issue #49/#65, RTTR nofPlaner): ebnet Haus-/Burg-Baustellen auf unebenem Grund ein, bevor Material/Bauarbeiter kommen. Laeuft punktweise um die Baustelle; SE/Eingang bleibt frei. Zeiten in Ticks ab Ankunft an der Baustelle.",
   "planer_ticks": 90,
+  "planer_walk_ticks": 24,
+  "planer_work_ticks": 69,
   "_inventar_hinweis": "S2-Lagermodell: ein Lager (HQ) haelt Waren UND Personen. Schluessel = String-IDs aus Goods.KEYS bzw. Jobs.KEYS. Werkzeuge dienen der Rekrutierung: Traeger (helper) + Werkzeug -> Spezialist.",
   "hq_start_goods": {
     "boards": 30, "stone": 30, "wood": 12,

@@ -203,6 +203,11 @@ static func construction_site_texture(def_id := "") -> Texture2D:
 	return _tex("res://assets/construction/site.png")
 
 
+## Planierkreuz/-Schild vor der normalen Bauplatzgrafik (#65).
+static func construction_planing_texture() -> Texture2D:
+	return _tex("res://assets/construction/planing_site.png")
+
+
 ## Baustufe-1-Grafik (Holzkonstruktion). Pro Gebäude oder generisch:
 ##   assets/construction/<def_id>_stage1.png  sonst  construction/stage1.png
 ## Fehlt sie, fällt der Renderer auf die fertige Gebäude-Textur zurück (1 Stufe).

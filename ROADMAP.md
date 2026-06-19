@@ -428,7 +428,8 @@ Arbeitsliste, bis das Spiel „vollständig" ist (Ton/Musik kommt ganz zuletzt).
       Produktion stoppen, Abriss, Militärbesatzung, Prioritäten und Warnungen.
 - [ ] Geologe, Späher/Pionier und Aussichtsturm/Spähturm fehlen als
       Spezialisten für Erkundung, Bergbau-Info und Gebietsausbau.
-      (Planierer #49 erledigt: ebnet Haus-/Burg-Baustellen vor dem Bauarbeiter ein.)
+      (Planierer #49/#65 erledigt: ebnet Haus-/Burg-Baustellen vor dem Bauarbeiter
+      punktweise ein; Planierkreuz statt Fortschrittsring.)
       (Geologe/Späher/Nebel-Verzahnung: https://github.com/JobbeDeluxe/grenzmark/issues/21)
 - [ ] Militär ist spielbar, aber noch vereinfacht: Rangstufen/Grafiken,
       wählbare Angreiferzahl, Schilde/mehr Waffen und Belagerungsdetails fehlen.
@@ -505,7 +506,8 @@ Münzprägerei, Brauerei, Schmiede, Wachhaus, Wachturm, Festung, Katapult.
 - [x] Nebel des Krieges / Sichtbarkeit nur im erkundeten Gebiet (Taste F);
       auch im Hauptmenü als Startoption einstellbar.
 - [x] Erdarbeiter (Planierer) ebnen Haus-/Burg-Baustellen auf unebenem Grund vor
-      dem Bauarbeiter ein — umliegende Knoten auf Bauknoten-Höhe (Issue #49, RTTR nofPlaner)
+      dem Bauarbeiter punktweise ein — umliegende Knoten auf Bauknoten-Höhe,
+      Planierkreuz bis zur normalen Bauplatzgrafik (Issue #49/#65, RTTR nofPlaner)
 - [x] Fisch als endlicher Kartenbestand statt unendliche Wasserquelle (Issue #6,
       RTTR nofFisher): Küstenknoten (Wasser+Land) bekommen einen versteckten
       Fischvorrat (`fish_per_node`), der Fischer baut ihn ab, erschöpfte Gründe

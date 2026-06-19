@@ -2183,6 +2183,7 @@ func _test_planer() -> void:
 	# Unebener Grund am Haus-Bauknoten (20,15): ein Nachbar liegt höher. Differenz 2
 	# hält die Bauqualität gerade noch bei HOUSE (slope<=2), ist aber > 0 → planieren.
 	map.set_height(21, 15, 12)
+	map.set_height(19, 15, 8)
 	# Unebener Grund am Hütten-Bauknoten (25,20).
 	map.set_height(26, 20, 12)
 
@@ -2226,6 +2227,24 @@ func _test_planer() -> void:
 		"Planer: Schaufel aus dem Lager verbraucht (Planierer rekrutiert)")
 	_check(int(map.get_height(21, 15)) == 12, "Planer: Höhe vor dem Einebnen noch unverändert")
 
+	# Der Planierer gleicht nicht mehr alles am Ende in einem Sprung an, sondern
+	# arbeitet die umliegenden Knoten nacheinander ab (#65).
+	var changed_points := [Vector2i(21, 15), Vector2i(19, 15)]
+	var saw_stepwise_flattening := false
+	for t in 2000:
+		eco.tick()
+		var flat_count := 0
+		for p in changed_points:
+			if int(map.get_height(p.x, p.y)) == 10:
+				flat_count += 1
+		if bs_house.planing and flat_count > 0 and flat_count < changed_points.size():
+			saw_stepwise_flattening = true
+			break
+		if not bs_house.planing:
+			break
+	_check(saw_stepwise_flattening,
+		"Planer: Hoehen werden waehrend der Planierphase stueckweise angeglichen")
+
 	# Genug Zeit: Planierer ankommen + einebnen. Sobald er da ist, muss eine sichtbare
 	# Planierer-Figur an der Baustelle existieren (S2: die ganze Arbeit über sichtbar).
 	var saw_planer_figure := false
@@ -2240,6 +2259,8 @@ func _test_planer() -> void:
 	_check(not bs_house.planing, "Planer: Planierphase endet")
 	_check(int(map.get_height(21, 15)) == 10,
 		"Planer: Nachbarknoten auf Bauknoten-Höhe eingeebnet")
+	_check(int(map.get_height(19, 15)) == 10,
+		"Planer: zweiter Nachbarknoten auf Bauknoten-Hoehe eingeebnet")
 	_check(int(map.get_height(20, 15)) == 10, "Planer: Bauknoten selbst bleibt unverändert")
 	# Nur die betroffenen Terrain-Chunks werden als dirty markiert (kein Voll-Redraw → kein Ruckler).
 	_check(eco.terrain_dirty and eco.terrain_dirty_rect.has_point(Vector2i(21, 15)),
