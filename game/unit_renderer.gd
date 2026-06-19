@@ -185,7 +185,12 @@ func _occlude(p: Vector2, exclude_foot := Vector2.INF) -> void:
 func _occlude_box(ref_y: float, left: float, top: float, right: float, bottom: float,
 		exclude_foot := Vector2.INF) -> void:
 	for o in _occluders:
-		if o.base.y <= ref_y:
+		# Tiefenanker = BODENKNOTEN (foot), nicht die optisch weit nach unten reichende
+		# Sprite-Unterkante (base): Ein Haus reicht als Sprite tief unter seinen Standknoten;
+		# mit base.y verdeckte es Einheiten, die sichtbar DAVOR stehen (Arbeiter vor dem
+		# eigenen Haus, #64-Folge). Bäume/Flaggen haben kein foot → base (Sprite = Stand).
+		var anchor_y: float = o.get("foot", o.base).y
+		if anchor_y <= ref_y:
 			continue  # Okkluder steht hinter/neben → Objekt bleibt davor
 		# Eigenes Gebäude ausschließen (#64): Tür-Träger läuft vor seinem HQ aus der Tür,
 		# soll also nicht vom eigenen HQ verdeckt werden — wohl aber von ANDEREN Gebäuden.
