@@ -2226,21 +2226,36 @@ func _test_planer() -> void:
 		"Planer: Schaufel aus dem Lager verbraucht (Planierer rekrutiert)")
 	_check(int(map.get_height(21, 15)) == 12, "Planer: Höhe vor dem Einebnen noch unverändert")
 
-	# Genug Zeit: Planierer ankommen + einebnen.
+	# Genug Zeit: Planierer ankommen + einebnen. Sobald er da ist, muss eine sichtbare
+	# Planierer-Figur an der Baustelle existieren (S2: die ganze Arbeit über sichtbar).
+	var saw_planer_figure := false
 	for t in 2000:
 		eco.tick()
+		if bs_house.planing and bs_house.staffed and eco.has_build_figure(bs_house) \
+				and eco.build_figure_is_planer(bs_house):
+			saw_planer_figure = true
 		if not bs_house.planing:
 			break
+	_check(saw_planer_figure, "Planer: sichtbare Planierer-Figur an der Baustelle während der Arbeit")
 	_check(not bs_house.planing, "Planer: Planierphase endet")
 	_check(int(map.get_height(21, 15)) == 10,
 		"Planer: Nachbarknoten auf Bauknoten-Höhe eingeebnet")
 	_check(int(map.get_height(20, 15)) == 10, "Planer: Bauknoten selbst bleibt unverändert")
+	# Nur die betroffenen Terrain-Chunks werden als dirty markiert (kein Voll-Redraw → kein Ruckler).
+	_check(eco.terrain_dirty and eco.terrain_dirty_rect.has_point(Vector2i(21, 15)),
+		"Planer: Geländeänderung markiert gezielt den Bauknoten-Bereich")
 
-	# Danach läuft der normale Bau (Material + Bauarbeiter) bis zur Fertigstellung.
+	# Danach läuft der normale Bau (Material + Bauarbeiter) bis zur Fertigstellung; auch
+	# der Bauarbeiter ist während des Baus sichtbar (keine Planierer-Figur mehr).
+	var saw_builder_figure := false
 	for t in 6000:
 		eco.tick()
+		if house.under_construction and bs_house.staffed and not bs_house.planing \
+				and eco.has_build_figure(bs_house) and not eco.build_figure_is_planer(bs_house):
+			saw_builder_figure = true
 		if not house.under_construction:
 			break
+	_check(saw_builder_figure, "Planer: Bauarbeiter während des Baus sichtbar an der Baustelle")
 	_check(not house.under_construction, "Planer: nach dem Einebnen wird normal fertiggebaut")
 
 

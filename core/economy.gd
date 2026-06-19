@@ -146,6 +146,7 @@ class BState:
 	var is_construction := false
 	var planing := false     # Einebnungsphase vor dem Bau (Planierer #49)
 	var plan_t := 0          # verbleibende Planier-Ticks, sobald der Planierer da ist
+	var plan_total := 0      # Gesamt-Planier-Ticks (für die sichtbare Umrundung)
 	var built := 0.0         # Baufortschritt in Material-Wert (0..Zielwert)
 	var delivered := {}      # good -> Anzahl (Baustoffe bzw. Eingangslager)
 	var incoming := {}       # good -> Anzahl unterwegs
@@ -222,6 +223,7 @@ var strays: Array[Stray] = []        # verirrte Träger (Straße weg, tragen noc
 var _inc_soldiers: Dictionary = {}   # building idx -> unterwegs befindliche Soldaten
 var dirty := false                   # Karte muss neu gezeichnet werden
 var terrain_dirty := false           # Gelände-Höhen geändert (Planierer #49) → Terrain neu zeichnen
+var terrain_dirty_rect := Rect2i()   # betroffener Knotenbereich (gezieltes Chunk-Redraw statt alle)
 
 var _hq_inited := false
 var _soldier_timer := SOLDIER_TICKS
@@ -411,6 +413,7 @@ func resync() -> void:
 			if b.under_construction and b.owner == 0 and _needs_planing(b):
 				bs.planing = true
 				bs.plan_t = Tuning.planer_ticks()
+				bs.plan_total = bs.plan_t
 			# Bereits fertige Gebäude (geladen/erobert) gelten als besetzt;
 			# frisch fertiggestellte holen ihren Arbeiter vom HQ.
 			bs.staffed = not b.under_construction
@@ -1437,8 +1440,10 @@ func _tick_planing(bs: BState) -> void:
 	# zurück, danach läuft der normale Baustellen-Pfad (Material + Bauarbeiter).
 	if state.map.flatten_around(bs.bld.pos.x, bs.bld.pos.y):
 		state.invalidate_routes()      # Steigungskosten/Routen-Cache verwerfen
-		state.recompute_territory()
-		terrain_dirty = true
+		# NUR die betroffenen Terrain-Chunks neu zeichnen (Bauknoten ±1), nicht die ganze
+		# Karte — sonst ruckelt das Bild beim Einebnen (#49/#30). Territorium hängt an der
+		# Einfluss-Reichweite, nicht an der Höhe → kein recompute_territory nötig.
+		_mark_terrain_dirty(bs.bld.pos, 1)
 	_dispatch_builder_return(bs)       # Planierer läuft zurück (gleiche Mechanik wie Bauarbeiter)
 	if bs.has_person:
 		_return_person(bs.person_job, bs.bld.owner)
@@ -1447,6 +1452,15 @@ func _tick_planing(bs: BState) -> void:
 	bs.planing = false
 	bs.staffed = false
 	bs.worker_sent = false
+	dirty = true
+
+
+## Markiert einen Knotenbereich (Mittelpunkt [param center] ± [param radius]) als
+## gelände-dirty, damit der Renderer nur die betroffenen Terrain-Chunks neu zeichnet.
+func _mark_terrain_dirty(center: Vector2i, radius: int) -> void:
+	var r := Rect2i(center.x - radius, center.y - radius, radius * 2 + 1, radius * 2 + 1)
+	terrain_dirty_rect = r if not terrain_dirty else terrain_dirty_rect.merge(r)
+	terrain_dirty = true
 	dirty = true
 
 
@@ -2778,3 +2792,42 @@ func worker_facing(bs: BState) -> Vector2:
 		WK_BACK:
 			return b - t
 	return Vector2.ZERO
+
+
+# --- Sichtbare Bau-/Planier-Figur an der Baustelle (#49) ---
+# In S2 ist der Bauarbeiter bzw. Planierer die GANZE Arbeitszeit an der Baustelle zu
+# sehen, nicht nur auf dem Anmarsch. Solange die Baustelle besetzt ist, liefert das hier
+# Position/Blickrichtung einer Figur, die der Renderer zeichnet.
+
+const _PLAN_RADIUS := 20.0   # Umrundungsradius des Planierers (px, iso gestaucht)
+
+## Ist gerade eine sichtbare Figur an dieser Baustelle (Bauarbeiter oder Planierer)?
+func has_build_figure(bs: BState) -> bool:
+	return bs.is_construction and bs.staffed
+
+
+## Umrundet die Figur die Baustelle (Planierer) oder werkelt sie am Bau (Bauarbeiter)?
+func build_figure_is_planer(bs: BState) -> bool:
+	return bs.planing
+
+
+## Weltposition der Bau-/Planier-Figur.
+func build_figure_world(bs: BState) -> Vector2:
+	var b := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
+	if bs.planing:
+		# Planierer umrundet den Bauknoten einmal über die Planierdauer.
+		var prog: float = clampf(1.0 - float(bs.plan_t) / maxf(float(bs.plan_total), 1.0), 0.0, 1.0)
+		var a := prog * TAU
+		return b + Vector2(cos(a) * _PLAN_RADIUS, sin(a) * _PLAN_RADIUS * 0.5 - 6.0)
+	# Bauarbeiter werkelt seitlich am Bau (kleine Pendelbewegung über den Fortschritt).
+	var sway := sin(float(bs.construct_progress) * 0.4)
+	return b + Vector2(sway * 7.0 - 6.0, -4.0)
+
+
+## Blickrichtung der Bau-/Planier-Figur (für die Lauf-/Werkel-Animation).
+func build_figure_facing(bs: BState) -> Vector2:
+	if bs.planing:
+		var prog: float = clampf(1.0 - float(bs.plan_t) / maxf(float(bs.plan_total), 1.0), 0.0, 1.0)
+		var a := prog * TAU
+		return Vector2(-sin(a), cos(a) * 0.5)   # Tangente → Laufrichtung
+	return Vector2(sin(float(bs.construct_progress) * 0.4), 0.15)

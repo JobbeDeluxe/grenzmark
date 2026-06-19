@@ -303,13 +303,24 @@ func _draw_construction() -> void:
 		if not bs.is_construction:
 			continue
 		var def_id: String = bs.bld.def_id
-		var p := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y) + GameTheme.building_offset(def_id)
+		var ground := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
+		var p := ground + GameTheme.building_offset(def_id)
 		var base := _bld_dims(bs.bld.size, def_id)
 		var sz := base.x * GameTheme.texture_scale()
 		var fin := GameTheme.building_texture(def_id, bs.bld.owner)  # fertiges Gebäude (Stufe 2)
 		var stage1 := GameTheme.construction_stage1_texture(def_id)  # Holzbau (Stufe 1)
 		var info := economy.construct_stage_info(bs)
 		var overall: float = info.overall
+
+		# Planierphase (#49): Statt des (noch nicht begonnenen) Gebäudes eine sichtbare
+		# „Baustelle wird eingeebnet"-Markierung zeichnen, damit man sieht, dass hier erst
+		# planiert werden muss. Der Planierer umrundet sie (Figur unten).
+		if bs.planing:
+			var prog: float = clampf(1.0 - float(bs.plan_t) / maxf(float(bs.plan_total), 1.0), 0.0, 1.0)
+			_draw_planing_site(ground, prog)
+			if economy.has_build_figure(bs):
+				_unit("worker", economy.build_figure_world(bs), economy.build_figure_facing(bs), bs.bld.owner)
+			continue
 
 		if stage1 != null:
 			# ZWEI STUFEN: erst Holzkonstruktion, dann fertiger Bau (Stein) darüber.
@@ -334,6 +345,34 @@ func _draw_construction() -> void:
 		var bar := Vector2(p.x - w * 0.5, p.y - 34)
 		draw_rect(Rect2(bar, Vector2(w, 4)), Color(0, 0, 0, 0.6))
 		draw_rect(Rect2(bar, Vector2(w * overall, 4)), Color(0.4, 0.85, 0.4))
+
+		# Bauarbeiter sichtbar an der Baustelle (S2: die ganze Bauzeit über, nicht nur
+		# auf dem Anmarsch) — solange die Baustelle besetzt ist.
+		if economy.has_build_figure(bs):
+			_unit("worker", economy.build_figure_world(bs), economy.build_figure_facing(bs), bs.bld.owner)
+
+
+## Markierung einer noch zu planierenden Haus-/Burg-Baustelle (#49): aufgegrabene Erde
+## am Boden plus ein Fortschrittsring. Solange diese sichtbar ist, kommt erst der
+## Planierer (umrundende Figur), bevor das Gebäude überhaupt zu wachsen beginnt.
+## (Platzhalter-Grafik; kann später durch ein eigenes PNG ersetzt werden.)
+func _draw_planing_site(g: Vector2, prog: float) -> void:
+	# Erd-Fleck als iso-gestauchte Raute (außen dunkel, innen heller).
+	var outer := PackedVector2Array([
+		g + Vector2(-18, 0), g + Vector2(0, -9), g + Vector2(18, 0), g + Vector2(0, 9)])
+	var inner := PackedVector2Array([
+		g + Vector2(-12, 0), g + Vector2(0, -6), g + Vector2(12, 0), g + Vector2(0, 6)])
+	draw_colored_polygon(outer, Color(0.40, 0.29, 0.18, 0.85))
+	draw_colored_polygon(inner, Color(0.50, 0.37, 0.23, 0.9))
+	# Drei „Hügelchen" angehäufter Erde am Rand.
+	for off in [Vector2(-9, -1), Vector2(9, -1), Vector2(0, 4)]:
+		draw_circle(g + off, 2.5, Color(0.34, 0.24, 0.14, 0.9))
+	# Fortschrittsring (oben offen startend, im Uhrzeigersinn gefüllt).
+	var ring_c := g + Vector2(0, -3)
+	draw_arc(ring_c, 14.0, 0.0, TAU, 28, Color(0, 0, 0, 0.4), 2.0)
+	if prog > 0.001:
+		draw_arc(ring_c, 14.0, -PI / 2.0, -PI / 2.0 + TAU * clampf(prog, 0.0, 1.0),
+			28, Color(0.85, 0.74, 0.34, 0.95), 2.5)
 
 
 ## Eine Textur von unten nach oben "wachsen" lassen (Baufortschritt).

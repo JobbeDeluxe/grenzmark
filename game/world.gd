@@ -694,9 +694,11 @@ func _process(delta: float) -> void:
 			_tick_accum -= step
 			guard += 1
 	if economy.terrain_dirty:
-		# Planierer (#49) hat Gelände-Höhen geändert → statische Terrain-Chunks neu zeichnen.
+		# Planierer (#49) hat Gelände-Höhen geändert → nur die betroffenen Terrain-Chunks
+		# neu zeichnen (gezielt statt ganze Karte → kein Ruckler).
 		economy.terrain_dirty = false
-		renderer.refresh_terrain()
+		renderer.refresh_terrain(economy.terrain_dirty_rect)
+		economy.terrain_dirty_rect = Rect2i()
 		if minimap != null:
 			minimap.queue_redraw()
 	if economy.dirty:

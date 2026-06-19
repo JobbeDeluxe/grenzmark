@@ -22,6 +22,8 @@ var show_ore_debug := false     # Dev/Test: unterirdische Erzvorkommen anzeigen
 # automatisch → pro Frame nur sichtbare Chunks. Terrain bleibt statisch (einmal je Chunk).
 const TERRAIN_CHUNK := 24       # Knoten je Chunk-Kante
 var _terrain_chunks: Array[Node2D] = []
+var _terrain_cols := 0          # Chunk-Spalten (für gezieltes Teil-Redraw)
+var _terrain_rows := 0
 # Viewport-Culling (#30): nur den sichtbaren Weltausschnitt zeichnen; neu zeichnen, wenn
 # sich der Ausschnitt (Schwenk/Zoom) ändert. Spart auf großen Karten die GPU-Last für
 # off-screen Objekte/Territorium/Fog.
@@ -65,6 +67,8 @@ func _build_terrain_chunks() -> void:
 	var map := state.map
 	var cols := int(ceil(float(map.width) / float(TERRAIN_CHUNK)))
 	var rows := int(ceil(float(map.height) / float(TERRAIN_CHUNK)))
+	_terrain_cols = cols
+	_terrain_rows = rows
 	for cy in rows:
 		for cx in cols:
 			var chunk := Node2D.new()
@@ -77,10 +81,25 @@ func _build_terrain_chunks() -> void:
 			chunk.queue_redraw()
 
 
-## Zeichnet das Terrain neu (z. B. nach Geländeänderungen wie dem Test-Teich).
-func refresh_terrain() -> void:
-	for c in _terrain_chunks:
-		c.queue_redraw()
+## Zeichnet das Terrain neu (z. B. nach Geländeänderungen). Ohne [param node_rect] (Größe
+## 0) werden ALLE Chunks neu gezeichnet (Kartenwechsel/Teich). Mit Knotenbereich nur die
+## überlappenden Chunks — so ruckelt das Einebnen durch den Planierer nicht (#49/#30).
+func refresh_terrain(node_rect := Rect2i()) -> void:
+	if node_rect.size == Vector2i.ZERO or _terrain_cols <= 0:
+		for c in _terrain_chunks:
+			c.queue_redraw()
+		return
+	# Ein Chunk-Rand kann Knoten des Nachbar-Chunks anschneiden → Bereich um 1 Knoten
+	# weiten, damit am Übergang nichts stehen bleibt.
+	var x0: int = maxi((node_rect.position.x - 1) / TERRAIN_CHUNK, 0)
+	var y0: int = maxi((node_rect.position.y - 1) / TERRAIN_CHUNK, 0)
+	var x1: int = mini((node_rect.position.x + node_rect.size.x) / TERRAIN_CHUNK, _terrain_cols - 1)
+	var y1: int = mini((node_rect.position.y + node_rect.size.y) / TERRAIN_CHUNK, _terrain_rows - 1)
+	for cy in range(y0, y1 + 1):
+		for cx in range(x0, x1 + 1):
+			var k := cy * _terrain_cols + cx
+			if k >= 0 and k < _terrain_chunks.size():
+				_terrain_chunks[k].queue_redraw()
 
 
 func _process(_delta: float) -> void:
