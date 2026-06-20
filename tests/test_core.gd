@@ -56,6 +56,7 @@ func _initialize() -> void:
 	_test_ai_plugin()
 	_test_catapult()
 	_test_promotion()
+	_test_door_transport()
 	_test_roadsplit()
 	_test_build_help_respects_territory()
 	_test_building_needs_territory_margin()
@@ -1850,6 +1851,64 @@ func _test_promotion() -> void:
 		"Münzen AUS: keine weitere Beförderung trotz Gold im HQ")
 	_check(eco.hq_stock.get(Goods.COINS, 0) == 5,
 		"Münzen AUS: HQ-Gold bleibt unangetastet")
+
+
+## #66: Eingangswaren werden vom Straßenträger sichtbar in die Tür getragen (Tür-
+## Exkursion), nicht an der Flagge teleportiert; Münzen reisen echt zum Militärgebäude
+## und werden lokal verbraucht (keine Münze geht verloren oder wird dupliziert).
+func _test_door_transport() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_check(hq != null, "Tür: HQ platzierbar")
+	if hq == null:
+		return
+	eco.resync()
+	# Fertiges Sägewerk (Holz -> Bretter): Holz muss in die Tür getragen werden.
+	var saw := state.place_building(10, 6, WorldState.BQ_HOUSE, false, "sawmill", 0, false)
+	_check(saw != null, "Tür: Sägewerk platzierbar")
+	if saw == null:
+		return
+	state.build_road(hq.flag_pos, saw.flag_pos)
+	eco.resync()
+	eco.hq_stock[Goods.WOOD] = 20
+	var door_seen := false
+	for t in 4000:
+		eco.tick()
+		for r in eco.carriers:
+			if eco.carriers[r].dphase != Economy.D_NONE:
+				door_seen = true
+	_check(door_seen, "Tür: Straßenträger betritt die Gebäudetür (Exkursion)")
+	var saw_idx := map.idx(saw.pos.x, saw.pos.y)
+	var bs: Economy.BState = eco.bstates.get(saw_idx)
+	_check((bs != null and int(bs.delivered.get(Goods.WOOD, 0)) + int(bs.out_stock.get(Goods.BOARDS, 0)) > 0) \
+		or eco.hq_stock.get(Goods.BOARDS, 0) > 0,
+		"Tür: Holz wurde ins Sägewerk getragen und verarbeitet")
+
+	# --- Münzen: echte Lieferung + lokaler Verbrauch, ohne Münzverlust ---
+	var map2 := _flat_map(40, 40)
+	var state2 := WorldState.new(map2)
+	var eco2 := Economy.new(state2)
+	var hq2 := state2.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	if hq2 == null:
+		return
+	eco2.resync()
+	var gh := state2.place_building(13, 13, WorldState.BQ_HUT, false, "guardhouse", 5, false)
+	if gh == null:
+		return
+	gh.garrison = 3
+	state2.build_road(state2.buildings[map2.idx(10, 10)].flag_pos, gh.flag_pos)
+	eco2.resync()
+	eco2.hq_stock[Goods.COINS] = 5
+	for t in 6000:
+		eco2.tick()
+	_check(gh.promotions == 3, "Tür-Münzen: ganze Garnison befördert (%d)" % gh.promotions)
+	_check(eco2.hq_stock.get(Goods.COINS, 0) == 5 - gh.promotions,
+		"Tür-Münzen: aus dem HQ verschwinden genau so viele Münzen wie Beförderungen (kein Verlust)")
+	var gbs: Economy.BState = eco2.bstates.get(map2.idx(gh.pos.x, gh.pos.y))
+	_check(gbs != null and int(gbs.delivered.get(Goods.COINS, 0)) == 0,
+		"Tür-Münzen: keine Münze bleibt unverbraucht im Gebäude liegen")
 
 
 func _test_roadsplit() -> void:

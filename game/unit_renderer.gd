@@ -464,10 +464,32 @@ func _draw_carriers() -> void:
 		var c: Economy.Carrier = economy.carriers[r]
 		if not c.active:
 			continue  # unbesetzte Straße (kein Träger zugeteilt) → nichts zeichnen
+		if c.dphase != Economy.D_NONE:
+			_draw_carrier_door(c)   # Tür-Exkursion: Flagge↔Tür statt Straßenlauf (#66)
+			continue
 		var p := economy.carrier_world(c)
 		var carry := c.carrying.type if c.carrying != null else -1
 		_unit("carrier", p, economy.carrier_facing(c), c.road.owner, carry)
 		_occlude(p)
+
+
+## Straßenträger während seiner Tür-Exkursion (#66): läuft sichtbar zwischen der
+## Gebäudeflagge (dt 0) und der Tür (dt 1) und trägt dabei die Ware ins Haus. Vor dem
+## bedienten Gebäude sichtbar, von davor gebauten Gebäuden korrekt verdeckt (#64).
+func _draw_carrier_door(c: Economy.Carrier) -> void:
+	var bs: Economy.BState = economy.bstates.get(c.dbidx)
+	if bs == null or c.dflag < 0:
+		return
+	var bpos := bs.bld.pos
+	var fx := c.dflag % state.map.width
+	var fy := c.dflag / state.map.width
+	var flag := state.map.node_world(fx, fy)
+	var door := state.map.node_world(bpos.x, bpos.y) + GameTheme.entrance_offset(bs.bld.def_id)
+	var p := flag.lerp(door, clampf(c.dt, 0.0, 1.0))
+	var facing := (door - flag) if c.dphase == Economy.D_IN else (flag - door)
+	var carry := c.carrying.type if c.carrying != null else -1
+	_unit("carrier", p, facing, c.road.owner, carry)
+	_occlude(p, state.map.node_world(bpos.x, bpos.y))
 
 
 func _draw_workers() -> void:

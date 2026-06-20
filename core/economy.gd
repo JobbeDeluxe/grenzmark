@@ -50,6 +50,11 @@ class Good:
 # Träger-Zustände
 enum { C_IDLE, C_TO_PICKUP, C_CARRYING, C_RETURN }
 
+# Tür-Exkursion eines Straßenträgers (#66): an einer Gebäudeflagge verlängert er
+# seinen Weg bis in die Tür — trägt die Eingangsware hinein (statt Teleport an der
+# Flagge) bzw. holt einen fertigen Ausgang heraus. D_NONE = normaler Straßendienst.
+enum { D_NONE, D_IN, D_OUT }
+
 
 class Carrier:
 	extends RefCounted
@@ -62,6 +67,11 @@ class Carrier:
 	var active := false      # erst aktiv, wenn der Träger vom HQ angekommen ist
 	var dispatched := false  # Träger wurde schon vom HQ losgeschickt (Marsch läuft)
 	var has_person := false  # hält einen HELPER aus dem Lager (Issue #9, Rückgabe bei Abriss)
+	# Tür-Exkursion (#66): trägt die Ware von der Gebäudeflagge bis in die Tür.
+	var dphase := 0          # D_* (D_NONE = kein Tür-Gang)
+	var dt := 0.0            # 0 = an der Flagge, 1 = an der Tür
+	var dbidx := -1          # Gebäude-Index, der gerade bedient wird
+	var dflag := -1          # Gebäudeflagge (Endknoten, an dem der Träger steht)
 
 
 class Marcher:
@@ -846,8 +856,8 @@ func _tick_promotions() -> void:
 	if _promo_timer > 0:
 		return
 	_promo_timer = PROMO_TICKS
-	if hq_stock.get(Goods.COINS, 0) <= 0:
-		return
+	# Münzen werden vorab vom Straßenträger ins Gebäude geliefert (#66). Eine Beförderung
+	# verbraucht eine dort bereits angelieferte Münze (bs.delivered[COINS]).
 	for i in state.buildings:
 		var b: WorldState.Building = state.buildings[i]
 		if b.owner != 0 or b.is_hq or b.influence <= 0 or b.under_construction:
@@ -856,9 +866,10 @@ func _tick_promotions() -> void:
 			continue  # Spieler hat Münzanforderung für dieses Gebäude abgeschaltet
 		if b.garrison <= 0 or b.promotions >= b.garrison:
 			continue
-		if _next_hop(hq_flag, state.map.idx(b.flag_pos.x, b.flag_pos.y)) < 0:
+		var bs: BState = bstates.get(i)
+		if bs == null or int(bs.delivered.get(Goods.COINS, 0)) <= 0:
 			continue
-		hq_stock[Goods.COINS] = hq_stock[Goods.COINS] - 1
+		bs.delivered[Goods.COINS] = int(bs.delivered[Goods.COINS]) - 1
 		b.promotions += 1
 		dirty = true
 		return
@@ -1679,6 +1690,16 @@ func _cost_value(cost: Dictionary) -> float:
 # --- Eingänge anfordern ---
 
 func _request_inputs(bs: BState) -> void:
+	# Militärgebäude (#66): Münzen werden wie eine Ware vom Lager angefordert und vom
+	# Straßenträger in die Tür getragen (statt direkt aus dem HQ-Bestand). Sollbestand =
+	# offene Beförderungen (Garnison − bereits Befördertе), eine Münze je Beförderung.
+	if int(bs.def.get("influence", 0)) > 0:
+		if bs.bld.wants_coins and bs.bld.garrison > 0:
+			var have_c := int(bs.delivered.get(Goods.COINS, 0)) + int(bs.incoming.get(Goods.COINS, 0))
+			var want_c := bs.bld.garrison - bs.bld.promotions
+			if have_c < want_c:
+				_request_from_hq(bs, Goods.COINS, want_c - have_c)
+		return
 	var inputs: Dictionary = bs.def.get("inputs", {})
 	for g in inputs:
 		if _is_distributed(g):
@@ -2285,9 +2306,15 @@ func _water_near(center: Vector2i) -> bool:
 #  Träger-Logik
 # --------------------------------------------------------------------------
 
+const DOOR_SPEED := 0.045   # Tür-Exkursion: Flagge↔Tür-Tempo (wie HOUSE_SPEED)
+
+
 func _tick_carrier(c: Carrier) -> void:
 	if not c.active:
 		return  # Träger ist noch auf dem Weg vom HQ
+	if c.dphase != D_NONE:
+		_tick_carrier_door(c)   # Tür-Exkursion läuft → kein Straßenlauf (#66)
+		return
 	var segs := float(c.road.length())
 	var mid := segs * 0.5
 
@@ -2329,7 +2356,17 @@ func _tick_carrier(c: Carrier) -> void:
 				c.target = mid
 		C_CARRYING:
 			var deliver_end := 1 if c.pickup_end == 0 else 0
-			_deliver(c.carrying, _end_flag(c.road, deliver_end))
+			var deliver_flag := _end_flag(c.road, deliver_end)
+			# Endlieferung in ein Arbeitshaus: der Träger trägt die Ware bis in die Tür
+			# (#66), kein Teleport an der Flagge. Sonst normal an die Flagge übergeben.
+			var into := _building_for_carry_in(deliver_flag, c.carrying)
+			if into >= 0:
+				c.dbidx = into
+				c.dflag = deliver_flag
+				c.dt = 0.0
+				c.dphase = D_IN
+				return
+			_deliver(c.carrying, deliver_flag)
 			_mark_road_delivery(c.road)
 			c.carrying = null
 			# Rückweg nutzen: gibt es hier eine Ware zur Gegenseite, gleich mitnehmen.
@@ -2353,6 +2390,66 @@ func _mark_road_delivery(road: WorldState.Road) -> void:
 	if road.level < WorldState.ROAD_COBBLE and road.traffic >= Tuning.road_upgrade_deliveries():
 		road.level = WorldState.ROAD_COBBLE
 		dirty = true
+
+
+## Ist [flag_idx] die Flagge eines fertigen Arbeitshauses, in das diese Endlieferung
+## hineingetragen werden soll (#66)? Gibt den Gebäude-Index zurück, sonst -1.
+## Baustellen (Bretter/Steine) behalten den direkten Teleport; HQ/Lager nutzen ihren
+## eigenen Tür-Träger.
+func _building_for_carry_in(flag_idx: int, g: Good) -> int:
+	if g == null or g.dest != flag_idx:
+		return -1
+	if not flag_to_building.has(flag_idx):
+		return -1
+	var bidx: int = flag_to_building[flag_idx]
+	var bs: BState = bstates.get(bidx)
+	if bs == null or bs.is_construction:
+		return -1
+	return bidx
+
+
+## Tür-Exkursion eines Straßenträgers (#66): er steht an der Gebäudeflagge und
+## verlängert seinen Weg in die Tür. D_IN trägt die Eingangsware hinein und bucht sie
+## (delivered++/incoming--); D_OUT bringt ihn leer zur Flagge zurück. Danach nimmt er
+## den normalen Straßendienst wieder auf (kein separater Türträger pro Arbeitshaus).
+func _tick_carrier_door(c: Carrier) -> void:
+	var bs: BState = bstates.get(c.dbidx)
+	if bs == null:
+		_end_carrier_door(c)   # Gebäude verschwand → Ware retten, Dienst beenden
+		return
+	match c.dphase:
+		D_IN:
+			c.dt = minf(c.dt + DOOR_SPEED, 1.0)
+			if c.dt >= 1.0:
+				if c.carrying != null:
+					var ty := int(c.carrying.type)
+					bs.delivered[ty] = int(bs.delivered.get(ty, 0)) + 1
+					bs.incoming[ty] = maxi(0, int(bs.incoming.get(ty, 0)) - 1)
+					c.carrying = null
+					_mark_road_delivery(c.road)
+				c.dphase = D_OUT
+		D_OUT:
+			c.dt = maxf(c.dt - DOOR_SPEED, 0.0)
+			if c.dt <= 0.0:
+				if c.carrying != null:
+					_push_good(c.dflag, c.carrying)
+					c.carrying = null
+				_end_carrier_door(c)
+
+
+## Beendet die Tür-Exkursion: getragene Ware (Gebäude verschwand) nicht verlieren,
+## dann zurück in den normalen Straßendienst (Rückweg zur Straßenmitte).
+func _end_carrier_door(c: Carrier) -> void:
+	if c.carrying != null:
+		if c.dflag >= 0:
+			_push_good(c.dflag, c.carrying)
+		c.carrying = null
+	c.dphase = D_NONE
+	c.dt = 0.0
+	c.dbidx = -1
+	c.dflag = -1
+	c.state = C_RETURN
+	c.target = float(c.road.length()) * 0.5
 
 
 # --------------------------------------------------------------------------
@@ -2714,6 +2811,11 @@ func _end_flag(r: WorldState.Road, end: int) -> int:
 # --------------------------------------------------------------------------
 
 func carrier_world(c: Carrier) -> Vector2:
+	if c.dphase != D_NONE and c.dflag >= 0:
+		# Tür-Exkursion (#66): Position zwischen Flagge (dt 0) und Tür (dt 1). Die exakte
+		# Türlage kennt nur das Rendering (entrance_offset); hier reicht die Flagge als
+		# sichere Näherung (nur für Stray-Spawn, falls die Straße mitten im Gang wegfällt).
+		return state.map.node_world(c.dflag % state.map.width, c.dflag / state.map.width)
 	var nodes := c.road.nodes
 	var seg: int = clampi(int(floor(c.seg_pos)), 0, nodes.size() - 2)
 	var frac: float = clampf(c.seg_pos - seg, 0.0, 1.0)
