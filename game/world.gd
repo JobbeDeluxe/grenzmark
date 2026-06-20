@@ -946,6 +946,8 @@ func _build_ui() -> void:
 	settings_box.add_child(save_actions)
 	_tbutton(save_actions, "Speichern", _save_game)
 	_tbutton(save_actions, "Laden", _load_game)
+	var menu_btn := _tbutton(save_actions, "Hauptmenue", _back_to_menu)
+	menu_btn.tooltip_text = "Zurueck zum Hauptmenue. Vorher ggf. speichern — ungespeicherter Fortschritt geht verloren."
 	var scale_actions := HBoxContainer.new()
 	scale_actions.add_theme_constant_override("separation", 4)
 	settings_box.add_child(scale_actions)
@@ -3227,6 +3229,13 @@ func _bq_name(bq: int) -> String:
 ## "Speichern"-Button/Taste: öffnet den Benennen-Dialog (benannte Speicherpunkte).
 func _save_game() -> void:
 	_open_save_dialog()
+
+
+## Zurück ins Hauptmenü (spart das Schließen/Neustarten des Spiels). Ungespeicherter
+## Fortschritt geht verloren — der Knopf liegt absichtlich im System-Menü neben
+## „Speichern", und der Tooltip warnt.
+func _back_to_menu() -> void:
+	get_tree().change_scene_to_file("res://game/menu.tscn")
 
 
 ## Schnellspeichern (F2): in den zuletzt benutzten Slot, sonst "Schnellspeicher".
