@@ -47,8 +47,9 @@ class Good:
 	var dest: int   # Flaggen-Index (Zielflagge)
 
 
-# Träger-Zustände
-enum { C_IDLE, C_TO_PICKUP, C_CARRYING, C_RETURN }
+# Träger-Zustände (C_TO_FETCH: leer zur Gebäudeflagge, um einen Ausgang aus dem Haus
+# zu holen — Option output_via_carrier, #66).
+enum { C_IDLE, C_TO_PICKUP, C_CARRYING, C_RETURN, C_TO_FETCH }
 
 # Tür-Exkursion eines Straßenträgers (#66): an einer Gebäudeflagge verlängert er
 # seinen Weg bis in die Tür — trägt die Eingangsware hinein (statt Teleport an der
@@ -309,6 +310,13 @@ func set_recruiting_ratio(ratio: int) -> void:
 
 func set_mines_accept_beer(on: bool) -> void:
 	mines_accept_beer = on
+
+
+## #66: Ausgangsweg umstellen. true = Arbeiter lagert die fertige Ware im Haus, der
+## Straßenträger holt sie durch die Tür; false (Default) = Arbeiter trägt selbst zur
+## Flagge. Laufende Trag-Gänge laufen nach dem Umschalten regulär aus.
+func set_output_via_carrier(on: bool) -> void:
+	output_via_carrier = on
 
 
 ## Verteilungsgewicht (0..10) eines Abnehmers für eine knappe Ware setzen (#43).
@@ -2414,8 +2422,24 @@ func _tick_carrier(c: Carrier) -> void:
 				c.pickup_end = 1
 				c.target = segs
 				c.state = C_TO_PICKUP
+			# Option output_via_carrier (#66): liegt an einem Gebäude-Ende ein fertiger
+			# Ausgang im Haus, leer dorthin und durch die Tür holen.
+			elif _building_output_to_fetch(e0) >= 0 and goods_on_flag(e0) < FLAG_CAP:
+				c.dbidx = _building_output_to_fetch(e0)
+				c.dflag = e0
+				c.target = 0.0
+				c.state = C_TO_FETCH
+			elif _building_output_to_fetch(e1) >= 0 and goods_on_flag(e1) < FLAG_CAP:
+				c.dbidx = _building_output_to_fetch(e1)
+				c.dflag = e1
+				c.target = segs
+				c.state = C_TO_FETCH
 			else:
 				c.target = mid
+		C_TO_FETCH:
+			# An der Gebäudeflagge angekommen → leer durch die Tür, Ausgang holen.
+			c.dt = 0.0
+			c.dphase = D_IN
 		C_TO_PICKUP:
 			var here := _end_flag(c.road, c.pickup_end)
 			var other := _end_flag(c.road, 1 - c.pickup_end)
@@ -2481,6 +2505,41 @@ func _building_for_carry_in(flag_idx: int, g: Good) -> int:
 	return bidx
 
 
+## Im Träger-Modus (#66, output_via_carrier): hat das Arbeitshaus an [flag_idx] einen
+## fertigen Ausgang, den ein Straßenträger jetzt durch die Tür holen soll? Gibt den
+## Gebäude-Index zurück, sonst -1. Nur mit erreichbarem Ziellager.
+func _building_output_to_fetch(flag_idx: int) -> int:
+	if not output_via_carrier:
+		return -1
+	if not flag_to_building.has(flag_idx):
+		return -1
+	var bidx: int = flag_to_building[flag_idx]
+	var bs: BState = bstates.get(bidx)
+	if bs == null or bs.is_construction or _out_total(bs) <= 0:
+		return -1
+	if _nearest_storage(flag_idx, 0, func(_s: Storage) -> bool: return true) == null:
+		return -1
+	return bidx
+
+
+## Nimmt einen fertigen Ausgang aus dem Haus (Träger-Modus, #66) und macht daraus eine
+## Ware Richtung nächstes Lager. null, wenn nichts zu holen ist.
+func _take_building_output(bs: BState) -> Good:
+	if not output_via_carrier or _out_total(bs) <= 0:
+		return null
+	var good := _pick_out_to_ship(bs)
+	if good < 0:
+		return null
+	var st := _nearest_storage(bs.flag_idx, 0, func(_s: Storage) -> bool: return true)
+	if st == null:
+		return null
+	bs.out_stock[good] = int(bs.out_stock[good]) - 1
+	var g := Good.new()
+	g.type = good
+	g.dest = st.flag_idx
+	return g
+
+
 ## Tür-Exkursion eines Straßenträgers (#66): er steht an der Gebäudeflagge und
 ## verlängert seinen Weg in die Tür. D_IN trägt die Eingangsware hinein und bucht sie
 ## (delivered++/incoming--); D_OUT bringt ihn leer zur Flagge zurück. Danach nimmt er
@@ -2500,6 +2559,8 @@ func _tick_carrier_door(c: Carrier) -> void:
 					bs.incoming[ty] = maxi(0, int(bs.incoming.get(ty, 0)) - 1)
 					c.carrying = null
 					_mark_road_delivery(c.road)
+				# Option output_via_carrier (#66): einen fertigen Ausgang mit hinausnehmen.
+				c.carrying = _take_building_output(bs)
 				c.dphase = D_OUT
 		D_OUT:
 			c.dt = maxf(c.dt - DOOR_SPEED, 0.0)

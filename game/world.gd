@@ -957,6 +957,8 @@ func _build_ui() -> void:
 	settings_box.add_child(rules_actions)
 	var beer_btn := _tbutton(rules_actions, "Bier→Minen", _toggle_mines_beer)
 	beer_btn.tooltip_text = "Hausregel: Minen nehmen auch Bier als Nahrung (Original: nur Fisch/Fleisch/Brot)."
+	var outc_btn := _tbutton(rules_actions, "Ausgang", _toggle_output_via_carrier)
+	outc_btn.tooltip_text = "Ausgangsweg: Arbeiter traegt selbst zur Flagge (Default) oder der Strassentraeger holt die fertige Ware aus dem Haus (#66)."
 	_update_settings_text()
 
 	_build_tools_panel()
@@ -1970,8 +1972,11 @@ func _update_settings_text() -> void:
 			"AN" if UISkin.option_bool("start_ai", true) else "AUS",
 			"AN" if UISkin.option_bool("show_resource_bar", false) else "AUS",
 		] + \
-		"Hausregel: Bier als Minennahrung %s\n\n" % \
+		"Hausregel: Bier als Minennahrung %s\n" % \
 			("AN" if (economy != null and economy.mines_accept_beer) else "AUS") + \
+		"Ausgang: %s\n\n" % \
+			("Strassentraeger holt aus dem Haus" if (economy != null and economy.output_via_carrier) \
+				else "Arbeiter traegt selbst zur Flagge") + \
 		"Anpassbar:\n" + \
 		"- assets/ui.json: UI-Farben, Randabstaende, Panel-/Button-Groessen\n" + \
 		"- assets/design.json: Gebaeude-/Flaggen-/Bauplatzgroessen und Eingange\n" + \
@@ -2005,6 +2010,15 @@ func _toggle_mines_beer() -> void:
 	economy.set_mines_accept_beer(not economy.mines_accept_beer)
 	_update_settings_text()
 	_flash("Bier als Minennahrung " + ("AN" if economy.mines_accept_beer else "AUS"))
+
+
+## #66: Ausgangsweg umschalten — Arbeiter traegt selbst (Default) ⟷ Strassentraeger holt.
+func _toggle_output_via_carrier() -> void:
+	if economy == null:
+		return
+	economy.set_output_via_carrier(not economy.output_via_carrier)
+	_update_settings_text()
+	_flash("Ausgang per Traeger " + ("AN" if economy.output_via_carrier else "AUS (Arbeiter traegt)"))
 
 
 ## Optionale obere Warenleiste ein-/ausblenden (im Original nicht dauerhaft da).
@@ -3263,6 +3277,7 @@ func _build_save_data() -> Dictionary:
 		recruiting_ratio = economy.recruiting_ratio,
 		recruit_accum = economy._recruit_accum,
 		mines_accept_beer = economy.mines_accept_beer,
+		output_via_carrier = economy.output_via_carrier,  # Ausgangsweg (#66)
 		distribution = economy.distribution.duplicate(true),  # Warenverteilung (#43)
 		transport_order = economy.transport_order.duplicate(),  # Transport-Prioritäten (#43)
 		# Bestände der baubaren Lagerhäuser (#31); HQ-Lager steckt in hq_stock.
@@ -3426,6 +3441,7 @@ func _apply_save_data(data: Dictionary) -> void:
 	economy.recruiting_ratio = clampi(int(data.get("recruiting_ratio", economy.recruiting_ratio)), 0, 10)
 	economy._recruit_accum = int(data.get("recruit_accum", 0))
 	economy.mines_accept_beer = bool(data.get("mines_accept_beer", false))
+	economy.output_via_carrier = bool(data.get("output_via_carrier", false))  # Ausgangsweg (#66)
 	var dist = data.get("distribution", null)
 	if dist is Dictionary and not (dist as Dictionary).is_empty():
 		economy.distribution = dist  # Warenverteilung (#43); sonst bleiben die Defaults

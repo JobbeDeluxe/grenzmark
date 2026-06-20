@@ -1889,6 +1889,31 @@ func _test_door_transport() -> void:
 	_check(eco.hq_stock.get(Goods.BOARDS, 0) > 0,
 		"Tür: Holz reingetragen, verarbeitet und Bretter zurück ins HQ geliefert")
 
+	# --- Option output_via_carrier: Arbeiter lagert im Haus, Straßenträger holt ---
+	var map3 := _flat_map(40, 40)
+	var state3 := WorldState.new(map3)
+	var eco3 := Economy.new(state3)
+	eco3.output_via_carrier = true
+	var hq3 := state3.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	if hq3 == null:
+		return
+	eco3.resync()
+	var saw3 := state3.place_building(10, 6, WorldState.BQ_HOUSE, false, "sawmill", 0, false)
+	if saw3 == null:
+		return
+	state3.build_road(hq3.flag_pos, saw3.flag_pos)
+	eco3.resync()
+	eco3.hq_stock[Goods.WOOD] = 20
+	var bs3: Economy.BState = eco3.bstates.get(map3.idx(saw3.pos.x, saw3.pos.y))
+	var worker_carried := false
+	for t in 8000:
+		eco3.tick()
+		if bs3 != null and bs3.wphase == Economy.WK_DROP_OUT:
+			worker_carried = true
+	_check(not worker_carried, "Träger-Modus: Arbeiter trägt NICHT selbst hinaus")
+	_check(eco3.hq_stock.get(Goods.BOARDS, 0) > 0,
+		"Träger-Modus: Straßenträger holt Bretter aus dem Haus → zurück ins HQ")
+
 	# --- Münzen: echte Lieferung + lokaler Verbrauch, ohne Münzverlust ---
 	var map2 := _flat_map(40, 40)
 	var state2 := WorldState.new(map2)
