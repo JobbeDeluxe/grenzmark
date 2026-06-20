@@ -96,8 +96,12 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Baufortschritt proportional zum gelieferten Material (Stein wertvoller als Holz)
 - [x] Bauarbeiter kommt vom HQ; gebaut wird erst nach seiner Ankunft
 - [x] HQ-Tür-Träger: trägt Waren sichtbar aus der HQ-Tür zur Flagge hinaus und
-      eingehende Waren von der Flagge ins Lager hinein (Eingangsweg). Nur HQ/Lager;
-      normale Gebäude regeln den letzten Schritt selbst (Ware liegt an der Flagge).
+      eingehende Waren von der Flagge ins Lager hinein (Eingangsweg). Nur HQ/Lager.
+- [x] Arbeitshäuser: Flagge↔Tür ohne Teleport (#66, S2-treu). Eingang: der
+      Straßenträger der Anschlussstraße trägt die Ware bis in die Tür (Tür-Exkursion);
+      Münzen reisen echt zum Militär. Ausgang Default: der Arbeiter trägt die fertige
+      Ware selbst zur Flagge; Option „output_via_carrier": der Straßenträger holt sie
+      aus dem Haus (Schalter in den Einstellungen).
 - [x] Kein Fallback-Träger mehr: ohne HQ-Verbindung bleibt die Straße unbesetzt
       (Träger kommt, sobald sie ans Netz angeschlossen ist)
 - [x] Tür-Träger auch für zusätzliche Lagerhäuser (#31: eigener HouseCarrier je Lager)
