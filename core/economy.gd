@@ -200,6 +200,7 @@ class BState:
 	var prod_total := 0                    # Gesamtticks im Bewertungsfenster
 	var idle_reason := IDLE_OK             # warum WK_IDLE nicht startet (Fensteranzeige)
 	var carry_good := -1                   # Ware, die der Arbeiter gerade zur Flagge trägt (#66)
+	var reserved_idx := -1                 # reservierter Arbeitsplatz-Knoten (Baum/Feld/…), -1 = keiner
 
 
 var state: WorldState
@@ -473,6 +474,7 @@ func resync() -> void:
 			var bs_gone: BState = bstates[i]
 			if bs_gone.has_person:
 				_return_person(bs_gone.person_job, bs_gone.bld.owner)  # Arbeiter kehrt zurück (#9)
+			_release_target(bs_gone)  # reservierten Arbeitsplatz freigeben (#66)
 			bstates.erase(i)
 
 	# Verschwundene Lagerhäuser (#31): Lager, deren Gebäude weg ist, aus der Liste nehmen
@@ -1894,6 +1896,7 @@ func _tick_work(bs: BState) -> void:
 					return  # nichts zu tun (kein fällbarer Baum / Pflanzplatz / Feld)
 				bs.idle_reason = IDLE_OK
 				bs.worker_target = tgt
+				_reserve_target(bs, tgt)  # Ziel sperren, bis die Aktion erledigt ist (#66)
 				bs.out_yield = true  # Default; _do_resource_action setzt bei Säen auf false
 				_consume_inputs(bs)
 				bs.producing = true
@@ -1914,6 +1917,7 @@ func _tick_work(bs: BState) -> void:
 			if bs.ph_t <= 0.0:
 				if gather:
 					_do_resource_action(bs)
+					_release_target(bs)  # Ziel ist abgebaut/bepflanzt → Reservierung frei (#66)
 					if bs.out_yield:
 						_add_out(bs, bs.cur_output)  # Ware entsteht am Arbeitsplatz (Baum/Feld)
 					# S2 (#66): Mit Ertrag und freier Flagge trägt der Arbeiter die Ware vom
@@ -2142,14 +2146,41 @@ func _consume_inputs(bs: BState) -> void:
 
 
 ## Knoten, zu dem der Arbeiter für diesen Produktionszyklus laufen muss.
+## Reserviert einen Arbeitsplatz-Knoten für dieses Gebäude, damit kein zweiter Arbeiter
+## dasselbe Ziel nimmt und der Spieler einen leeren Pflanz-/Saatplatz nicht wegbaut (#66).
+func _reserve_target(bs: BState, node: Vector2i) -> void:
+	_release_target(bs)
+	if node.x < 0:
+		return
+	bs.reserved_idx = state.map.idx(node.x, node.y)
+	state.work_reserved[bs.reserved_idx] = bs.idx
+
+
+## Gibt den reservierten Arbeitsplatz wieder frei (Aktion erledigt / abgebrochen / Abriss).
+func _release_target(bs: BState) -> void:
+	if bs.reserved_idx >= 0:
+		if int(state.work_reserved.get(bs.reserved_idx, -1)) == bs.idx:
+			state.work_reserved.erase(bs.reserved_idx)
+		bs.reserved_idx = -1
+
+
+## Ist dieser Knoten schon von einem ANDEREN Arbeiter belegt (#66)? bs == null (Tests/
+## reine Suche) → keine Filterung.
+func _node_taken(node: Vector2i, bs: BState) -> bool:
+	if bs == null:
+		return false
+	var i := state.map.idx(node.x, node.y)
+	return state.work_reserved.has(i) and int(state.work_reserved[i]) != bs.idx
+
+
 func _resource_target(bs: BState) -> Vector2i:
 	match String(bs.def.get("resource", "")):
-		"tree": return _find_mature_tree(bs.bld.pos, RES_RADIUS)
-		"stone": return _find_object(bs.bld.pos, MapData.MO_STONE, RES_RADIUS)
-		"ore": return _find_deposit(bs.bld.pos, int(bs.def.get("mineral", -1)), ORE_RADIUS)
-		"plant_tree": return _find_plant_spot(bs.bld.pos)
-		"field": return _find_farm_target(bs.bld.pos)
-		"water": return _find_water_edge(bs.bld.pos)
+		"tree": return _find_mature_tree(bs.bld.pos, RES_RADIUS, bs)
+		"stone": return _find_object(bs.bld.pos, MapData.MO_STONE, RES_RADIUS, bs)
+		"ore": return _find_deposit(bs.bld.pos, int(bs.def.get("mineral", -1)), ORE_RADIUS, bs)
+		"plant_tree": return _find_plant_spot(bs.bld.pos, bs)
+		"field": return _find_farm_target(bs.bld.pos, bs)
+		"water": return _find_water_edge(bs.bld.pos, bs)
 	return Vector2i(-1, -1)
 
 
@@ -2165,6 +2196,8 @@ func _do_resource_action(bs: BState) -> void:
 				state.map.clear_map_object(n.x, n.y)
 				_growing_trees.erase(state.map.idx(n.x, n.y))
 				dirty = true
+			else:
+				bs.out_yield = false  # Baum weg (anderer war schneller) → kein Holz (#66)
 		"stone":
 			if state.map.map_object(n.x, n.y) == MapData.MO_STONE:
 				var hits := state.map.stone_hits_left_at(n.x, n.y) - 1
@@ -2179,14 +2212,20 @@ func _do_resource_action(bs: BState) -> void:
 					else:
 						state.map.clear_map_object(n.x, n.y)
 				dirty = true
+			else:
+				bs.out_yield = false  # Stein weg → kein Ertrag (#66)
 		"ore":
 			# Unterirdisches Vorkommen abbauen (eine Einheit; bei 0 erschöpft).
 			if state.map.take_ore_deposit(n.x, n.y):
 				dirty = true
+			else:
+				bs.out_yield = false  # Vorkommen erschöpft → kein Ertrag (#66)
 		"water":
 			# Einen Fisch fangen (Issue #6); der Fischgrund erschöpft bei 0.
 			if state.map.take_fish(n.x, n.y):
 				dirty = true
+			else:
+				bs.out_yield = false  # Fischgrund leer → kein Fisch (#66)
 		"plant_tree":
 			if not state.has_object(n.x, n.y):
 				# Förster pflanzt einen SETZLING, der über mehrere Stufen wächst.
@@ -2224,7 +2263,7 @@ func _do_resource_action(bs: BState) -> void:
 ## Fischgrund im Umkreis: ein Küstenknoten mit verbleibendem Fischbestand (Issue #6).
 ## Erschöpfte Gründe (fish == 0) werden übersprungen → der Fischer wandert weiter
 ## bzw. die Hütte wartet, wenn nichts mehr in Reichweite ist.
-func _find_water_edge(center: Vector2i) -> Vector2i:
+func _find_water_edge(center: Vector2i, bs: BState = null) -> Vector2i:
 	for r in range(1, ORE_RADIUS + 1):
 		for dy in range(-r, r + 1):
 			for dx in range(-r, r + 1):
@@ -2233,6 +2272,8 @@ func _find_water_edge(center: Vector2i) -> Vector2i:
 				if not state.map.in_bounds(x, y):
 					continue
 				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
+					continue
+				if _node_taken(Vector2i(x, y), bs):
 					continue
 				if state.map.fish_at(x, y) > 0:
 					return Vector2i(x, y)
@@ -2261,7 +2302,7 @@ func _ship_outputs(bs: BState) -> void:
 
 # --- Ressourcensuche ---
 
-func _find_object(center: Vector2i, motype: int, radius: int) -> Vector2i:
+func _find_object(center: Vector2i, motype: int, radius: int, bs: BState = null) -> Vector2i:
 	for r in range(1, radius + 1):
 		for dy in range(-r, r + 1):
 			for dx in range(-r, r + 1):
@@ -2270,13 +2311,15 @@ func _find_object(center: Vector2i, motype: int, radius: int) -> Vector2i:
 				if not state.map.in_bounds(x, y):
 					continue
 				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
+					continue
+				if _node_taken(Vector2i(x, y), bs):
 					continue
 				if state.map.map_object(x, y) == motype:
 					return Vector2i(x, y)
 	return Vector2i(-1, -1)
 
 
-func _find_mature_tree(center: Vector2i, radius: int) -> Vector2i:
+func _find_mature_tree(center: Vector2i, radius: int, bs: BState = null) -> Vector2i:
 	for r in range(1, radius + 1):
 		for dy in range(-r, r + 1):
 			for dx in range(-r, r + 1):
@@ -2285,6 +2328,8 @@ func _find_mature_tree(center: Vector2i, radius: int) -> Vector2i:
 				if not state.map.in_bounds(x, y):
 					continue
 				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
+					continue
+				if _node_taken(Vector2i(x, y), bs):
 					continue
 				if state.map.map_object(x, y) == MapData.MO_TREE \
 						and state.map.tree_stage_at(x, y) == MapData.TREE_BIG:
@@ -2294,7 +2339,7 @@ func _find_mature_tree(center: Vector2i, radius: int) -> Vector2i:
 
 ## Unterirdisches Erz-Vorkommen der passenden Sorte im Umkreis suchen
 ## (mineral < 0 = beliebiges Erz). Liefert den nächstgelegenen Fundknoten.
-func _find_deposit(center: Vector2i, mineral: int, radius: int) -> Vector2i:
+func _find_deposit(center: Vector2i, mineral: int, radius: int, bs: BState = null) -> Vector2i:
 	for r in range(1, radius + 1):
 		for dy in range(-r, r + 1):
 			for dx in range(-r, r + 1):
@@ -2304,6 +2349,8 @@ func _find_deposit(center: Vector2i, mineral: int, radius: int) -> Vector2i:
 					continue
 				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
 					continue
+				if _node_taken(Vector2i(x, y), bs):
+					continue
 				if state.map.ore_deposit_amount_at(x, y) <= 0:
 					continue
 				if mineral < 0 or state.map.ore_deposit_kind_at(x, y) == mineral:
@@ -2311,7 +2358,7 @@ func _find_deposit(center: Vector2i, mineral: int, radius: int) -> Vector2i:
 	return Vector2i(-1, -1)
 
 
-func _find_plant_spot(center: Vector2i) -> Vector2i:
+func _find_plant_spot(center: Vector2i, bs: BState = null) -> Vector2i:
 	for r in range(1, RES_RADIUS + 1):
 		for dy in range(-r, r + 1):
 			for dx in range(-r, r + 1):
@@ -2320,6 +2367,8 @@ func _find_plant_spot(center: Vector2i) -> Vector2i:
 				if not state.map.in_bounds(x, y):
 					continue
 				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
+					continue
+				if _node_taken(Vector2i(x, y), bs):
 					continue
 				if state.has_object(x, y) or state._occ(x, y) != WorldState.OBJ_NONE:
 					continue
@@ -2365,7 +2414,7 @@ func _is_field_spot(x: int, y: int) -> bool:
 ## alle gültigen Plätze sammeln — Class1 = reife Felder (ernten), Class2 =
 ## Saatplätze (säen) — und aus der besten verfügbaren Klasse ZUFÄLLIG (seeded,
 ## deterministisch) wählen. Ernten geht vor Säen. (-1,-1) → der Hof wartet sichtbar.
-func _find_farm_target(center: Vector2i) -> Vector2i:
+func _find_farm_target(center: Vector2i, bs: BState = null) -> Vector2i:
 	var ripe: Array[Vector2i] = []
 	var sow: Array[Vector2i] = []
 	for r in range(1, FARM_RADIUS + 1):
@@ -2377,6 +2426,8 @@ func _find_farm_target(center: Vector2i) -> Vector2i:
 					continue
 				if WorldState.hex_distance(center, Vector2i(x, y)) != r:
 					continue
+				if _node_taken(Vector2i(x, y), bs):
+					continue  # Feld/Saatplatz schon von einem anderen Bauern beansprucht (#66)
 				if state.map.map_object(x, y) == MapData.MO_FIELD:
 					if state.map.field_stage_at(x, y) == MapData.FIELD_RIPE:
 						ripe.append(Vector2i(x, y))

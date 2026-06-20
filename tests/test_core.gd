@@ -57,6 +57,7 @@ func _initialize() -> void:
 	_test_catapult()
 	_test_promotion()
 	_test_door_transport()
+	_test_work_reservation()
 	_test_roadsplit()
 	_test_build_help_respects_territory()
 	_test_building_needs_territory_margin()
@@ -1968,6 +1969,65 @@ func _test_door_transport() -> void:
 	var gbs: Economy.BState = eco2.bstates.get(map2.idx(gh.pos.x, gh.pos.y))
 	_check(gbs != null and int(gbs.delivered.get(Goods.COINS, 0)) == 0,
 		"Tür-Münzen: keine Münze bleibt unverbraucht im Gebäude liegen")
+
+
+## #66-Folge: Arbeitsplätze werden reserviert, bevor der Arbeiter losläuft. Zwei
+## Holzfäller nehmen NICHT denselben Baum (kein Phantom-Holz), und der Förster-
+## Pflanzplatz lässt sich nicht wegbauen, solange er reserviert ist.
+func _test_work_reservation() -> void:
+	var map := _flat_map(30, 30)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	if hq == null:
+		return
+	eco.resync()
+	# Zwei Holzfäller, EIN reifer Baum in Reichweite beider.
+	var wc1 := state.place_building(8, 7, WorldState.BQ_HOUSE, false, "woodcutter", 0, false)
+	var wc2 := state.place_building(12, 7, WorldState.BQ_HOUSE, false, "woodcutter", 0, false)
+	_check(wc1 != null and wc2 != null, "Reservierung: zwei Holzfäller platzierbar")
+	if wc1 == null or wc2 == null:
+		return
+	map.set_map_object(10, 6, MapData.MO_TREE)
+	map.set_tree_stage(10, 6, MapData.TREE_BIG)
+	eco.resync()
+	var b1: Economy.BState = eco.bstates.get(map.idx(wc1.pos.x, wc1.pos.y))
+	var b2: Economy.BState = eco.bstates.get(map.idx(wc2.pos.x, wc2.pos.y))
+	var conflict := false
+	for t in 3000:
+		eco.tick()
+		if b1 != null and b2 != null and b1.worker_target.x >= 0 \
+				and b1.worker_target == b2.worker_target:
+			conflict = true
+	_check(not conflict, "Reservierung: zwei Holzfäller nehmen nie denselben Baum")
+	# Keine Straße → der einzige Stamm bleibt in der out_stock des fällenden Holzfällers.
+	var total_wood := int(b1.out_stock.get(Goods.WOOD, 0)) + int(b2.out_stock.get(Goods.WOOD, 0))
+	_check(total_wood == 1, "Reservierung: genau EIN Stamm aus EINEM Baum (kein Phantom-Holz), war %d" % total_wood)
+
+	# Förster: reservierter Pflanzplatz ist gegen Bauen/Wegebau gesperrt.
+	var map2 := _flat_map(30, 30)
+	var state2 := WorldState.new(map2)
+	var eco2 := Economy.new(state2)
+	var hq2 := state2.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	if hq2 == null:
+		return
+	eco2.resync()
+	var fo := state2.place_building(10, 13, WorldState.BQ_HOUSE, false, "forester", 0, false)
+	if fo == null:
+		return
+	eco2.resync()
+	var fb: Economy.BState = eco2.bstates.get(map2.idx(fo.pos.x, fo.pos.y))
+	var reserved_seen := false
+	for t in 2000:
+		eco2.tick()
+		if fb != null and fb.reserved_idx >= 0:
+			var rx := fb.reserved_idx % map2.width
+			var ry := fb.reserved_idx / map2.width
+			reserved_seen = true
+			_check(state2.is_work_reserved(rx, ry), "Reservierung: Förster-Pflanzplatz ist gesperrt")
+			_check(state2.ensure_flag(rx, ry) == null, "Reservierung: keine Flagge auf dem Pflanzplatz baubar")
+			break
+	_check(reserved_seen, "Reservierung: Förster reserviert einen Pflanzplatz")
 
 
 func _test_roadsplit() -> void:

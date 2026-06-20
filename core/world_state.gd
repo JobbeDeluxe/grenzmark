@@ -67,6 +67,11 @@ var flags: Dictionary = {}      # idx -> Flag
 var buildings: Dictionary = {}  # idx -> Building
 var roads: Array[Road] = []
 var occupied: Dictionary = {}   # idx -> OBJ_*
+# Arbeitsplatz-Reservierung (#66-Folge): Knoten, die ein Arbeiter gerade als Ziel
+# beansprucht (Baum/Stein/Erz/Fischgrund/Pflanz-/Saatplatz), idx -> Gebäude-Index. So
+# nimmt kein zweiter Arbeiter dasselbe Ziel und der Spieler kann den (leeren) Pflanz-/
+# Saatplatz nicht wegbauen, solange der Arbeiter unterwegs ist. Transient (kein Save).
+var work_reserved: Dictionary = {}
 var territory: Dictionary = {}        # idx -> true (Spieler-Gebiet, Besitzer 0)
 var enemy_territory: Dictionary = {}  # idx -> true (Gegner-Gebiet, Besitzer 1)
 var territory_owner: Dictionary = {}  # idx -> Besitzer-ID (für Grenz-Gleichstand)
@@ -100,6 +105,12 @@ func _init(map_data: MapData) -> void:
 
 func _occ(x: int, y: int) -> int:
 	return occupied.get(map.idx(x, y), OBJ_NONE)
+
+
+## Ist dieser Knoten gerade als Arbeitsplatz reserviert (#66-Folge)? Dann zählt er fürs
+## Bauen/Wegebauen wie belegt, damit niemand den Pflanz-/Saatplatz wegbaut.
+func is_work_reserved(x: int, y: int) -> bool:
+	return work_reserved.has(map.idx(x, y))
 
 
 ## Begehbar = mindestens ein angrenzendes Dreieck ist begehbares Terrain.
@@ -346,7 +357,7 @@ func effective_bq(x: int, y: int) -> int:
 	var bq := compute_bq(x, y)
 	if bq == BQ_NOTHING:
 		return BQ_NOTHING
-	if _occ(x, y) != OBJ_NONE:
+	if _occ(x, y) != OBJ_NONE or is_work_reserved(x, y):
 		return BQ_NOTHING
 	if bq == BQ_FLAG or bq == BQ_MINE:
 		return bq
@@ -407,7 +418,7 @@ func ensure_flag(x: int, y: int, owner := 0) -> Flag:
 	if flags.has(i):
 		flags[i].owner = owner
 		return flags[i]
-	if not map.in_bounds(x, y) or _occ(x, y) != OBJ_NONE:
+	if not map.in_bounds(x, y) or _occ(x, y) != OBJ_NONE or is_work_reserved(x, y):
 		return null
 	return _add_flag(x, y, owner)
 
@@ -495,7 +506,7 @@ func military_placement_clear(x: int, y: int) -> bool:
 func can_place_building(x: int, y: int, size: int, owner := 0, influence := 0) -> bool:
 	if not has_building_territory_margin_for(owner, x, y):
 		return false
-	if _occ(x, y) != OBJ_NONE:
+	if _occ(x, y) != OBJ_NONE or is_work_reserved(x, y):
 		return false
 	# Militärgebäude (influence > 0) brauchen S2-Mindestabstand zu jedem
 	# Militärgebäude/HQ; Wirtschaftsgebäude (influence 0) sind davon frei.
@@ -531,7 +542,7 @@ func actual_build_spot_bq(x: int, y: int) -> int:
 	# Territoriumsrand am Knoten UND an der Eingangsflagge SE) und effective_bq werden
 	# nur EINMAL ausgewertet — statt can_place_building 4× (CASTLE/HOUSE/HUT/MINE) zu
 	# rufen. Ergebnis ist identisch zur früheren Kaskade (Test _test_build_spot_bq_*).
-	if _occ(x, y) != OBJ_NONE:
+	if _occ(x, y) != OBJ_NONE or is_work_reserved(x, y):
 		return BQ_NOTHING
 	# Gebäude-Gates (Spieler, owner 0): eigenes Gebiet mit Rand + gültige SE-Eingangsflagge.
 	var can_build := has_building_territory_margin_for(0, x, y)
@@ -735,6 +746,8 @@ func plan_road(from: Vector2i, to: Vector2i, owner := -1) -> Array[Vector2i]:
 			var ni := map.idx(n.x, n.y)
 			if has_object(n.x, n.y):
 				continue
+			if is_work_reserved(n.x, n.y):
+				continue  # Arbeitsplatz (z. B. Förster-Pflanzplatz) nicht überbauen (#66)
 			if ni != goal_i:
 				# Zwischenknoten müssen begehbar UND frei sein.
 				if not node_walkable(n.x, n.y) or _occ(n.x, n.y) != OBJ_NONE:
