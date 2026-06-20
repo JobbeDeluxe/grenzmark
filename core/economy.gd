@@ -1863,12 +1863,13 @@ func _tick_work(bs: BState) -> void:
 
 	match bs.wphase:
 		WK_IDLE:
-			# Zuerst fertige Ware aus der Tür zur Flagge tragen (Default-Ausgang, #66).
-			# Im Träger-Modus (output_via_carrier) übernimmt das der Straßenträger.
+			# Fallback (#66): noch im Haus liegende Fertigware (konnte vorher nicht zur
+			# Flagge — voll/kein Lager) jetzt hinaustragen. Im Träger-Modus
+			# (output_via_carrier) holt stattdessen der Straßenträger.
 			if _worker_should_carry_out(bs):
 				bs.carry_good = _pick_out_to_ship(bs)
-				bs.worker_target = bs.bld.flag_pos
-				_enter_wphase(bs, WK_DROP_OUT, _worker_walk_ticks(bs, bs.bld.flag_pos))
+				bs.worker_target = Vector2i(-1, -1)   # Start = Tür
+				_enter_wphase(bs, WK_DROP_OUT, _worker_haul_ticks(bs))
 				return
 			if bs.stopped:
 				return  # angehalten: keinen neuen Produktionsgang mehr starten
@@ -1913,39 +1914,44 @@ func _tick_work(bs: BState) -> void:
 			if bs.ph_t <= 0.0:
 				if gather:
 					_do_resource_action(bs)
-					_enter_wphase(bs, WK_BACK, _worker_walk_ticks(bs, bs.worker_target))
+					if bs.out_yield:
+						_add_out(bs, bs.cur_output)  # Ware entsteht am Arbeitsplatz (Baum/Feld)
+					# S2 (#66): Mit Ertrag und freier Flagge trägt der Arbeiter die Ware vom
+					# Arbeitsplatz DIREKT zur Flagge (Start = worker_target), legt sie ab und
+					# geht leer ins Haus. Sonst (Säen / Flagge voll / kein Lager) leer zurück.
+					if bs.out_yield and _worker_should_carry_out(bs):
+						bs.carry_good = _pick_out_to_ship(bs)
+						_enter_wphase(bs, WK_DROP_OUT, _worker_haul_ticks(bs))
+					else:
+						_enter_wphase(bs, WK_BACK, _worker_walk_ticks(bs, bs.worker_target))
 				else:
 					_add_out(bs, bs.cur_output)
-					_enter_wphase(bs, WK_WAIT, float(Tuning.work_wait(bs.bld.def_id, resource)))
-		WK_BACK:
+					# Stationär: fertige Ware sofort aus der Tür zur Flagge tragen (#66).
+					if _worker_should_carry_out(bs):
+						bs.carry_good = _pick_out_to_ship(bs)
+						bs.worker_target = Vector2i(-1, -1)   # Start = Tür
+						_enter_wphase(bs, WK_DROP_OUT, _worker_haul_ticks(bs))
+					else:
+						_enter_wphase(bs, WK_WAIT, float(Tuning.work_wait(bs.bld.def_id, resource)))
+		WK_BACK:  # leerer Rückweg (Säen oder Flagge/Lager belegt → Ware blieb im Haus)
 			bs.ph_t -= 1.0
 			if bs.ph_t <= 0.0:
-				if bs.out_yield:
-					_add_out(bs, bs.cur_output)
+				_enter_wphase(bs, WK_WAIT, float(Tuning.work_wait(bs.bld.def_id, resource)))
+		WK_DROP_OUT:  # Fertigware vom Arbeitsplatz/Tür zur Flagge tragen + ablegen (#66)
+			bs.ph_t -= 1.0
+			if bs.ph_t <= 0.0:
+				_drop_output_at_flag(bs, bs.carry_good)
+				bs.carry_good = -1
+				bs.worker_target = Vector2i(-1, -1)   # Rückweg ist fix Flagge→Tür
+				_enter_wphase(bs, WK_DROP_BACK, _worker_walk_ticks(bs, bs.bld.flag_pos))
+		WK_DROP_BACK:  # leer von der Flagge zurück ins Haus → dann Pause (#66)
+			bs.ph_t -= 1.0
+			if bs.ph_t <= 0.0:
 				_enter_wphase(bs, WK_WAIT, float(Tuning.work_wait(bs.bld.def_id, resource)))
 		WK_WAIT:
 			bs.ph_t -= 1.0
 			if bs.ph_t <= 0.0:
 				bs.producing = false
-				bs.worker_target = Vector2i(-1, -1)
-				bs.wphase = WK_IDLE
-			else:
-				return
-			# Wartezeit vorbei: ggf. direkt eine fertige Ware hinaustragen (#66), ohne
-			# eine Tick-Lücke zu lassen, in der die Ware unsichtbar im Haus bleibt.
-			if _worker_should_carry_out(bs):
-				bs.carry_good = _pick_out_to_ship(bs)
-				bs.worker_target = bs.bld.flag_pos
-				_enter_wphase(bs, WK_DROP_OUT, _worker_walk_ticks(bs, bs.bld.flag_pos))
-		WK_DROP_OUT:  # fertige Ware aus der Tür zur Flagge tragen (#66)
-			bs.ph_t -= 1.0
-			if bs.ph_t <= 0.0:
-				_drop_output_at_flag(bs, bs.carry_good)
-				_enter_wphase(bs, WK_DROP_BACK, _worker_walk_ticks(bs, bs.bld.flag_pos))
-		WK_DROP_BACK:  # leer von der Flagge zurück zur Tür (#66)
-			bs.ph_t -= 1.0
-			if bs.ph_t <= 0.0:
-				bs.carry_good = -1
 				bs.worker_target = Vector2i(-1, -1)
 				bs.wphase = WK_IDLE
 
@@ -2070,6 +2076,20 @@ func _worker_walk_ticks(bs: BState, target: Vector2i) -> float:
 	return maxf(a.distance_to(b) / maxf(Tuning.worker_speed(bs.bld.def_id, resource), 0.1), 1.0)
 
 
+## Startknoten des Trag-Wegs (#66): der Arbeitsplatz (worker_target), wenn der Arbeiter
+## von dort die Ernte direkt zur Flagge trägt — sonst die Haustür.
+func _worker_haul_start(bs: BState) -> Vector2i:
+	return bs.worker_target if bs.worker_target.x >= 0 else bs.bld.pos
+
+
+## Laufzeit für den Trag-Weg Startknoten→Flagge (#66).
+func _worker_haul_ticks(bs: BState) -> float:
+	var a := state.map.node_world(_worker_haul_start(bs).x, _worker_haul_start(bs).y)
+	var b := state.map.node_world(bs.bld.flag_pos.x, bs.bld.flag_pos.y)
+	var resource := String(bs.def.get("resource", ""))
+	return maxf(a.distance_to(b) / maxf(Tuning.worker_speed(bs.bld.def_id, resource), 0.1), 1.0)
+
+
 ## Nahrungsgruppe eines Gebäudes (ODER-Eingang, RTTR WaresNeeded): EINE Einheit aus
 ## der Gruppe sättigt. Minen: Fisch/Fleisch/Brot; optionale Hausregel ergänzt Bier.
 ## Leer, wenn das Gebäude keine food_inputs hat.
@@ -2186,7 +2206,7 @@ func _do_resource_action(bs: BState) -> void:
 				_growing_fields.erase(fi)
 				state.map.set_field_decay(n.x, n.y, MapData.FIELD_DECAY_CUT)
 				_decay_fields[fi] = float(Tuning.field_decay_ticks())
-				dirty = true  # out_yield bleibt true → Getreide entsteht in WK_BACK
+				dirty = true  # out_yield bleibt true → Getreide entsteht am Feld (WK_WORK)
 			elif _is_field_spot(n.x, n.y):
 				# Auf einer alten Feld-Deko (Stoppel/verdorrt) darf neu gesät werden.
 				state.map.clear_field_decay(n.x, n.y)
@@ -3149,7 +3169,7 @@ func worker_world(bs: BState) -> Vector2:
 		WK_BACK:
 			return _sample_path(_worker_path(bs), 1.0 - prog)[0]
 		WK_DROP_OUT:  # Tür → Flagge (Ausgang tragen, #66)
-			return _sample_path(_worker_door_path(bs), prog)[0]
+			return _sample_path(_worker_haul_path(bs), prog)[0]
 		WK_DROP_BACK:  # Flagge → Tür (leer zurück, #66)
 			return _sample_path(_worker_door_path(bs), 1.0 - prog)[0]
 	return state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
@@ -3166,16 +3186,27 @@ func worker_facing(bs: BState) -> Vector2:
 		WK_BACK:
 			return -(_sample_path(_worker_path(bs), 1.0 - prog)[1])
 		WK_DROP_OUT:
-			return _sample_path(_worker_door_path(bs), prog)[1]
+			return _sample_path(_worker_haul_path(bs), prog)[1]
 		WK_DROP_BACK:
 			return -(_sample_path(_worker_door_path(bs), 1.0 - prog)[1])
 	return Vector2.ZERO
 
 
-## Kurzweg Tür↔Flagge für das Hinaustragen fertiger Ware (#66).
+## Kurzweg Tür↔Flagge für den leeren Rückweg ins Haus (#66).
 func _worker_door_path(bs: BState) -> Array:
 	return [
 		state.map.node_world(bs.bld.pos.x, bs.bld.pos.y),            # Tür/Bodenknoten
+		state.map.node_world(bs.bld.flag_pos.x, bs.bld.flag_pos.y),  # Eingangsflagge
+	]
+
+
+## Trag-Weg zum Ablegen: vom Arbeitsplatz (Baum/Feld) bzw. der Tür direkt zur Flagge
+## (#66). Beim Holzfäller/Bauern trägt der Arbeiter so die Ernte vom Arbeitsplatz zur
+## Flagge, statt erst leer ins Haus und dann wieder raus.
+func _worker_haul_path(bs: BState) -> Array:
+	var s := _worker_haul_start(bs)
+	return [
+		state.map.node_world(s.x, s.y),
 		state.map.node_world(bs.bld.flag_pos.x, bs.bld.flag_pos.y),  # Eingangsflagge
 	]
 

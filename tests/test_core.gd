@@ -1914,6 +1914,37 @@ func _test_door_transport() -> void:
 	_check(eco3.hq_stock.get(Goods.BOARDS, 0) > 0,
 		"Träger-Modus: Straßenträger holt Bretter aus dem Haus → zurück ins HQ")
 
+	# --- Gatherer (Holzfäller): trägt den Stamm vom BAUM direkt zur Flagge (#66) ---
+	# Nicht erst leer ins Haus und dann wieder raus: während WK_DROP_OUT muss
+	# worker_target noch der Arbeitsplatz (Baum) sein, der Stamm wird von dort getragen.
+	var map4 := _flat_map(40, 40)
+	var state4 := WorldState.new(map4)
+	var eco4 := Economy.new(state4)
+	var hq4 := state4.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	if hq4 == null:
+		return
+	eco4.resync()
+	var wc4 := state4.place_building(10, 7, WorldState.BQ_HOUSE, false, "woodcutter", 0, false)
+	if wc4 == null:
+		return
+	map4.set_map_object(10, 5, MapData.MO_TREE)
+	map4.set_tree_stage(10, 5, MapData.TREE_BIG)
+	state4.build_road(hq4.flag_pos, wc4.flag_pos)
+	eco4.resync()
+	var bs4: Economy.BState = eco4.bstates.get(map4.idx(wc4.pos.x, wc4.pos.y))
+	var hauled_from_worksite := false
+	for t in 6000:
+		eco4.tick()
+		if bs4 != null and bs4.wphase == Economy.WK_DROP_OUT and bs4.worker_target.x >= 0 \
+				and bs4.worker_target != wc4.flag_pos:
+			hauled_from_worksite = true
+		if bs4 != null and not map4.map_object(10, 5) == MapData.MO_TREE:
+			map4.set_map_object(10, 5, MapData.MO_TREE)  # Baum nachwachsen lassen für mehr Zyklen
+			map4.set_tree_stage(10, 5, MapData.TREE_BIG)
+	_check(hauled_from_worksite,
+		"Tür: Holzfäller trägt den Stamm vom Baum direkt zur Flagge (nicht erst ins Haus)")
+	_check(eco4.hq_stock.get(Goods.WOOD, 0) > 0, "Tür: Stämme landen im HQ")
+
 	# --- Münzen: echte Lieferung + lokaler Verbrauch, ohne Münzverlust ---
 	var map2 := _flat_map(40, 40)
 	var state2 := WorldState.new(map2)

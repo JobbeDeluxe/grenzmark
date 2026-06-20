@@ -362,8 +362,9 @@ func _draw_construction() -> void:
 func _draw_planing_site(g: Vector2) -> void:
 	var tex := GameTheme.construction_planing_texture()
 	if tex != null:
-		var sz := 46.0 * GameTheme.texture_scale()
-		draw_texture_rect(tex, Rect2(g.x - sz * 0.5, g.y - sz * 0.62, sz, sz), false)
+		# Nur eine kleine Boden-Markierung, kein riesiges Kreuz (~80% kleiner als zuvor).
+		var sz := 10.0 * GameTheme.texture_scale()
+		draw_texture_rect(tex, Rect2(g.x - sz * 0.5, g.y - sz * 0.55, sz, sz), false)
 		return
 	# Fallback: schlichtes Planierkreuz, kein Fortschrittsring.
 	var dirt := Color(0.46, 0.32, 0.18, 0.9)
