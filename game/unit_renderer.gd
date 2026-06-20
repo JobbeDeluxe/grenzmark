@@ -498,7 +498,7 @@ func _draw_workers() -> void:
 		if not economy.has_worker(bs):
 			continue
 		var p := economy.worker_world(bs)
-		_unit("worker", p, economy.worker_facing(bs), bs.bld.owner)
+		_unit("worker", p, economy.worker_facing(bs), bs.bld.owner, economy.worker_carry(bs))
 		_occlude(p)
 
 

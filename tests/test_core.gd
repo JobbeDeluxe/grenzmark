@@ -1873,18 +1873,21 @@ func _test_door_transport() -> void:
 	state.build_road(hq.flag_pos, saw.flag_pos)
 	eco.resync()
 	eco.hq_stock[Goods.WOOD] = 20
+	var saw_idx := map.idx(saw.pos.x, saw.pos.y)
+	var bs: Economy.BState = eco.bstates.get(saw_idx)
 	var door_seen := false
-	for t in 4000:
+	var worker_carry_seen := false
+	for t in 8000:
 		eco.tick()
 		for r in eco.carriers:
 			if eco.carriers[r].dphase != Economy.D_NONE:
 				door_seen = true
+		if bs != null and bs.wphase == Economy.WK_DROP_OUT:
+			worker_carry_seen = true
 	_check(door_seen, "Tür: Straßenträger betritt die Gebäudetür (Exkursion)")
-	var saw_idx := map.idx(saw.pos.x, saw.pos.y)
-	var bs: Economy.BState = eco.bstates.get(saw_idx)
-	_check((bs != null and int(bs.delivered.get(Goods.WOOD, 0)) + int(bs.out_stock.get(Goods.BOARDS, 0)) > 0) \
-		or eco.hq_stock.get(Goods.BOARDS, 0) > 0,
-		"Tür: Holz wurde ins Sägewerk getragen und verarbeitet")
+	_check(worker_carry_seen, "Tür: Arbeiter trägt fertige Bretter selbst zur Flagge (Default)")
+	_check(eco.hq_stock.get(Goods.BOARDS, 0) > 0,
+		"Tür: Holz reingetragen, verarbeitet und Bretter zurück ins HQ geliefert")
 
 	# --- Münzen: echte Lieferung + lokaler Verbrauch, ohne Münzverlust ---
 	var map2 := _flat_map(40, 40)

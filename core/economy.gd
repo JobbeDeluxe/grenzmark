@@ -118,7 +118,9 @@ enum { H_IDLE, H_OUT, H_FETCH, H_IN, H_RETURN }
 
 # Arbeiter-Phasen eines Ressourcen-Gebäudes (konstante Laufgeschwindigkeit):
 # leer wartend → Hinweg → Aktion am Ziel → Rückweg → Pause am Gebäude.
-enum { WK_IDLE, WK_OUT, WK_WORK, WK_BACK, WK_WAIT }
+# WK_DROP_OUT/WK_DROP_BACK (#66): der Arbeiter trägt eine fertige Ware aus der Tür zur
+# Flagge und kommt leer zurück (Default-Ausgang, statt Teleport an die Flagge).
+enum { WK_IDLE, WK_OUT, WK_WORK, WK_BACK, WK_WAIT, WK_DROP_OUT, WK_DROP_BACK }
 
 # Warum ein Produktionsgebäude gerade NICHT arbeitet (fürs Gebäudefenster).
 enum { IDLE_OK, IDLE_OUT_FULL, IDLE_NO_INPUTS, IDLE_NO_RESOURCE, IDLE_NO_OUTPUT }
@@ -196,6 +198,7 @@ class BState:
 	var prod_active := 0                   # aktive Arbeitsticks im Bewertungsfenster
 	var prod_total := 0                    # Gesamtticks im Bewertungsfenster
 	var idle_reason := IDLE_OK             # warum WK_IDLE nicht startet (Fensteranzeige)
+	var carry_good := -1                   # Ware, die der Arbeiter gerade zur Flagge trägt (#66)
 
 
 var state: WorldState
@@ -239,6 +242,9 @@ var transport_order: Array = []      # Waren nach Transport-Priorität (Index 0 
 var recruiting_ratio := 10           # Soldaten-Rekrutierungsrate 0..10 (RTTR MilSetting 0)
 var mines_accept_beer := false       # Hausregel: Minen nehmen zusätzlich Bier als Nahrung
                                      # (Original: nur Fisch/Fleisch/Brot). Default aus.
+var output_via_carrier := false      # #66: Ausgang per Straßenträger (Arbeiter füllt nur
+                                     # die Haus-Ablage, der Träger holt sie). Default aus =
+                                     # Arbeiter trägt die fertige Ware selbst zur Flagge.
 var ai_enabled := true               # Gegner-KI aktiv? (zum Testen abschaltbar)
 var ai: AIBase = null                # austauschbare Gegner-KI (Plugin)
 var ai_by_owner: Dictionary = {}     # owner -> eigene KI-Instanz (mehrere Gegner)
@@ -1308,15 +1314,14 @@ func _tick_building(bs: BState) -> void:
 	if bs.stopped:
 		# "Stop" blockiert nur den NÄCHSTEN Arbeitsgang, nicht den laufenden:
 		# Ein begonnener Zyklus (Hinweg/Aktion/Rückweg/Wartezeit) wird zu Ende
-		# gebracht. Erst wenn der Arbeiter wieder im Haus ist (WK_IDLE), verharrt
-		# er dort und startet keinen neuen Gang mehr.
-		if bs.wphase != WK_IDLE:
-			_tick_work(bs)
-		_ship_outputs(bs)  # vorhandene Ausgänge noch abtransportieren
+		# gebracht. Danach trägt der Arbeiter im Leerlauf noch fertige Ware zur
+		# Flagge hinaus (#66) — _tick_work startet aber keinen neuen Gang mehr.
+		_tick_work(bs)
 		return
 	_request_inputs(bs)
 	_tick_work(bs)
-	_ship_outputs(bs)
+	# Im Träger-Modus (#66) holt der Straßenträger die fertige Ware aus dem Haus;
+	# im Default-Modus trägt der Arbeiter sie selbst hinaus (in _tick_work).
 
 
 ## Produktivität wie S2: Anteil aktiver Arbeitsticks in einem rollenden Fenster.
@@ -1850,6 +1855,15 @@ func _tick_work(bs: BState) -> void:
 
 	match bs.wphase:
 		WK_IDLE:
+			# Zuerst fertige Ware aus der Tür zur Flagge tragen (Default-Ausgang, #66).
+			# Im Träger-Modus (output_via_carrier) übernimmt das der Straßenträger.
+			if _worker_should_carry_out(bs):
+				bs.carry_good = _pick_out_to_ship(bs)
+				bs.worker_target = bs.bld.flag_pos
+				_enter_wphase(bs, WK_DROP_OUT, _worker_walk_ticks(bs, bs.bld.flag_pos))
+				return
+			if bs.stopped:
+				return  # angehalten: keinen neuen Produktionsgang mehr starten
 			if _out_total(bs) >= OUT_CAP:
 				bs.idle_reason = IDLE_OUT_FULL
 				return
@@ -1907,6 +1921,65 @@ func _tick_work(bs: BState) -> void:
 				bs.producing = false
 				bs.worker_target = Vector2i(-1, -1)
 				bs.wphase = WK_IDLE
+			else:
+				return
+			# Wartezeit vorbei: ggf. direkt eine fertige Ware hinaustragen (#66), ohne
+			# eine Tick-Lücke zu lassen, in der die Ware unsichtbar im Haus bleibt.
+			if _worker_should_carry_out(bs):
+				bs.carry_good = _pick_out_to_ship(bs)
+				bs.worker_target = bs.bld.flag_pos
+				_enter_wphase(bs, WK_DROP_OUT, _worker_walk_ticks(bs, bs.bld.flag_pos))
+		WK_DROP_OUT:  # fertige Ware aus der Tür zur Flagge tragen (#66)
+			bs.ph_t -= 1.0
+			if bs.ph_t <= 0.0:
+				_drop_output_at_flag(bs, bs.carry_good)
+				_enter_wphase(bs, WK_DROP_BACK, _worker_walk_ticks(bs, bs.bld.flag_pos))
+		WK_DROP_BACK:  # leer von der Flagge zurück zur Tür (#66)
+			bs.ph_t -= 1.0
+			if bs.ph_t <= 0.0:
+				bs.carry_good = -1
+				bs.worker_target = Vector2i(-1, -1)
+				bs.wphase = WK_IDLE
+
+
+## Soll der Arbeiter jetzt eine fertige Ware aus der Tür zur Flagge tragen (#66)?
+## Nur im Default-Modus (nicht output_via_carrier), wenn etwas fertig ist und die
+## Flagge noch Platz hat.
+func _worker_should_carry_out(bs: BState) -> bool:
+	if output_via_carrier:
+		return false
+	if _out_total(bs) <= 0:
+		return false
+	if goods_on_flag(bs.flag_idx) >= FLAG_CAP:
+		return false
+	# Nur losziehen, wenn die Ware auch tatsächlich abgelegt werden kann (erreichbares
+	# Lager) — sonst würde der Arbeiter sinnlos pendeln (kein Straßenanschluss).
+	return _nearest_storage(bs.flag_idx, 0, func(_s: Storage) -> bool: return true) != null
+
+
+## Erste fertige Warensorte im Ausgangspuffer (deterministische Schlüsselreihenfolge).
+func _pick_out_to_ship(bs: BState) -> int:
+	for g in bs.out_stock:
+		if int(bs.out_stock[g]) > 0:
+			return int(g)
+	return -1
+
+
+## Eine fertige Ware an der Gebäudeflagge ablegen (Richtung nächstes Lager) und aus
+## dem Ausgangspuffer nehmen (#66, ersetzt den Teleport in _ship_outputs).
+func _drop_output_at_flag(bs: BState, good: int) -> void:
+	if good < 0 or int(bs.out_stock.get(good, 0)) <= 0:
+		return
+	if goods_on_flag(bs.flag_idx) >= FLAG_CAP:
+		return
+	var st := _nearest_storage(bs.flag_idx, 0, func(_s: Storage) -> bool: return true)
+	if st == null:
+		return
+	var g := Good.new()
+	g.type = good
+	g.dest = st.flag_idx
+	_push_good(bs.flag_idx, g)
+	bs.out_stock[good] = int(bs.out_stock[good]) - 1
 
 
 ## Kann dieses Gebäude ein Ausgangsgut erzeugen? (festes `output` ODER eine
@@ -2964,8 +3037,15 @@ func building_info(bld: WorldState.Building) -> Dictionary:
 
 ## Hat dieses Gebäude gerade einen sichtbaren, herumlaufenden Arbeiter?
 func has_worker(bs: BState) -> bool:
+	if bs.wphase == WK_DROP_OUT or bs.wphase == WK_DROP_BACK:
+		return true  # Arbeiter trägt fertige Ware zur Flagge (#66)
 	return bs.producing and bs.worker_target.x >= 0 \
 		and (bs.wphase == WK_OUT or bs.wphase == WK_WORK or bs.wphase == WK_BACK)
+
+
+## Ware, die der Arbeiter gerade sichtbar trägt (#66), sonst -1.
+func worker_carry(bs: BState) -> int:
+	return bs.carry_good if bs.wphase == WK_DROP_OUT else -1
 
 
 ## Sichtbarer Arbeiterweg als Polylinie: aus der Tür zum Flaggenknoten, dann zum
@@ -3007,6 +3087,10 @@ func worker_world(bs: BState) -> Vector2:
 			return state.map.node_world(bs.worker_target.x, bs.worker_target.y)
 		WK_BACK:
 			return _sample_path(_worker_path(bs), 1.0 - prog)[0]
+		WK_DROP_OUT:  # Tür → Flagge (Ausgang tragen, #66)
+			return _sample_path(_worker_door_path(bs), prog)[0]
+		WK_DROP_BACK:  # Flagge → Tür (leer zurück, #66)
+			return _sample_path(_worker_door_path(bs), 1.0 - prog)[0]
 	return state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
 
 
@@ -3020,7 +3104,19 @@ func worker_facing(bs: BState) -> Vector2:
 			return state.map.node_world(bs.worker_target.x, bs.worker_target.y) - flag
 		WK_BACK:
 			return -(_sample_path(_worker_path(bs), 1.0 - prog)[1])
+		WK_DROP_OUT:
+			return _sample_path(_worker_door_path(bs), prog)[1]
+		WK_DROP_BACK:
+			return -(_sample_path(_worker_door_path(bs), 1.0 - prog)[1])
 	return Vector2.ZERO
+
+
+## Kurzweg Tür↔Flagge für das Hinaustragen fertiger Ware (#66).
+func _worker_door_path(bs: BState) -> Array:
+	return [
+		state.map.node_world(bs.bld.pos.x, bs.bld.pos.y),            # Tür/Bodenknoten
+		state.map.node_world(bs.bld.flag_pos.x, bs.bld.flag_pos.y),  # Eingangsflagge
+	]
 
 
 # --- Sichtbare Bau-/Planier-Figur an der Baustelle (#49) ---
