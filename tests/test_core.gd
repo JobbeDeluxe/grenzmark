@@ -58,6 +58,7 @@ func _initialize() -> void:
 	_test_promotion()
 	_test_door_transport()
 	_test_storage_carrier_fetch()
+	_test_carrier_resume_after_door()
 	_test_work_reservation()
 	_test_roadsplit()
 	_test_build_help_respects_territory()
@@ -2049,6 +2050,59 @@ func _test_storage_carrier_fetch() -> void:
 	# … aber der Eingang per Träger gilt unabhängig von der Option (S2-treu).
 	_check(eco._storage_for_carry_in(eco.hq_flag, ing) == eco.hq_flag,
 		"#67: Lager-Eingang per Träger gilt immer (auch bei Option AUS)")
+
+
+## #67: Nach einem Türgang am HQ/Lager läuft der Träger NICHT leer zur Mitte, sondern
+## nimmt eine an der Lagerflagge wartende Ware zur Gegenseite gleich mit — wie an jeder
+## normalen Flagge (Rückweg nutzen), statt erst zur Mitte und dann wieder zurück.
+func _test_carrier_resume_after_door() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	if hq == null:
+		_check(false, "#67-resume: HQ platzierbar")
+		return
+	eco.resync()
+	var saw := state.place_building(14, 10, WorldState.BQ_HOUSE, false, "sawmill", 0, false)
+	if saw == null:
+		_check(false, "#67-resume: Sägewerk platzierbar")
+		return
+	state.build_road(hq.flag_pos, saw.flag_pos)
+	eco.resync()
+	var car: Economy.Carrier = null
+	for r in eco.carriers:
+		car = eco.carriers[r]
+		break
+	_check(car != null, "#67-resume: Straße hat einen Träger")
+	if car == null:
+		return
+	var hq_flag := eco.hq_flag
+	var saw_flag := map.idx(saw.flag_pos.x, saw.flag_pos.y)
+	# Ware an der HQ-Flagge, Ziel Sägewerk (also Richtung Gegenseite der Straße).
+	var g := Economy.Good.new()
+	g.type = Goods.WOOD
+	g.dest = saw_flag
+	eco._push_good(hq_flag, g)
+	# Träger steht am Ende eines (leeren) Türgangs an der HQ-Flagge.
+	car.dflag = hq_flag
+	car.dstorage = hq_flag
+	car.dphase = Economy.D_OUT
+	car.dt = 0.0
+	car.carrying = null
+	eco._resume_carrier_at_flag(car)
+	_check(car.state == Economy.C_CARRYING and car.carrying != null,
+		"#67: nach dem Türgang nimmt der Träger die wartende HQ-Ware gleich mit (Rückweg)")
+	_check(car.dphase == Economy.D_NONE and car.dstorage < 0,
+		"#67: Tür-Exkursion nach dem Rückweg sauber zurückgesetzt")
+	# Ohne wartende Ware: zurück zur Mitte (kein Leerstand am Lager).
+	car.dflag = hq_flag
+	car.dstorage = hq_flag
+	car.dphase = Economy.D_OUT
+	car.carrying = null
+	eco._resume_carrier_at_flag(car)
+	_check(car.state == Economy.C_RETURN,
+		"#67: ohne wartende Ware läuft der Träger zurück zur Mitte")
 
 
 ## #66-Folge: Arbeitsplätze werden reserviert, bevor der Arbeiter losläuft. Zwei

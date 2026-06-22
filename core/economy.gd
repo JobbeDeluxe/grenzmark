@@ -2665,7 +2665,7 @@ func _tick_carrier_door(c: Carrier) -> void:
 				if c.carrying != null:
 					_push_good(c.dflag, c.carrying)
 					c.carrying = null
-				_end_carrier_door(c)
+				_resume_carrier_at_flag(c)
 
 
 ## Tür-Exkursion eines Straßenträgers an einem HQ/Lager. Wie beim Arbeitshaus (#66)
@@ -2696,7 +2696,36 @@ func _tick_carrier_door_storage(c: Carrier) -> void:
 				if c.carrying != null:
 					_push_good(c.dflag, c.carrying)
 					c.carrying = null
-				_end_carrier_door(c)
+				_resume_carrier_at_flag(c)
+
+
+## Nach einer Tür-Exkursion steht der Träger an einer Straßen-Endflagge. Statt leer zur
+## Mitte zu laufen, nutzt er den Rückweg wie an jeder normalen Flagge: liegt hier eine
+## Ware zur Gegenseite (nächster Hop = anderes Straßenende), nimmt er sie gleich mit;
+## sonst zurück zur Mitte. Spiegelt das „Rückweg nutzen" der normalen Zustellung.
+func _resume_carrier_at_flag(c: Carrier) -> void:
+	var flag_idx := c.dflag
+	c.dphase = D_NONE
+	c.dt = 0.0
+	c.dbidx = -1
+	c.dstorage = -1
+	c.dflag = -1
+	var segs := float(c.road.length())
+	if flag_idx < 0:
+		c.state = C_RETURN
+		c.target = segs * 0.5
+		return
+	var deliver_end := 0 if flag_idx == _end_flag(c.road, 0) else 1
+	var other := _end_flag(c.road, 1 - deliver_end)
+	var g = _take_good_for(flag_idx, other)
+	if g != null:
+		c.carrying = g
+		c.pickup_end = deliver_end
+		c.state = C_CARRYING
+		c.target = segs if deliver_end == 0 else 0.0
+	else:
+		c.state = C_RETURN
+		c.target = segs * 0.5
 
 
 ## Beendet die Tür-Exkursion: getragene Ware (Gebäude verschwand) nicht verlieren,
