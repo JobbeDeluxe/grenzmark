@@ -61,6 +61,7 @@ func _initialize() -> void:
 	_test_carrier_resume_after_door()
 	_test_house_carrier_idle_when_outbox()
 	_test_fog_reveal_own_only()
+	_test_fog_visible_vs_explored()
 	_test_ore_hints()
 	_test_options_persistence_allowlist()
 	_test_work_reservation()
@@ -1452,49 +1453,60 @@ func _test_visibility() -> void:
 	var eco := Economy.new(state)
 	state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
 	eco.resync()
-	_check(state.explored.has(map.idx(10, 10)), "HQ-Umgebung aufgedeckt")
+	# #62: Sicht hängt am Territorium. HQ-Umgebung ist sichtbar+erkundet, die ferne Karte
+	# bleibt im Nebel.
+	_check(state.visible.has(map.idx(10, 10)), "HQ-Umgebung ist einsehbar")
+	_check(state.explored.has(map.idx(10, 10)), "HQ-Umgebung ist erkundet")
 	_check(not state.explored.has(map.idx(34, 34)), "Ferne Karte bleibt im Nebel")
 
-	# #62: das gesamte eigene Territorium ist einsehbar (kein Nebelfleck im eigenen Gebiet).
-	var all_terr_explored := true
+	# Das gesamte eigene Territorium ist einsehbar (kein Nebelfleck im eigenen Gebiet).
+	var all_terr_visible := true
 	for k in state.territory:
-		if not state.explored.has(int(k)):
-			all_terr_explored = false
+		if not state.visible.has(int(k)):
+			all_terr_visible = false
 			break
-	_check(all_terr_explored, "#62: gesamtes eigenes Territorium ist aufgedeckt")
+	_check(all_terr_visible, "#62: gesamtes eigenes Territorium ist einsehbar")
 
-	# Inkrementelles Aufdecken (Issue #30): eine neu gesetzte Flagge deckt ihre Umgebung
-	# SOFORT auf — auch einen Knoten knapp außerhalb des erkundeten Bereichs (Sicht-Marge
-	# über die Grenze hinaus). Flaggenplatz im Gebiet suchen, dessen Reveal-Radius einen
-	# noch dunklen Knoten erreicht.
-	var spot := Vector2i(-1, -1)
-	var dark := Vector2i(-1, -1)
-	for yy in range(3, map.height - 3):
-		for xx in range(3, map.width - 3):
-			if not state.can_place_flag(xx, yy):
-				continue
-			for dy in range(-WorldState.REVEAL_FLAG, WorldState.REVEAL_FLAG + 1):
-				for dx in range(-WorldState.REVEAL_FLAG, WorldState.REVEAL_FLAG + 1):
-					var nx := xx + dx
-					var ny := yy + dy
-					if map.in_bounds(nx, ny) and not state.explored.has(map.idx(nx, ny)) \
-							and state.hex_distance(Vector2i(xx, yy), Vector2i(nx, ny)) <= WorldState.REVEAL_FLAG:
-						spot = Vector2i(xx, yy)
-						dark = Vector2i(nx, ny)
-						break
-				if dark.x >= 0:
-					break
-			if spot.x >= 0:
-				break
-		if spot.x >= 0:
+
+## #62: Doppelzustand der Sicht. Ein LEERES Wachhaus deckt nichts auf; erst Besetzung
+## erweitert Sicht/Territorium. Beim Abriss schrumpft die Sicht wieder, das Gebiet bleibt
+## aber erkundet (gedimmt statt schwarz).
+func _test_fog_visible_vs_explored() -> void:
+	var map := _flat_map(60, 40)
+	var state := WorldState.new(map)
+	var hq := state.place_building(15, 20, WorldState.BQ_CASTLE, true, "hq", 9, false, 0)
+	_check(hq != null, "#62: HQ platzierbar")
+	if hq == null:
+		return
+	state.recompute_territory()
+	var hq_vis := state.visible.size()
+	# Leeres Wachhaus (garrison 0) → keine Sicht-/Territoriumserweiterung.
+	var gh := state.place_building(22, 20, WorldState.BQ_HOUSE, false, "guardhouse", 5, false, 0)
+	_check(gh != null, "#62: Wachhaus platzierbar")
+	if gh == null:
+		return
+	state.recompute_territory()
+	_check(state.visible.size() == hq_vis,
+		"#62: leeres Wachhaus deckt keinen Nebel auf (erst bei Besetzung)")
+	# Besetzen → neues Gebiet wird sichtbar + erkundet.
+	var before := state.explored.duplicate()
+	gh.garrison = 1
+	state.recompute_territory()
+	var n := -1
+	for k in state.visible:
+		if not before.has(int(k)):
+			n = int(k)
 			break
-	_check(spot.x >= 0, "Visibility: Flaggenplatz mit benachbartem Nebelknoten gefunden")
-	if spot.x >= 0:
-		_check(not state.explored.has(map.idx(dark.x, dark.y)),
-			"Visibility: Nachbarknoten liegt vorher im Nebel")
-		_check(state.place_flag(spot.x, spot.y) != null, "Visibility: Testflagge setzbar")
-		_check(state.explored.has(map.idx(dark.x, dark.y)),
-			"Neue Flagge deckt einen Nachbarknoten inkrementell auf (ohne resync)")
+	_check(n >= 0, "#62: besetztes Wachhaus deckt neues Gebiet auf")
+	if n < 0:
+		return
+	_check(state.visible.has(n) and state.explored.has(n),
+		"#62: neues Gebiet ist sichtbar UND erkundet")
+	# Abreißen → nicht mehr einsehbar, aber weiterhin erkundet (gedimmt, nicht schwarz).
+	state.remove_at(gh.pos)
+	state.recompute_territory()
+	_check(not state.visible.has(n), "#62: nach Abriss nicht mehr einsehbar")
+	_check(state.explored.has(n), "#62: nach Abriss weiterhin erkundet (gedimmt, nicht schwarz)")
 
 
 func _test_minimap_respects_fog() -> void:

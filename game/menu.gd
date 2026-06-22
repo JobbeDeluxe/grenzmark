@@ -194,7 +194,8 @@ func _build_settings_panel(box: Container) -> void:
 	inner.add_child(start_title)
 
 	_checkbox(inner, "Bauhilfe beim Start zeigen", "start_build_spots", false)
-	_checkbox(inner, "Nebel des Krieges starten", "start_fog", false)
+	# Nebel des Krieges ist standardmäßig AN (#62) — nur durch explizites Abwählen aus.
+	_checkbox(inner, "Nebel des Krieges starten", "start_fog", true)
 	_checkbox(inner, "KI-Gegner aktiv", "start_ai", true)
 	# Im Original gibt es keine dauerhafte Warenleiste oben — daher abwählbar (Standard: aus).
 	_checkbox(inner, "Warenleiste oben anzeigen", "show_resource_bar", false)

@@ -75,7 +75,8 @@ var work_reserved: Dictionary = {}
 var territory: Dictionary = {}        # idx -> true (Spieler-Gebiet, Besitzer 0)
 var enemy_territory: Dictionary = {}  # idx -> true (Gegner-Gebiet, Besitzer 1)
 var territory_owner: Dictionary = {}  # idx -> Besitzer-ID (für Grenz-Gleichstand)
-var explored: Dictionary = {}         # idx -> true (vom Spieler aufgedeckt)
+var explored: Dictionary = {}         # idx -> true (je vom Spieler gesehen — bleibt erhalten)
+var visible: Dictionary = {}          # idx -> true (AKTUELL einsehbar; schrumpft bei Verlust)
 # Straßenteilungen seit dem letzten resync: { old, r1, r2, k } — damit die Economy
 # den vorhandenen Träger auf seinem Teilstück WEITERführen kann (statt ihn zu
 # verwerfen und beide Teilstücke neu vom HQ zu besetzen). k = Teilungs-Knotenindex.
@@ -170,44 +171,35 @@ func has_building_territory_margin(x: int, y: int) -> bool:
 	return has_building_territory_margin_for(0, x, y)
 
 
-const REVEAL_BUILDING := 7   # Aufdeck-Radius eigener Gebäude
-const REVEAL_FLAG := 5       # Aufdeck-Radius einer Flagge
-const REVEAL_ROAD := 3       # Aufdeck-Radius je Straßenknoten
+# Sicht-Marge über die eigene Grenze hinaus (Hex-Ringe). 1 = man sieht knapp übers Land.
+const VISION_MARGIN := 1
 
 
-## Sichtbarkeit: deckt Knoten rund um eigene Gebäude/Flaggen/Straßen auf.
-## Aufgedecktes bleibt aufgedeckt (wie in S2 die erkundete Karte).
-## WICHTIG: Das ist die VOLL-Neuberechnung über alle Strukturen — teuer und nur
-## beim Laden/Reset nötig. Im laufenden Spiel decken `place_building`, `_add_flag`
-## und `build_road` inkrementell auf (siehe dort), damit das Platzieren nicht bei
-## jedem Klick die ganze Karte neu scannt (Performance, Issue #30).
+## Sicht (#62/#21): einsehbar ist das EIGENE Territorium plus eine schmale Marge darüber
+## hinaus. Militärgebäude erweitern das Territorium NUR besetzt (siehe recompute_territory),
+## ein leeres Wachhaus deckt also nichts auf; beim Abriss/Verlust schrumpft die Sicht wieder.
+## `visible` ist der AKTUELLE Stand, `explored` merkt sich dauerhaft alles je Gesehene (für
+## den gedimmten „erkundet, aber nicht einsehbar"-Zustand). Wird aus dem Territorium
+## abgeleitet und daher direkt von recompute_territory() mitgezogen.
 func recompute_visibility() -> void:
-	# Nur EIGENE Strukturen decken auf (#62): um gegnerische Gebäude/Flaggen/Straßen
-	# herum bleibt es für den Spieler im Nebel.
-	for i in buildings:
-		var b: Building = buildings[i]
-		if b.owner == 0:
-			_reveal(b.pos, REVEAL_BUILDING)
-	for i in flags:
-		if flags[i].owner == 0:
-			_reveal(flags[i].pos, REVEAL_FLAG)
-	for r in roads:
-		if r.owner == 0:
-			for n in r.nodes:
-				_reveal(n, REVEAL_ROAD)
-	# Eigenes Territorium ist einsehbar (S2-Kopplung, #62) — auch wenn es weiter reicht
-	# als die Aufdeck-Radien der einzelnen Strukturen.
+	visible.clear()
 	for k in territory:
-		explored[k] = true
-
-
-func _reveal(center: Vector2i, radius: int) -> void:
-	for dy in range(-radius, radius + 1):
-		for dx in range(-radius, radius + 1):
-			var x := center.x + dx
-			var y := center.y + dy
-			if map.in_bounds(x, y) and hex_distance(center, Vector2i(x, y)) <= radius:
-				explored[map.idx(x, y)] = true
+		visible[int(k)] = true
+	# Marge: VISION_MARGIN Hex-Ringe über die Grenze hinaus.
+	for _step in VISION_MARGIN:
+		var ring := {}
+		for k in visible:
+			var x := int(k) % map.width
+			var y := int(k) / map.width
+			for dir in Grid.DIRS:
+				var nb := Grid.neighbor(x, y, dir)
+				if map.in_bounds(nb.x, nb.y):
+					ring[map.idx(nb.x, nb.y)] = true
+		for k in ring:
+			visible[int(k)] = true
+	# Alles aktuell Sichtbare bleibt dauerhaft erkundet (gedimmt, wenn später nicht mehr sichtbar).
+	for k in visible:
+		explored[int(k)] = true
 
 
 ## Hex-Distanz zweier Knoten (für kreisförmiges Einflussgebiet).
@@ -269,9 +261,9 @@ func recompute_territory() -> void:
 	for k in territory_owner:
 		if territory_owner[k] == 0:
 			territory[k] = true
-			explored[k] = true   # eigenes Gebiet ist einsehbar (S2, #62)
 		else:
 			enemy_territory[k] = true
+	recompute_visibility()   # Sicht hängt am Territorium (#62): besetzt aufdecken, Abriss dimmt
 
 
 # --------------------------------------------------------------------------
@@ -441,8 +433,6 @@ func _add_flag(x: int, y: int, owner := 0) -> Flag:
 	var i := map.idx(x, y)
 	flags[i] = f
 	occupied[i] = OBJ_FLAG
-	if owner == 0:
-		_reveal(Vector2i(x, y), REVEAL_FLAG)  # nur eigene Flaggen decken auf (#30, #62)
 	return f
 
 
@@ -607,8 +597,6 @@ func place_building(x: int, y: int, size: int, is_hq := false,
 	buildings[i] = b
 	occupied[i] = OBJ_BUILDING
 	reserve_building_extensions(b)
-	if owner == 0:
-		_reveal(b.pos, REVEAL_BUILDING)  # inkrementell aufdecken (Issue #30)
 	return b
 
 
@@ -815,9 +803,6 @@ func build_road(from: Vector2i, to: Vector2i, owner := -1) -> Road:
 	# Zwischenknoten als Straße markieren (Endpunkte bleiben Flaggen).
 	for k in range(1, path.size() - 1):
 		occupied[map.idx(path[k].x, path[k].y)] = OBJ_ROAD
-	if road_owner == 0:
-		for n in path:
-			_reveal(n, REVEAL_ROAD)  # nur eigene Straßen decken auf (#30, #62)
 	roads.append(r)
 	invalidate_routes()  # Graph/Routen-Cache verwerfen (#30)
 	return r

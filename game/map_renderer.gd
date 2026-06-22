@@ -491,28 +491,38 @@ func _ore_debug_label(kind: int, amount: int) -> String:
 
 
 ## Nebel des Krieges: unerkundete Dreiecke abdunkeln.
+# Nebel-Doppelzustand (#62): unerkundet = schwarz (man sieht gar nichts); erkundet, aber
+# aktuell nicht einsehbar = gedimmt (letzter Stand des Geländes scheint dunkel durch);
+# aktuell einsehbar (eigenes Territorium + Marge) = klar (kein Nebel).
+const FOG_BLACK := Color(0.0, 0.0, 0.0, 1.0)
+const FOG_DIM := Color(0.02, 0.02, 0.04, 0.55)
+
+
 func _draw_fog() -> void:
-	# Unerkundetes ist in S2 schwarz — nicht nur abgedunkelt (#62). Voll deckend, damit
-	# weder Terrain noch Grenzsteine/Objekte des Gegners durchscheinen. Der Nebel wird in
-	# _draw() zuletzt gezeichnet und verdeckt so alles darunter.
-	var fog := Color(0.0, 0.0, 0.0, 1.0)
 	var nr := _visible_node_range()
 	for y in range(nr.position.y, nr.position.y + nr.size.y + 1):
 		for x in range(nr.position.x, nr.position.x + nr.size.x + 1):
-			_fog_tri(x, y, Grid.TRI_R, fog)
-			_fog_tri(x, y, Grid.TRI_D, fog)
+			_fog_tri(x, y, Grid.TRI_R)
+			_fog_tri(x, y, Grid.TRI_D)
 
 
-func _fog_tri(x: int, y: int, kind: int, col: Color) -> void:
+func _fog_tri(x: int, y: int, kind: int) -> void:
 	var corners := Grid.triangle_corners(x, y, kind)
 	var pts := PackedVector2Array()
+	var any_explored := false
+	var all_visible := true
 	for c in corners:
 		if not state.map.in_bounds(c.x, c.y):
 			return
-		if state.explored.has(state.map.idx(c.x, c.y)):
-			return  # mindestens eine Ecke erkundet → nicht abdunkeln
+		var ci := state.map.idx(c.x, c.y)
+		if state.explored.has(ci):
+			any_explored = true
+		if not state.visible.has(ci):
+			all_visible = false
 		pts.append(state.map.node_world(c.x, c.y))
-	draw_colored_polygon(pts, col)
+	if all_visible:
+		return  # voll einsehbar → kein Nebel
+	draw_colored_polygon(pts, FOG_DIM if any_explored else FOG_BLACK)
 
 
 # --- Terrain (scharf, flach pro Dreieck) ---------------------------------

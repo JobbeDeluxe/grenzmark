@@ -99,5 +99,8 @@ func _draw_map_node(x: int, y: int, sx: float, sy: float) -> void:
 	var idx := state.map.idx(x, y)
 	if state.territory.has(idx):
 		col = col.lerp(Color(0.3, 0.7, 1.0), 0.35)
+	# Erkundet, aber aktuell nicht einsehbar → gedimmt (Doppelzustand, #62).
+	if fog_enabled and not state.visible.has(idx):
+		col = col.darkened(0.55)
 	var px := x * sx + (sx * 0.5 if (y & 1) == 1 else 0.0)
 	draw_rect(Rect2(px, y * sy, ceilf(sx), ceilf(sy)), col)

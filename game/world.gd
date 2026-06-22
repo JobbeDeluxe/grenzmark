@@ -504,7 +504,7 @@ func _apply_ai() -> void:
 
 
 func _apply_start_options() -> void:
-	var fog := UISkin.option_bool("start_fog", false)
+	var fog := UISkin.option_bool("start_fog", true)  # Nebel default AN (#62)
 	if renderer != null:
 		renderer.show_build_spots = UISkin.option_bool("start_build_spots", false)
 		renderer.fog_enabled = fog
