@@ -59,6 +59,7 @@ func _initialize() -> void:
 	_test_door_transport()
 	_test_storage_carrier_fetch()
 	_test_carrier_resume_after_door()
+	_test_options_persistence_allowlist()
 	_test_work_reservation()
 	_test_roadsplit()
 	_test_build_help_respects_territory()
@@ -2103,6 +2104,21 @@ func _test_carrier_resume_after_door() -> void:
 	eco._resume_carrier_at_flag(car)
 	_check(car.state == Economy.C_RETURN,
 		"#67: ohne wartende Ware läuft der Träger zurück zur Mitte")
+
+
+## Reset-Verhalten: Nur Komfort-Keys (Karte) ueberleben einen Neustart; Dev-Menue,
+## Startoptionen und Spielregeln starten jedes Mal frisch auf Default. Schuetzt die
+## Allowlist davor, dass versehentlich wieder eine Session-Option persistent wird.
+func _test_options_persistence_allowlist() -> void:
+	for k in ["map_seed_text", "map_size_text", "map_enemy_count", "map_type", "map_last_seed_text"]:
+		_check(UISkin.PERSISTENT_OPTION_KEYS.has(k),
+			"Reset: '%s' bleibt persistent (Komfort)" % k)
+	for k in ["dev_menu_unlocked", "dev_full_territory", "dev_show_ore", "dev_reveal_all",
+			"start_build_spots", "start_fog", "start_ai", "show_resource_bar",
+			"goods_cluster_layout", "map_replace_gold",
+			"rule_output_via_carrier", "rule_mines_accept_beer"]:
+		_check(not UISkin.PERSISTENT_OPTION_KEYS.has(k),
+			"Reset: '%s' wird beim Neustart auf Default gesetzt" % k)
 
 
 ## #66-Folge: Arbeitsplätze werden reserviert, bevor der Arbeiter losläuft. Zwei

@@ -13,6 +13,15 @@ static var _ui_scale_override := 0.0
 static var _ui_scale_name := ""
 static var _options := {}
 
+## Nur diese Options-Keys ueberleben einen Neustart (Komfort: UI-Groesse wird separat
+## gespeichert; hier die zuletzt gewaehlte Karte zum Weiterspielen/Teilen). ALLES andere —
+## Dev-Menue, Dev-Schalter, Startoptionen (Baupl.,Nebel,KI,Warenleiste,Layout,Gold->Kohle)
+## und Spielregeln — startet jedes Mal frisch auf Default. Der Dev-Modus gilt damit nur,
+## solange das Spiel laeuft, und nichts Getestetes bleibt versehentlich an.
+const PERSISTENT_OPTION_KEYS := [
+	"map_seed_text", "map_size_text", "map_enemy_count", "map_type", "map_last_seed_text",
+]
+
 
 static func cfg() -> Dictionary:
 	if _cfg.is_empty():
@@ -226,16 +235,26 @@ static func _ensure_runtime() -> void:
 		_ui_scale_name = String(data.get("ui_scale_name", ""))
 		var opts = data.get("options", {})
 		if opts is Dictionary:
-			_options = opts
+			# Nur erlaubte Keys uebernehmen — so kann ein alter Spielstand z. B. keinen
+			# dev_menu_unlocked=true mehr "einschleusen" (Session-Optionen bleiben Default).
+			for k in opts:
+				if PERSISTENT_OPTION_KEYS.has(k):
+					_options[k] = opts[k]
 
 
 static func _save_runtime() -> void:
 	var f := FileAccess.open(USER_CONFIG_PATH, FileAccess.WRITE)
 	if f == null:
 		return
+	# Nur persistente Keys auf die Platte schreiben — Session-Optionen (Dev, Startoptionen,
+	# Regeln) sollen einen Neustart NICHT ueberleben.
+	var persisted := {}
+	for k in _options:
+		if PERSISTENT_OPTION_KEYS.has(k):
+			persisted[k] = _options[k]
 	f.store_var({
 		ui_scale = _ui_scale_override,
 		ui_scale_name = _ui_scale_name,
-		options = _options,
+		options = persisted,
 	}, true)
 	f.close()
