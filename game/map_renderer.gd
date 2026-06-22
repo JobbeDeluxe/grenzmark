@@ -213,6 +213,16 @@ func _draw_billboards() -> void:
 			continue
 		var kind := int(map.field_decay[i])
 		items.append({ y = p.y, fn = func(): _draw_field_decay(p, kind) })
+	# Erz-Hinweis (#54): seltener, NICHT blockierender Marker über großen Adern. Im
+	# y-Pass, damit eine darauf gebaute Mine ihn korrekt verdeckt (überbaubar).
+	for i in map.ore_hint_kind:
+		var x := int(i) % map.width
+		var y := int(i) / map.width
+		var p := map.node_world(x, y)
+		if not _in_view(p):
+			continue
+		var okind := int(map.ore_hint_kind[i])
+		items.append({ y = p.y, fn = func(): _draw_ore_hint(p, okind) })
 	for i in state.buildings:
 		var b: WorldState.Building = state.buildings[i]
 		var foot_p := map.node_world(b.pos.x, b.pos.y)
@@ -440,6 +450,17 @@ func _spot_color(bq: int) -> Color:
 		WorldState.BQ_MINE:   return Color(0.6, 0.4, 0.9)
 		WorldState.BQ_FLAG:   return Color(0.95, 0.55, 0.2)
 	return Color(0.6, 0.6, 0.6, 0.6)
+
+
+## #54: sichtbarer Erz-Marker (das alte Erz-PNG) über einer großen Ader. Rein optisch,
+## blockiert nichts; eine darübergebaute Mine baut das echte unterirdische Erz ab.
+func _draw_ore_hint(p: Vector2, kind: int) -> void:
+	var tex := GameTheme.object_texture("ore")
+	if tex != null:
+		var sz := GameTheme.object_draw_size("ore")
+		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
+	else:
+		_paint_ore(p, kind)
 
 
 func _draw_ore_debug() -> void:

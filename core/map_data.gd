@@ -36,6 +36,11 @@ var ore_deposit_kind: Dictionary = {}    # idx -> ORE_*
 var ore_deposit_amount: Dictionary = {}  # idx -> verbleibende Menge (>0)
 var ore_deposit_found: Dictionary = {}   # idx -> true (aufgedeckt)
 
+# Sichtbarer, NICHT blockierender Erz-Hinweis (#54): rein optische Markierung (das
+# alte Erz-PNG) über einer großen unterirdischen Ader derselben Sorte. Überbaubar —
+# blockiert weder Mine noch Flagge/Straße; deterministisch aus dem Map-Seed erzeugt.
+var ore_hint_kind: Dictionary = {}       # idx -> ORE_*
+
 # Wachstumsstufe je Baum-Knoten: 0 = Setzling, 1 = kleiner Baum, 2 = großer Baum.
 # Nur Stufe 2 darf gefällt werden. Ohne Eintrag gilt ein Baum als ausgewachsen (2),
 # damit Karten/Spielstände ohne Stufen-Info wie bisher funktionieren.
@@ -222,6 +227,16 @@ func ore_kind_at(x: int, y: int) -> int:
 
 func set_ore_kind(x: int, y: int, kind: int) -> void:
 	ore_kind[idx(x, y)] = kind
+
+
+# --- Sichtbarer Erz-Hinweis (Deko, #54) -----------------------------------
+
+func ore_hint_kind_at(x: int, y: int) -> int:
+	return ore_hint_kind.get(idx(x, y), -1)
+
+
+func set_ore_hint(x: int, y: int, kind: int) -> void:
+	ore_hint_kind[idx(x, y)] = kind
 
 
 # --- Unterirdische Erz-Lagerstätten ---------------------------------------

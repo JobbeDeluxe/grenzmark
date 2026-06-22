@@ -34,6 +34,9 @@ const STEEP_MEADOW_MOUNTAIN_SLOPE := 4
 # Value-Noise praktisch nur ~0.25..0.76 erreicht und schwellenbasierte Bänder auf EINER
 # Maske die seltenen Erze sonst verhungern lassen (vorher Gold 0 %, Granit ~1 %).
 const ORE_DEPOSIT_MIN := 0.32       # darüber Vorkommen — deckt den Großteil der Berge ab
+# #54: Ein sichtbarer Erz-Marker erscheint nur über einer GROSSEN zusammenhängenden Ader
+# derselben Sorte (mind. so viele Knoten) — dadurch ganz selten, als echter Hinweis.
+const ORE_HINT_MIN_CLUSTER := 60
 const ORE_AMOUNT_MIN := 3
 const ORE_AMOUNT_SPAN := 9          # Menge 3..12, skaliert mit Aderstärke
 # Schwellen für Vollland (v6) nachkalibriert: ohne Inselabfall tragen mehr/andere Berge
@@ -498,6 +501,51 @@ static func _scatter_objects(map: MapData, seed: int, options: Dictionary = {}) 
 				else:
 					stone_candidates.append(Vector2i(x, y))
 	_place_stone_clusters(map, rng, stone_candidates)
+	_place_ore_hints(map)  # #54: seltene sichtbare Erz-Marker über großen Adern
+
+
+## #54: Setzt seltene, rein optische Erz-Marker. Pro großer zusammenhängender Ader
+## DERSELBEN Sorte (>= ORE_HINT_MIN_CLUSTER Knoten) genau EIN sichtbarer Marker — am
+## stärksten Knoten der Ader (höchste Menge), damit der Hinweis wirklich dort liegt, wo
+## viel Erz derselben Sorte ist. Marker blockieren nichts (eigene Schicht ore_hint_kind)
+## und sind überbaubar. Deterministisch, weil die Lagerstätten deterministisch sind.
+static func _place_ore_hints(map: MapData) -> void:
+	var visited := {}
+	for start in map.ore_deposit_kind:
+		if visited.has(start):
+			continue
+		var kind := int(map.ore_deposit_kind[start])
+		# Flood-Fill über Hex-Nachbarn, nur gleiche Sorte.
+		var comp: Array = []
+		var stack: Array = [start]
+		visited[start] = true
+		while not stack.is_empty():
+			var cur: int = stack.pop_back()
+			comp.append(cur)
+			var cx := int(cur) % map.width
+			var cy := int(cur) / map.width
+			for dir in Grid.DIRS:
+				var nb := Grid.neighbor(cx, cy, dir)
+				if not map.in_bounds(nb.x, nb.y):
+					continue
+				var ni := map.idx(nb.x, nb.y)
+				if visited.has(ni):
+					continue
+				if int(map.ore_deposit_kind.get(ni, -1)) == kind:
+					visited[ni] = true
+					stack.append(ni)
+		if comp.size() < ORE_HINT_MIN_CLUSTER:
+			continue
+		# Stärksten Knoten der Ader wählen (max Menge; bei Gleichstand kleinster idx).
+		var best := -1
+		var best_amt := -1
+		for c in comp:
+			var amt := int(map.ore_deposit_amount.get(c, 0))
+			if amt > best_amt or (amt == best_amt and (best < 0 or int(c) < best)):
+				best_amt = amt
+				best = int(c)
+		if best >= 0:
+			map.set_ore_hint(best % map.width, best / map.width, kind)
 
 
 ## Erzsorte für einen Bergknoten (#54). Seltene Erze (Gold/Granit) haben eigene Masken

@@ -61,6 +61,7 @@ func _initialize() -> void:
 	_test_carrier_resume_after_door()
 	_test_house_carrier_idle_when_outbox()
 	_test_fog_reveal_own_only()
+	_test_ore_hints()
 	_test_options_persistence_allowlist()
 	_test_work_reservation()
 	_test_roadsplit()
@@ -2189,6 +2190,30 @@ func _test_fog_reveal_own_only() -> void:
 	var ef := state.ensure_flag(30, 4, 1)
 	_check(ef != null, "#62: gegnerische Flagge setzbar")
 	_check(not state.explored.has(map.idx(30, 4)), "#62: gegnerische Flagge deckt nicht auf")
+
+
+## #54: Sichtbare Erz-Marker erscheinen nur über GROSSEN zusammenhängenden Adern
+## derselben Sorte (sehr selten), liegen über echtem Erz gleicher Sorte, blockieren nichts
+## (überbaubar) und sitzen am stärksten Knoten der Ader.
+func _test_ore_hints() -> void:
+	var map := _flat_map(24, 24)
+	# Große Kohle-Ader (8x8 = 64 Knoten ≥ 60) mit nach Osten steigender Menge.
+	for y in range(6, 14):
+		for x in range(6, 14):
+			map.set_ore_deposit(x, y, MapData.ORE_COAL, 40 + x)
+	# Kleine Eisen-Ader (3x3 = 9 < 60) → bekommt KEINEN Marker.
+	for y in range(18, 21):
+		for x in range(18, 21):
+			map.set_ore_deposit(x, y, MapData.ORE_IRON, 8)
+	MapGenerator._place_ore_hints(map)
+	_check(map.ore_hint_kind.size() == 1, "#54: nur die große Ader bekommt einen Marker")
+	for i in map.ore_hint_kind:
+		var k := int(map.ore_hint_kind[i])
+		_check(k == MapData.ORE_COAL, "#54: Marker zeigt die Sorte der Ader (Kohle)")
+		_check(int(map.ore_deposit_kind.get(i, -1)) == k,
+			"#54: Marker liegt über echtem Erz gleicher Sorte (kein Fehlhinweis)")
+		_check(not map.objects.has(i), "#54: Marker blockiert nicht (überbaubar)")
+		_check(int(i) % map.width == 13, "#54: Marker sitzt am stärksten Knoten der Ader")
 
 
 ## Reset-Verhalten: Nur Komfort-Keys (Karte) ueberleben einen Neustart; Dev-Menue,
