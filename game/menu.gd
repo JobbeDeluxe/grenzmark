@@ -203,6 +203,16 @@ func _build_settings_panel(box: Container) -> void:
 	# Schwierigkeits-Option (#54): kein Gold auf der Karte — Gold-Vorkommen werden Kohle.
 	_checkbox(inner, "Gold durch Kohle ersetzen (schwerer)", "map_replace_gold", false)
 
+	# Spielregeln (#67): vor dem Spiel gewählte Hausregeln. Im Spiel bleiben sie
+	# umschaltbar; hier wird nur die Vorwahl für ein neues Spiel festgelegt.
+	inner.add_child(HSeparator.new())
+	var rules_title := Label.new()
+	rules_title.text = "Spielregeln"
+	UISkin.apply_label(rules_title, false, 14)
+	inner.add_child(rules_title)
+	_checkbox(inner, "Ausgang: Straßenträger holt Ware aus dem Haus", "rule_output_via_carrier", false)
+	_checkbox(inner, "Minen nehmen auch Bier als Nahrung", "rule_mines_accept_beer", false)
+
 	# Karteneinstellungen gehören nur ins "Neues Spiel"-Tab — hier raus.
 	inner.add_child(HSeparator.new())
 	_dev_section = VBoxContainer.new()

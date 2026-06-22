@@ -196,6 +196,7 @@ func _new_game() -> void:
 	_wire_world()
 	_apply_ai()
 	_apply_start_options()
+	_apply_start_rules()   # #67: Regel-Vorwahl aus dem Hauptmenue (nur fuer neue Spiele)
 	var hq := _place_headquarters()
 	if map_source == "devmap":
 		_ensure_test_pond_near(hq)
@@ -514,6 +515,16 @@ func _apply_start_options() -> void:
 	if economy != null:
 		economy.ai_enabled = UISkin.option_bool("start_ai", true)
 	_sync_hover_context()
+
+
+## #67: Wendet die im Hauptmenue vorgewaehlten Spielregeln auf ein NEUES Spiel an. Beim
+## Laden gewinnen die gespeicherten Werte des Spielstands — daher NICHT in
+## _apply_start_options(), das auch nach dem Laden laeuft.
+func _apply_start_rules() -> void:
+	if economy == null:
+		return
+	economy.set_output_via_carrier(UISkin.option_bool("rule_output_via_carrier", false))
+	economy.set_mines_accept_beer(UISkin.option_bool("rule_mines_accept_beer", false))
 
 
 func _apply_dev_world_overrides() -> void:
@@ -1960,6 +1971,39 @@ func _map_settings_text() -> String:
 		map_generator_version]
 
 
+func _option_line(label: String, on: bool) -> String:
+	return "  %s %s\n" % ["[x]" if on else "[ ]", label]
+
+
+## #67: Read-only Uebersicht ALLER aktiven Optionen (im Hauptmenue vorgewaehlt). So sieht
+## man im Spiel auf einen Blick, mit welchen Regeln/Startoptionen gespielt wird. Aenderbar
+## sind nur die wenigen unten als Buttons gespiegelten (Nebel/KI/Warenleiste/Regeln).
+func _options_overview_text() -> String:
+	var spots := renderer != null and renderer.show_build_spots
+	var fog := renderer != null and renderer.fog_enabled
+	var ai := economy != null and economy.ai_enabled
+	var bar := UISkin.option_bool("show_resource_bar", false)
+	var cluster := UISkin.option_bool("goods_cluster_layout", true)
+	var gold := UISkin.option_bool("map_replace_gold", false)
+	var outc := economy != null and economy.output_via_carrier
+	var beer := economy != null and economy.mines_accept_beer
+	var s := "Aktive Optionen:\n"
+	s += _option_line("Bauhilfe beim Start", spots)
+	s += _option_line("Nebel des Krieges", fog)
+	s += _option_line("KI-Gegner aktiv", ai)
+	s += _option_line("Warenleiste oben", bar)
+	s += _option_line("Waren dicht stapeln", cluster)
+	s += _option_line("Gold durch Kohle ersetzt", gold)
+	s += _option_line("Ausgang: Strassentraeger holt aus dem Haus", outc)
+	s += _option_line("Minen nehmen auch Bier", beer)
+	if UISkin.option_bool("dev_menu_unlocked", false):
+		s += _option_line("Dev: Startterritorium = ganze Karte",
+			UISkin.option_bool("dev_full_territory", false))
+		s += _option_line("Dev: Erze sichtbar", UISkin.option_bool("dev_show_ore", false))
+		s += _option_line("Dev: Alles aufgedeckt", UISkin.option_bool("dev_reveal_all", false))
+	return s
+
+
 func _update_settings_text() -> void:
 	if _settings_body == null:
 		return
@@ -1968,17 +2012,7 @@ func _update_settings_text() -> void:
 		"M Minikarte, H HQ, F Nebel, Y UI aus/an.\n\n" + \
 		"UI-Groesse: %s\n\n" % UISkin.ui_scale_name() + \
 		_map_settings_text() + "\n" + \
-		"Optionen: Bauhilfe %s, Nebel %s, KI %s, Warenleiste oben %s\n\n" % [
-			"AN" if UISkin.option_bool("start_build_spots", false) else "AUS",
-			"AN" if UISkin.option_bool("start_fog", false) else "AUS",
-			"AN" if UISkin.option_bool("start_ai", true) else "AUS",
-			"AN" if UISkin.option_bool("show_resource_bar", false) else "AUS",
-		] + \
-		"Hausregel: Bier als Minennahrung %s\n" % \
-			("AN" if (economy != null and economy.mines_accept_beer) else "AUS") + \
-		"Ausgang: %s\n\n" % \
-			("Strassentraeger holt aus dem Haus" if (economy != null and economy.output_via_carrier) \
-				else "Arbeiter traegt selbst zur Flagge") + \
+		_options_overview_text() + "\n" + \
 		"Anpassbar:\n" + \
 		"- assets/ui.json: UI-Farben, Randabstaende, Panel-/Button-Groessen\n" + \
 		"- assets/design.json: Gebaeude-/Flaggen-/Bauplatzgroessen und Eingange\n" + \
@@ -2010,6 +2044,7 @@ func _toggle_mines_beer() -> void:
 	if economy == null:
 		return
 	economy.set_mines_accept_beer(not economy.mines_accept_beer)
+	UISkin.set_option_bool("rule_mines_accept_beer", economy.mines_accept_beer)
 	_update_settings_text()
 	_flash("Bier als Minennahrung " + ("AN" if economy.mines_accept_beer else "AUS"))
 
@@ -2019,6 +2054,7 @@ func _toggle_output_via_carrier() -> void:
 	if economy == null:
 		return
 	economy.set_output_via_carrier(not economy.output_via_carrier)
+	UISkin.set_option_bool("rule_output_via_carrier", economy.output_via_carrier)
 	_update_settings_text()
 	_flash("Ausgang per Traeger " + ("AN" if economy.output_via_carrier else "AUS (Arbeiter traegt)"))
 
