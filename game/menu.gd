@@ -210,7 +210,7 @@ func _build_settings_panel(box: Container) -> void:
 	rules_title.text = "Spielregeln"
 	UISkin.apply_label(rules_title, false, 14)
 	inner.add_child(rules_title)
-	_checkbox(inner, "Ausgang: Straßenträger holt Ware aus dem Haus", "rule_output_via_carrier", false)
+	_checkbox(inner, "Ressourcen-Outbox: Straßenträger holt Ware aus dem Haus", "rule_output_via_carrier", false)
 	_checkbox(inner, "Minen nehmen auch Bier als Nahrung", "rule_mines_accept_beer", false)
 
 	# Karteneinstellungen gehören nur ins "Neues Spiel"-Tab — hier raus.

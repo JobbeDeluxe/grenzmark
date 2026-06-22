@@ -59,6 +59,7 @@ func _initialize() -> void:
 	_test_door_transport()
 	_test_storage_carrier_fetch()
 	_test_carrier_resume_after_door()
+	_test_house_carrier_idle_when_outbox()
 	_test_options_persistence_allowlist()
 	_test_work_reservation()
 	_test_roadsplit()
@@ -2104,6 +2105,42 @@ func _test_carrier_resume_after_door() -> void:
 	eco._resume_carrier_at_flag(car)
 	_check(car.state == Economy.C_RETURN,
 		"#67: ohne wartende Ware läuft der Träger zurück zur Mitte")
+
+
+## #68: Bei aktiver Ressourcen-Outbox ruht der Tür-Träger des HQ/Lagers für den Ausgang —
+## dann holen ausschließlich die Straßenträger die Ware (kein Konkurrenzbetrieb). Ohne die
+## Option bringt der Tür-Träger den Ausgang wie bisher selbst zur Flagge.
+func _test_house_carrier_idle_when_outbox() -> void:
+	var map := _flat_map(30, 30)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	var hq := state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	if hq == null:
+		_check(false, "#68: HQ platzierbar")
+		return
+	eco.resync()
+	var st: Economy.Storage = eco.storages[0]
+	_check(st != null and st.house != null, "#68: HQ-Lager hat einen Tür-Träger")
+	if st == null or st.house == null:
+		return
+	# Eine Ausgangsware in die outbox legen, Tür-Träger an der Tür (idle).
+	st.outbox.clear()
+	var g := Economy.Good.new()
+	g.type = Goods.WOOD
+	g.dest = 0
+	st.outbox.append(g)
+	st.house.state = Economy.H_IDLE
+	st.house.t = 0.0
+	# Option AN: der Tür-Träger rührt die outbox NICHT an.
+	eco.output_via_carrier = true
+	eco._tick_one_house_carrier(st)
+	_check(st.outbox.size() == 1 and st.house.state == Economy.H_IDLE,
+		"#68: bei aktiver Outbox-Option ruht der Tür-Träger (holt keinen Ausgang)")
+	# Option AUS: der Tür-Träger bringt den Ausgang wie bisher zur Flagge.
+	eco.output_via_carrier = false
+	eco._tick_one_house_carrier(st)
+	_check(st.outbox.is_empty() and st.house.state == Economy.H_OUT,
+		"#68: ohne Option bringt der Tür-Träger den Ausgang selbst zur Flagge")
 
 
 ## Reset-Verhalten: Nur Komfort-Keys (Karte) ueberleben einen Neustart; Dev-Menue,

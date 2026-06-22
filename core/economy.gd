@@ -3034,7 +3034,11 @@ func _tick_one_house_carrier(st: Storage) -> void:
 	var h := st.house
 	match h.state:
 		H_IDLE:  # an der Tür
-			if not st.outbox.is_empty() and goods_on_flag(fi) < FLAG_CAP:
+			# #68: Bei aktiver Outbox-Option ruht der Tür-Träger für den AUSGANG — dann holen
+			# ausschließlich die Straßenträger die Ware durch die Tür (kein Konkurrenzbetrieb
+			# zwischen Tür- und Straßenträger). Eingänge, die ausnahmsweise an der Flagge
+			# liegen geblieben sind, holt er weiterhin als Notnagel herein.
+			if not output_via_carrier and not st.outbox.is_empty() and goods_on_flag(fi) < FLAG_CAP:
 				h.carrying = st.outbox.pop_front()
 				h.state = H_OUT
 			elif _has_incoming_at(fi):

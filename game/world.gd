@@ -970,8 +970,8 @@ func _build_ui() -> void:
 	settings_box.add_child(rules_actions)
 	var beer_btn := _tbutton(rules_actions, "Bier→Minen", _toggle_mines_beer)
 	beer_btn.tooltip_text = "Hausregel: Minen nehmen auch Bier als Nahrung (Original: nur Fisch/Fleisch/Brot)."
-	var outc_btn := _tbutton(rules_actions, "Ausgang", _toggle_output_via_carrier)
-	outc_btn.tooltip_text = "Ausgangsweg: Arbeiter traegt selbst zur Flagge (Default) oder der Strassentraeger holt die fertige Ware aus dem Haus (#66)."
+	var outc_btn := _tbutton(rules_actions, "Outbox", _toggle_output_via_carrier)
+	outc_btn.tooltip_text = "Ressourcen-Outbox: AUS = Arbeiter/Tuer-Traeger bringen die fertige Ware selbst zur Flagge (Default). AN = die Strassentraeger holen die Ware durch die Tuer aus Haus/Lager; der Tuer-Traeger des Lagers ruht dann (#66, #67, #68)."
 	_update_settings_text()
 
 	_build_tools_panel()
@@ -1994,7 +1994,7 @@ func _options_overview_text() -> String:
 	s += _option_line("Warenleiste oben", bar)
 	s += _option_line("Waren dicht stapeln", cluster)
 	s += _option_line("Gold durch Kohle ersetzt", gold)
-	s += _option_line("Ausgang: Strassentraeger holt aus dem Haus", outc)
+	s += _option_line("Ressourcen-Outbox (Strassentraeger holt aus dem Haus)", outc)
 	s += _option_line("Minen nehmen auch Bier", beer)
 	if UISkin.option_bool("dev_menu_unlocked", false):
 		s += _option_line("Dev: Startterritorium = ganze Karte",
@@ -2056,7 +2056,7 @@ func _toggle_output_via_carrier() -> void:
 	economy.set_output_via_carrier(not economy.output_via_carrier)
 	UISkin.set_option_bool("rule_output_via_carrier", economy.output_via_carrier)
 	_update_settings_text()
-	_flash("Ausgang per Traeger " + ("AN" if economy.output_via_carrier else "AUS (Arbeiter traegt)"))
+	_flash("Ressourcen-Outbox " + ("AN (Strassentraeger holt)" if economy.output_via_carrier else "AUS (Arbeiter/Tuer-Traeger bringt)"))
 
 
 ## Optionale obere Warenleiste ein-/ausblenden (im Original nicht dauerhaft da).
