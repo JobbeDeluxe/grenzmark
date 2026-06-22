@@ -2548,6 +2548,15 @@ func _tick_carrier(c: Carrier) -> void:
 				c.dt = 0.0
 				c.dphase = D_IN
 				return
+			# Endlieferung ins HQ/Lager: der Netz-Träger trägt die Ware bis in die Tür
+			# (S2-treu), statt sie nur an der Lagerflagge für den Tür-Träger abzulegen.
+			var sinto := _storage_for_carry_in(deliver_flag, c.carrying)
+			if sinto >= 0:
+				c.dstorage = sinto
+				c.dflag = deliver_flag
+				c.dt = 0.0
+				c.dphase = D_IN
+				return
 			_deliver(c.carrying, deliver_flag)
 			_mark_road_delivery(c.road)
 			c.carrying = null
@@ -2659,16 +2668,26 @@ func _tick_carrier_door(c: Carrier) -> void:
 				_end_carrier_door(c)
 
 
-## #67: Tür-Exkursion an einem HQ/Lager. Bei aktiver Option output_via_carrier holt der
-## Straßenträger eine wartende outbox-Ware selbst aus dem Lager und legt sie an dessen
-## Flagge (D_IN leer hinein, D_OUT mit Ware heraus) — danach übernimmt der normale
-## Straßendienst. Mehrere Straßen können das parallel tun (je eigener Träger), statt sich
-## am einen Tür-Träger des Lagers anzustellen.
+## Tür-Exkursion eines Straßenträgers an einem HQ/Lager. Wie beim Arbeitshaus (#66)
+## trägt er die Eingangsware sichtbar bis in die Tür und bucht sie ins Lager (D_IN) —
+## das ist S2-treu, der Netz-Träger bedient die Lagertür selbst statt sie nur an der
+## Flagge abzulegen; danach läuft er leer zurück (D_OUT). Bei aktiver Option
+## output_via_carrier nimmt er auf dem Rückweg gleich eine wartende Ausgangsware (outbox)
+## mit (#67) — so ziehen mehrere Straßen parallel Nachschub aus dem Lager.
 func _tick_carrier_door_storage(c: Carrier) -> void:
+	var st := _storage_by_flag(c.dstorage)
+	if st == null:
+		_end_carrier_door(c)   # Lager verschwand → Ware retten, Dienst beenden
+		return
 	match c.dphase:
 		D_IN:
 			c.dt = minf(c.dt + DOOR_SPEED, 1.0)
 			if c.dt >= 1.0:
+				if c.carrying != null:   # Eingang: Ware ins Lager einbuchen
+					st.stock[c.carrying.type] = int(st.stock.get(c.carrying.type, 0)) + 1
+					c.carrying = null
+					_mark_road_delivery(c.road)
+				# Bei aktiver Option einen fertigen Ausgang gleich mit hinausnehmen (#67).
 				c.carrying = _take_storage_output(c.dstorage)
 				c.dphase = D_OUT
 		D_OUT:
@@ -2713,14 +2732,34 @@ func _storage_output_to_fetch(flag_idx: int) -> bool:
 	return st != null and not st.outbox.is_empty()
 
 
+## Soll diese Endlieferung in ein HQ/Lager hineingetragen werden (S2-treu: der Netz-
+## Träger bedient die Lagertür selbst)? Gibt die Lagerflagge zurück, sonst -1. Gilt immer
+## (unabhängig von der Ausgangs-Option) — analog zum Arbeitshaus-Eingang (#66).
+func _storage_for_carry_in(flag_idx: int, g: Good) -> int:
+	if g == null or g.dest != flag_idx:
+		return -1
+	return flag_idx if _storage_by_flag(flag_idx) != null else -1
+
+
 ## #67: Nimmt die nächste wartende Ausgangsware aus dem Lager an [flag_idx] (FIFO, wie der
-## Tür-Träger). Die Ware trägt bereits ihr Ziel; das Routing an der Flagge schickt sie
-## weiter. null, wenn nichts wartet.
+## Tür-Träger). Nur bei aktiver Option output_via_carrier. Die Ware trägt bereits ihr Ziel;
+## das Routing an der Flagge schickt sie weiter. null, wenn nichts wartet.
 func _take_storage_output(flag_idx: int) -> Good:
+	if not output_via_carrier:
+		return null
 	var st := _storage_by_flag(flag_idx)
 	if st == null or st.outbox.is_empty():
 		return null
 	return st.outbox.pop_front()
+
+
+## Gebäude eines Lagers (HQ/Lagerhaus) an [flag_idx] — für die Tür-Exkursions-Animation
+## des Straßenträgers. null, wenn dort kein Lager steht.
+func storage_building_at_flag(flag_idx: int) -> WorldState.Building:
+	var st := _storage_by_flag(flag_idx)
+	if st == null or not state.buildings.has(st.idx):
+		return null
+	return state.buildings[st.idx]
 
 
 # --------------------------------------------------------------------------

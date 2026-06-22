@@ -1972,9 +1972,11 @@ func _test_door_transport() -> void:
 		"Tür-Münzen: keine Münze bleibt unverbraucht im Gebäude liegen")
 
 
-## #67: Bei aktiver Option output_via_carrier holen die angeschlossenen Straßenträger
-## wartende Ausgangswaren selbst per Tür-Exkursion aus dem HQ/Lager (parallel), statt sie
-## nur vom einen Tür-Träger des Lagers zu beziehen.
+## #67: HQ/Lager-Türverkehr durch den Netz-Träger. Eingang IMMER (S2-treu): der
+## Straßenträger trägt die Ware bis in die Lagertür und bucht sie ein, statt sie nur an
+## der Flagge für den einen Tür-Träger abzulegen. Ausgang NUR bei Option
+## output_via_carrier: er nimmt wartende outbox-Waren selbst mit (parallel über mehrere
+## Straßen) statt sie nur vom einen Tür-Träger zu beziehen.
 func _test_storage_carrier_fetch() -> void:
 	var map := _flat_map(40, 40)
 	var state := WorldState.new(map)
@@ -1996,20 +1998,35 @@ func _test_storage_carrier_fetch() -> void:
 	state.build_road(hq.flag_pos, saw2.flag_pos)
 	eco.resync()
 	eco.hq_stock[Goods.WOOD] = 40
-	var storage_door_seen := false
+	var storage_fetch_seen := false       # leer rein, Ausgang holen (outbox)
+	var storage_carry_in_seen := false    # mit Ware rein (Eingang einbuchen)
 	for t in 8000:
 		eco.tick()
 		for r in eco.carriers:
 			var c: Economy.Carrier = eco.carriers[r]
-			if c.dphase != Economy.D_NONE and c.dstorage >= 0:
-				storage_door_seen = true
-	_check(storage_door_seen,
-		"#67: Straßenträger holt Holz per Tür-Exkursion direkt aus dem HQ-Lager")
+			if c.dstorage < 0 or c.dphase == Economy.D_NONE:
+				continue
+			if c.dphase == Economy.D_IN and c.carrying != null:
+				storage_carry_in_seen = true   # trägt Eingangsware in die Lagertür
+			else:
+				storage_fetch_seen = true
+	_check(storage_carry_in_seen,
+		"#67: Straßenträger trägt die Eingangsware direkt in die HQ-Tür (S2-treu)")
+	_check(storage_fetch_seen,
+		"#67: Straßenträger holt Ausgangsware per Tür-Exkursion aus dem HQ-Lager")
 	_check(eco.hq_stock.get(Goods.BOARDS, 0) > 0,
 		"#67: aus dem HQ geholtes Holz wird verarbeitet und als Bretter zurückgeliefert")
 
-	# --- Deterministischer Mechanik-Check der Fetch-Hooks ---
+	# --- Deterministische Mechanik-Checks ---
 	var saw1_flag := map.idx(saw1.flag_pos.x, saw1.flag_pos.y)
+	# Eingang: gilt für Lager IMMER (auch ohne Option), nicht für andere Flaggen.
+	var ing := Economy.Good.new()
+	ing.type = Goods.BOARDS
+	ing.dest = eco.hq_flag
+	_check(eco._storage_for_carry_in(eco.hq_flag, ing) == eco.hq_flag,
+		"#67: Endlieferung ins HQ → Straßenträger trägt direkt in die Tür (carry-in)")
+	_check(eco._storage_for_carry_in(saw1_flag, ing) == -1,
+		"#67: carry-in nur an Lager-Flaggen, nicht an Gebäudeflaggen")
 	eco.storages[0].outbox.clear()
 	var g := Economy.Good.new()
 	g.type = Goods.WOOD
@@ -2022,11 +2039,16 @@ func _test_storage_carrier_fetch() -> void:
 		"#67: Straßenträger entnimmt die outbox-Ware aus dem HQ")
 	_check(eco.storages[0].outbox.is_empty(),
 		"#67: outbox nach Entnahme leer")
-	# Option AUS: kein direkter Lager-Fetch (Default-Verhalten bleibt der Tür-Träger).
+	# Option AUS: kein direkter Lager-Fetch (Ausgang bleibt beim Tür-Träger) …
 	eco.output_via_carrier = false
 	eco.storages[0].outbox.append(g)
 	_check(not eco._storage_output_to_fetch(eco.hq_flag),
-		"#67: Option AUS → Straßenträger holt NICHT direkt aus dem Lager")
+		"#67: Option AUS → Straßenträger holt KEINEN Ausgang aus dem Lager")
+	_check(eco._take_storage_output(eco.hq_flag) == null,
+		"#67: Option AUS → _take_storage_output liefert nichts")
+	# … aber der Eingang per Träger gilt unabhängig von der Option (S2-treu).
+	_check(eco._storage_for_carry_in(eco.hq_flag, ing) == eco.hq_flag,
+		"#67: Lager-Eingang per Träger gilt immer (auch bei Option AUS)")
 
 
 ## #66-Folge: Arbeitsplätze werden reserviert, bevor der Arbeiter losläuft. Zwei

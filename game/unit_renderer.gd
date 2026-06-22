@@ -478,14 +478,26 @@ func _draw_carriers() -> void:
 ## Gebäudeflagge (dt 0) und der Tür (dt 1) und trägt dabei die Ware ins Haus. Vor dem
 ## bedienten Gebäude sichtbar, von davor gebauten Gebäuden korrekt verdeckt (#64).
 func _draw_carrier_door(c: Economy.Carrier) -> void:
-	var bs: Economy.BState = economy.bstates.get(c.dbidx)
-	if bs == null or c.dflag < 0:
+	if c.dflag < 0:
 		return
-	var bpos := bs.bld.pos
+	var bpos: Vector2i
+	var def_id: String
+	if c.dstorage >= 0:   # Exkursion an einem HQ/Lager (#67)
+		var b := economy.storage_building_at_flag(c.dstorage)
+		if b == null:
+			return
+		bpos = b.pos
+		def_id = b.def_id
+	else:
+		var bs: Economy.BState = economy.bstates.get(c.dbidx)
+		if bs == null:
+			return
+		bpos = bs.bld.pos
+		def_id = bs.bld.def_id
 	var fx := c.dflag % state.map.width
 	var fy := c.dflag / state.map.width
 	var flag := state.map.node_world(fx, fy)
-	var door := state.map.node_world(bpos.x, bpos.y) + GameTheme.entrance_offset(bs.bld.def_id)
+	var door := state.map.node_world(bpos.x, bpos.y) + GameTheme.entrance_offset(def_id)
 	var p := flag.lerp(door, clampf(c.dt, 0.0, 1.0))
 	var facing := (door - flag) if c.dphase == Economy.D_IN else (flag - door)
 	var carry := c.carrying.type if c.carrying != null else -1
