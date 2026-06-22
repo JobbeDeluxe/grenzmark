@@ -72,6 +72,7 @@ class Carrier:
 	var dphase := 0          # D_* (D_NONE = kein Tür-Gang)
 	var dt := 0.0            # 0 = an der Flagge, 1 = an der Tür
 	var dbidx := -1          # Gebäude-Index, der gerade bedient wird
+	var dstorage := -1       # #67: Lager-Flagge, aus der gerade geholt wird (-1 = Gebäude)
 	var dflag := -1          # Gebäudeflagge (Endknoten, an dem der Träger steht)
 
 
@@ -2505,6 +2506,19 @@ func _tick_carrier(c: Carrier) -> void:
 				c.dflag = e1
 				c.target = segs
 				c.state = C_TO_FETCH
+			# #67: Liegt am HQ/Lager-Ende wartende Ausgangsware in der outbox, holt der
+			# Straßenträger sie selbst durch die Tür — so ziehen mehrere Straßen parallel
+			# Nachschub heraus statt sich am einen Tür-Träger des Lagers anzustellen.
+			elif _storage_output_to_fetch(e0) and goods_on_flag(e0) < FLAG_CAP:
+				c.dstorage = e0
+				c.dflag = e0
+				c.target = 0.0
+				c.state = C_TO_FETCH
+			elif _storage_output_to_fetch(e1) and goods_on_flag(e1) < FLAG_CAP:
+				c.dstorage = e1
+				c.dflag = e1
+				c.target = segs
+				c.state = C_TO_FETCH
 			else:
 				c.target = mid
 		C_TO_FETCH:
@@ -2616,6 +2630,9 @@ func _take_building_output(bs: BState) -> Good:
 ## (delivered++/incoming--); D_OUT bringt ihn leer zur Flagge zurück. Danach nimmt er
 ## den normalen Straßendienst wieder auf (kein separater Türträger pro Arbeitshaus).
 func _tick_carrier_door(c: Carrier) -> void:
+	if c.dstorage >= 0:
+		_tick_carrier_door_storage(c)   # #67: Exkursion an einem HQ/Lager
+		return
 	var bs: BState = bstates.get(c.dbidx)
 	if bs == null:
 		_end_carrier_door(c)   # Gebäude verschwand → Ware retten, Dienst beenden
@@ -2642,6 +2659,27 @@ func _tick_carrier_door(c: Carrier) -> void:
 				_end_carrier_door(c)
 
 
+## #67: Tür-Exkursion an einem HQ/Lager. Bei aktiver Option output_via_carrier holt der
+## Straßenträger eine wartende outbox-Ware selbst aus dem Lager und legt sie an dessen
+## Flagge (D_IN leer hinein, D_OUT mit Ware heraus) — danach übernimmt der normale
+## Straßendienst. Mehrere Straßen können das parallel tun (je eigener Träger), statt sich
+## am einen Tür-Träger des Lagers anzustellen.
+func _tick_carrier_door_storage(c: Carrier) -> void:
+	match c.dphase:
+		D_IN:
+			c.dt = minf(c.dt + DOOR_SPEED, 1.0)
+			if c.dt >= 1.0:
+				c.carrying = _take_storage_output(c.dstorage)
+				c.dphase = D_OUT
+		D_OUT:
+			c.dt = maxf(c.dt - DOOR_SPEED, 0.0)
+			if c.dt <= 0.0:
+				if c.carrying != null:
+					_push_good(c.dflag, c.carrying)
+					c.carrying = null
+				_end_carrier_door(c)
+
+
 ## Beendet die Tür-Exkursion: getragene Ware (Gebäude verschwand) nicht verlieren,
 ## dann zurück in den normalen Straßendienst (Rückweg zur Straßenmitte).
 func _end_carrier_door(c: Carrier) -> void:
@@ -2652,9 +2690,37 @@ func _end_carrier_door(c: Carrier) -> void:
 	c.dphase = D_NONE
 	c.dt = 0.0
 	c.dbidx = -1
+	c.dstorage = -1
 	c.dflag = -1
 	c.state = C_RETURN
 	c.target = float(c.road.length()) * 0.5
+
+
+## #67: Lager (HQ/Lagerhaus) an Flaggen-Index [flag_idx], sonst null.
+func _storage_by_flag(flag_idx: int) -> Storage:
+	for st in storages:
+		if st.flag_idx == flag_idx:
+			return st
+	return null
+
+
+## #67: Hat das Lager an [flag_idx] eine wartende Ausgangsware (outbox), die ein
+## Straßenträger bei aktiver Option direkt durch die Tür holen soll?
+func _storage_output_to_fetch(flag_idx: int) -> bool:
+	if not output_via_carrier:
+		return false
+	var st := _storage_by_flag(flag_idx)
+	return st != null and not st.outbox.is_empty()
+
+
+## #67: Nimmt die nächste wartende Ausgangsware aus dem Lager an [flag_idx] (FIFO, wie der
+## Tür-Träger). Die Ware trägt bereits ihr Ziel; das Routing an der Flagge schickt sie
+## weiter. null, wenn nichts wartet.
+func _take_storage_output(flag_idx: int) -> Good:
+	var st := _storage_by_flag(flag_idx)
+	if st == null or st.outbox.is_empty():
+		return null
+	return st.outbox.pop_front()
 
 
 # --------------------------------------------------------------------------

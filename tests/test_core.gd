@@ -57,6 +57,7 @@ func _initialize() -> void:
 	_test_catapult()
 	_test_promotion()
 	_test_door_transport()
+	_test_storage_carrier_fetch()
 	_test_work_reservation()
 	_test_roadsplit()
 	_test_build_help_respects_territory()
@@ -1969,6 +1970,63 @@ func _test_door_transport() -> void:
 	var gbs: Economy.BState = eco2.bstates.get(map2.idx(gh.pos.x, gh.pos.y))
 	_check(gbs != null and int(gbs.delivered.get(Goods.COINS, 0)) == 0,
 		"Tür-Münzen: keine Münze bleibt unverbraucht im Gebäude liegen")
+
+
+## #67: Bei aktiver Option output_via_carrier holen die angeschlossenen Straßenträger
+## wartende Ausgangswaren selbst per Tür-Exkursion aus dem HQ/Lager (parallel), statt sie
+## nur vom einen Tür-Träger des Lagers zu beziehen.
+func _test_storage_carrier_fetch() -> void:
+	var map := _flat_map(40, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	eco.output_via_carrier = true
+	var hq := state.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_check(hq != null, "#67: HQ platzierbar")
+	if hq == null:
+		return
+	eco.resync()
+	# Zwei Sägewerke an je eigener Straße: ein Tür-Träger des HQ käme nicht nach — die
+	# Straßenträger müssen das Holz selbst aus dem HQ holen.
+	var saw1 := state.place_building(10, 6, WorldState.BQ_HOUSE, false, "sawmill", 0, false)
+	var saw2 := state.place_building(14, 10, WorldState.BQ_HOUSE, false, "sawmill", 0, false)
+	_check(saw1 != null and saw2 != null, "#67: zwei Sägewerke platzierbar")
+	if saw1 == null or saw2 == null:
+		return
+	state.build_road(hq.flag_pos, saw1.flag_pos)
+	state.build_road(hq.flag_pos, saw2.flag_pos)
+	eco.resync()
+	eco.hq_stock[Goods.WOOD] = 40
+	var storage_door_seen := false
+	for t in 8000:
+		eco.tick()
+		for r in eco.carriers:
+			var c: Economy.Carrier = eco.carriers[r]
+			if c.dphase != Economy.D_NONE and c.dstorage >= 0:
+				storage_door_seen = true
+	_check(storage_door_seen,
+		"#67: Straßenträger holt Holz per Tür-Exkursion direkt aus dem HQ-Lager")
+	_check(eco.hq_stock.get(Goods.BOARDS, 0) > 0,
+		"#67: aus dem HQ geholtes Holz wird verarbeitet und als Bretter zurückgeliefert")
+
+	# --- Deterministischer Mechanik-Check der Fetch-Hooks ---
+	var saw1_flag := map.idx(saw1.flag_pos.x, saw1.flag_pos.y)
+	eco.storages[0].outbox.clear()
+	var g := Economy.Good.new()
+	g.type = Goods.WOOD
+	g.dest = saw1_flag
+	eco.storages[0].outbox.append(g)
+	_check(eco._storage_output_to_fetch(eco.hq_flag),
+		"#67: Fetch-Hook erkennt wartende outbox-Ware am HQ")
+	var taken := eco._take_storage_output(eco.hq_flag)
+	_check(taken != null and int(taken.type) == Goods.WOOD,
+		"#67: Straßenträger entnimmt die outbox-Ware aus dem HQ")
+	_check(eco.storages[0].outbox.is_empty(),
+		"#67: outbox nach Entnahme leer")
+	# Option AUS: kein direkter Lager-Fetch (Default-Verhalten bleibt der Tür-Träger).
+	eco.output_via_carrier = false
+	eco.storages[0].outbox.append(g)
+	_check(not eco._storage_output_to_fetch(eco.hq_flag),
+		"#67: Option AUS → Straßenträger holt NICHT direkt aus dem Lager")
 
 
 ## #66-Folge: Arbeitsplätze werden reserviert, bevor der Arbeiter losläuft. Zwei
