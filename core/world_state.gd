@@ -182,15 +182,23 @@ const REVEAL_ROAD := 3       # Aufdeck-Radius je Straßenknoten
 ## und `build_road` inkrementell auf (siehe dort), damit das Platzieren nicht bei
 ## jedem Klick die ganze Karte neu scannt (Performance, Issue #30).
 func recompute_visibility() -> void:
+	# Nur EIGENE Strukturen decken auf (#62): um gegnerische Gebäude/Flaggen/Straßen
+	# herum bleibt es für den Spieler im Nebel.
 	for i in buildings:
 		var b: Building = buildings[i]
 		if b.owner == 0:
 			_reveal(b.pos, REVEAL_BUILDING)
 	for i in flags:
-		_reveal(flags[i].pos, REVEAL_FLAG)
+		if flags[i].owner == 0:
+			_reveal(flags[i].pos, REVEAL_FLAG)
 	for r in roads:
-		for n in r.nodes:
-			_reveal(n, REVEAL_ROAD)
+		if r.owner == 0:
+			for n in r.nodes:
+				_reveal(n, REVEAL_ROAD)
+	# Eigenes Territorium ist einsehbar (S2-Kopplung, #62) — auch wenn es weiter reicht
+	# als die Aufdeck-Radien der einzelnen Strukturen.
+	for k in territory:
+		explored[k] = true
 
 
 func _reveal(center: Vector2i, radius: int) -> void:
@@ -261,6 +269,7 @@ func recompute_territory() -> void:
 	for k in territory_owner:
 		if territory_owner[k] == 0:
 			territory[k] = true
+			explored[k] = true   # eigenes Gebiet ist einsehbar (S2, #62)
 		else:
 			enemy_territory[k] = true
 
@@ -432,7 +441,8 @@ func _add_flag(x: int, y: int, owner := 0) -> Flag:
 	var i := map.idx(x, y)
 	flags[i] = f
 	occupied[i] = OBJ_FLAG
-	_reveal(Vector2i(x, y), REVEAL_FLAG)  # inkrementell aufdecken (Issue #30)
+	if owner == 0:
+		_reveal(Vector2i(x, y), REVEAL_FLAG)  # nur eigene Flaggen decken auf (#30, #62)
 	return f
 
 
@@ -805,8 +815,9 @@ func build_road(from: Vector2i, to: Vector2i, owner := -1) -> Road:
 	# Zwischenknoten als Straße markieren (Endpunkte bleiben Flaggen).
 	for k in range(1, path.size() - 1):
 		occupied[map.idx(path[k].x, path[k].y)] = OBJ_ROAD
-	for n in path:
-		_reveal(n, REVEAL_ROAD)  # inkrementell aufdecken (Issue #30)
+	if road_owner == 0:
+		for n in path:
+			_reveal(n, REVEAL_ROAD)  # nur eigene Straßen decken auf (#30, #62)
 	roads.append(r)
 	invalidate_routes()  # Graph/Routen-Cache verwerfen (#30)
 	return r

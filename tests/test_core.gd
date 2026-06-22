@@ -60,6 +60,7 @@ func _initialize() -> void:
 	_test_storage_carrier_fetch()
 	_test_carrier_resume_after_door()
 	_test_house_carrier_idle_when_outbox()
+	_test_fog_reveal_own_only()
 	_test_options_persistence_allowlist()
 	_test_work_reservation()
 	_test_roadsplit()
@@ -1453,23 +1454,46 @@ func _test_visibility() -> void:
 	_check(state.explored.has(map.idx(10, 10)), "HQ-Umgebung aufgedeckt")
 	_check(not state.explored.has(map.idx(34, 34)), "Ferne Karte bleibt im Nebel")
 
-	# Inkrementelles Aufdecken (Issue #30): eine neu gesetzte Flagge deckt ihre
-	# Umgebung SOFORT auf — ohne dass resync() die ganze Karte neu scannen muss.
-	# Knoten suchen, der im Gebiet & baubar, aber noch NICHT aufgedeckt ist.
+	# #62: das gesamte eigene Territorium ist einsehbar (kein Nebelfleck im eigenen Gebiet).
+	var all_terr_explored := true
+	for k in state.territory:
+		if not state.explored.has(int(k)):
+			all_terr_explored = false
+			break
+	_check(all_terr_explored, "#62: gesamtes eigenes Territorium ist aufgedeckt")
+
+	# Inkrementelles Aufdecken (Issue #30): eine neu gesetzte Flagge deckt ihre Umgebung
+	# SOFORT auf — auch einen Knoten knapp außerhalb des erkundeten Bereichs (Sicht-Marge
+	# über die Grenze hinaus). Flaggenplatz im Gebiet suchen, dessen Reveal-Radius einen
+	# noch dunklen Knoten erreicht.
 	var spot := Vector2i(-1, -1)
-	for yy in range(2, map.height - 2):
-		for xx in range(2, map.width - 2):
-			var idx := map.idx(xx, yy)
-			if not state.explored.has(idx) and state.can_place_flag(xx, yy):
-				spot = Vector2i(xx, yy)
+	var dark := Vector2i(-1, -1)
+	for yy in range(3, map.height - 3):
+		for xx in range(3, map.width - 3):
+			if not state.can_place_flag(xx, yy):
+				continue
+			for dy in range(-WorldState.REVEAL_FLAG, WorldState.REVEAL_FLAG + 1):
+				for dx in range(-WorldState.REVEAL_FLAG, WorldState.REVEAL_FLAG + 1):
+					var nx := xx + dx
+					var ny := yy + dy
+					if map.in_bounds(nx, ny) and not state.explored.has(map.idx(nx, ny)) \
+							and state.hex_distance(Vector2i(xx, yy), Vector2i(nx, ny)) <= WorldState.REVEAL_FLAG:
+						spot = Vector2i(xx, yy)
+						dark = Vector2i(nx, ny)
+						break
+				if dark.x >= 0:
+					break
+			if spot.x >= 0:
 				break
 		if spot.x >= 0:
 			break
-	_check(spot.x >= 0, "Visibility: unaufgedeckter Bauplatz im Gebiet gefunden")
+	_check(spot.x >= 0, "Visibility: Flaggenplatz mit benachbartem Nebelknoten gefunden")
 	if spot.x >= 0:
+		_check(not state.explored.has(map.idx(dark.x, dark.y)),
+			"Visibility: Nachbarknoten liegt vorher im Nebel")
 		_check(state.place_flag(spot.x, spot.y) != null, "Visibility: Testflagge setzbar")
-		_check(state.explored.has(map.idx(spot.x, spot.y)),
-			"Neue Flagge deckt ihren Knoten inkrementell auf (ohne resync)")
+		_check(state.explored.has(map.idx(dark.x, dark.y)),
+			"Neue Flagge deckt einen Nachbarknoten inkrementell auf (ohne resync)")
 
 
 func _test_minimap_respects_fog() -> void:
@@ -2141,6 +2165,30 @@ func _test_house_carrier_idle_when_outbox() -> void:
 	eco._tick_one_house_carrier(st)
 	_check(st.outbox.is_empty() and st.house.state == Economy.H_OUT,
 		"#68: ohne Option bringt der Tür-Träger den Ausgang selbst zur Flagge")
+
+
+## #62: Nebel des Krieges deckt nur EIGENE Strukturen + eigenes Territorium auf.
+## Gegnerische Gebäude/Flaggen und gegnerisches Territorium bleiben unerkundet.
+func _test_fog_reveal_own_only() -> void:
+	var map := _flat_map(60, 60)
+	var state := WorldState.new(map)
+	var hq := state.place_building(12, 12, WorldState.BQ_CASTLE, true, "hq", 9, false, 0)
+	var ehq := state.place_building(46, 46, WorldState.BQ_CASTLE, true, "hq", 9, false, 1)
+	_check(hq != null and ehq != null, "#62: eigenes + gegnerisches HQ platzierbar")
+	if hq == null or ehq == null:
+		return
+	state.recompute_territory()
+	state.recompute_visibility()
+	# Eigenes Gebiet ist einsehbar.
+	_check(state.territory.has(map.idx(12, 12)), "#62: eigenes HQ-Feld ist eigenes Territorium")
+	_check(state.explored.has(map.idx(12, 12)), "#62: eigenes Territorium ist aufgedeckt")
+	# Gegnerisches Gebiet bleibt im Nebel.
+	_check(state.enemy_territory.has(map.idx(46, 46)), "#62: Gegner-HQ-Feld ist Gegner-Territorium")
+	_check(not state.explored.has(map.idx(46, 46)), "#62: Gegner-Territorium bleibt unerkundet")
+	# Eine gegnerische Flagge weit weg deckt für den Spieler NICHTS auf.
+	var ef := state.ensure_flag(30, 4, 1)
+	_check(ef != null, "#62: gegnerische Flagge setzbar")
+	_check(not state.explored.has(map.idx(30, 4)), "#62: gegnerische Flagge deckt nicht auf")
 
 
 ## Reset-Verhalten: Nur Komfort-Keys (Karte) ueberleben einen Neustart; Dev-Menue,

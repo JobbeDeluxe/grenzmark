@@ -471,7 +471,10 @@ func _ore_debug_label(kind: int, amount: int) -> String:
 
 ## Nebel des Krieges: unerkundete Dreiecke abdunkeln.
 func _draw_fog() -> void:
-	var fog := Color(0.03, 0.03, 0.05, 0.92)
+	# Unerkundetes ist in S2 schwarz — nicht nur abgedunkelt (#62). Voll deckend, damit
+	# weder Terrain noch Grenzsteine/Objekte des Gegners durchscheinen. Der Nebel wird in
+	# _draw() zuletzt gezeichnet und verdeckt so alles darunter.
+	var fog := Color(0.0, 0.0, 0.0, 1.0)
 	var nr := _visible_node_range()
 	for y in range(nr.position.y, nr.position.y + nr.size.y + 1):
 		for x in range(nr.position.x, nr.position.x + nr.size.x + 1):
