@@ -11,9 +11,9 @@ extends RefCounted
 ## direkt aus einem Träger (z. B. Müller/Brauer); Soldaten entstehen aus
 ## Schwert + Bier und sind nicht über ein Werkzeug rekrutierbar.
 ##
-## Es ist bewusst NICHT die volle RTTR-Liste (kein Schiffsbauer/Esel/Köhler/
-## Addon-Berufe), sondern genau die Berufe, die Grenzmarks Gebäude einsetzen,
-## plus die Soldatenränge und die Erkundungsberufe (Geologe/Späher, Issue #21).
+## Es ist bewusst NICHT die volle RTTR-Liste (kein Esel/Köhler/Addon-Berufe),
+## sondern genau die Berufe, die Grenzmarks Gebäude einsetzen, plus die Soldatenränge,
+## die Erkundungsberufe (Geologe/Späher, Issue #21) und den Schiffsbauer (Werft, #46).
 ## Reihenfolge = Enum-Wert (Serialisierung); NEUE Berufe nur ANHÄNGEN.
 
 enum {
@@ -45,9 +45,11 @@ enum {
 	SERGEANT,       # 24 Unteroffizier
 	OFFICER,        # 25 Offizier
 	GENERAL,        # 26 General
+	# --- See (#46), angehängt ab 27 ---
+	SHIPWRIGHT,     # 27 Schiffsbauer (Werft) — Träger + Hammer
 }
 
-const COUNT := 27
+const COUNT := 28
 
 const FIRST_SOLDIER := PRIVATE
 const LAST_SOLDIER := GENERAL
@@ -59,6 +61,7 @@ const KEYS := [
 	"pigbreeder", "ironfounder", "minter", "metalworker", "armorer",
 	"builder", "planer", "geologist", "scout",
 	"private", "private_first", "sergeant", "officer", "general",
+	"shipwright",
 ]
 
 
@@ -91,6 +94,7 @@ static func name_of(j: int) -> String:
 		SERGEANT: return "Unteroffizier"
 		OFFICER: return "Offizier"
 		GENERAL: return "General"
+		SHIPWRIGHT: return "Schiffsbauer"
 	return "?"
 
 
@@ -125,6 +129,7 @@ static func tool_for(j: int) -> int:
 		PLANER: return Goods.SHOVEL
 		GEOLOGIST: return Goods.HAMMER
 		SCOUT: return Goods.BOW
+		SHIPWRIGHT: return Goods.HAMMER
 	return -1
 
 

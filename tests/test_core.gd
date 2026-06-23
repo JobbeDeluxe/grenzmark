@@ -27,6 +27,7 @@ func _initialize() -> void:
 	_test_ore_deposit_mining()
 	_test_mine_food()
 	_test_fishery_fish()
+	_test_shipyard()
 	_test_farm_fields()
 	_test_catalog_complete()
 	_test_asset_files()
@@ -1452,7 +1453,7 @@ func _test_asset_files() -> void:
 ## Werkzeug->Beruf-Zuordnung, sowie das HQ-Startinventar aus dem Tuning.
 func _test_inventory_model() -> void:
 	# --- Waren: die 12 Einzelwerkzeuge sind vorhanden und konsistent ---
-	_check(Goods.COUNT == 31, "Goods.COUNT == 31 (19 Basis + 12 Werkzeuge)")
+	_check(Goods.COUNT == 32, "Goods.COUNT == 32 (19 Basis + 12 Werkzeuge + Boot)")
 	for g in Goods.COUNT:
 		_check(Goods.name_of(g) != "?", "Ware hat Namen: %d" % g)
 		_check(Goods.id_of(Goods.key_of(g)) == g, "Goods-KEY Roundtrip: %d" % g)
@@ -1461,7 +1462,7 @@ func _test_inventory_model() -> void:
 		"Holz/altes TOOLS sind keine Einzelwerkzeuge")
 
 	# --- Berufe: Liste, Namen, KEY-Roundtrip, Soldaten ---
-	_check(Jobs.COUNT == 27, "Jobs.COUNT == 27")
+	_check(Jobs.COUNT == 28, "Jobs.COUNT == 28")
 	for j in Jobs.COUNT:
 		_check(Jobs.name_of(j) != "?", "Beruf hat Namen: %d" % j)
 		_check(Jobs.id_of(Jobs.key_of(j)) == j, "Jobs-KEY Roundtrip: %d" % j)
@@ -1696,6 +1697,67 @@ func _test_fishery_fish() -> void:
 	MapGenerator.seed_coastal_fish(cmap)
 	_check(cmap.fish_at(6, 6) > 0, "seed_coastal_fish: Küstenknoten bekommt Fisch")
 	_check(cmap.fish_at(2, 2) == 0, "seed_coastal_fish: reines Land bleibt fischlos")
+
+
+## Werft (#46): baut aus Brettern Boote, gehört zum Schiffsbauer und produziert nur mit
+## Wasser in Reichweite (Küstengebäude). Inland steht sie still und meldet es.
+func _test_shipyard() -> void:
+	# --- Daten/Zuordnung ---
+	var def := BuildingCatalog.get_def("shipyard")
+	_check(not def.is_empty(), "Werft: im Katalog vorhanden")
+	_check(int(def.get("output", -1)) == Goods.BOAT, "Werft: Ausgang ist Boot")
+	_check(bool(def.get("needs_water", false)), "Werft: braucht Wasser in Reichweite")
+	_check(BuildingCatalog.job_of("shipyard") == Jobs.SHIPWRIGHT, "Werft -> Schiffsbauer")
+	_check(Jobs.tool_for(Jobs.SHIPWRIGHT) == Goods.HAMMER, "Schiffsbauer braucht Hammer")
+
+	# --- Produktion an der Küste ---
+	var map := _flat_map(28, 28)
+	# Kleiner Wasserfleck in Reichweite der Werft (12,12).
+	for wy in [12, 13]:
+		for wx in [15, 16]:
+			map.set_tri(Vector2i(wx, wy), Grid.TRI_R, Terrain.WATER)
+			map.set_tri(Vector2i(wx, wy), Grid.TRI_D, Terrain.WATER)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	eco.ai_enabled = false
+	var hq := state.place_building(6, 6, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	var sy := state.place_building(12, 12, WorldState.BQ_HOUSE, false, "shipyard", 0, false)
+	_check(hq != null and sy != null, "Werft: HQ + Werft platzierbar")
+	if hq == null or sy == null:
+		return
+	state.build_road(hq.flag_pos, sy.flag_pos)
+	eco.hq_people = { Jobs.HELPER: 4 }
+	eco.hq_stock = { Goods.HAMMER: 1, Goods.BOARDS: 60 }
+	eco.resync()
+	_check(eco._water_near(Vector2i(12, 12)), "Werft: Wasser in Reichweite erkannt")
+	# Genug Ticks für Anmarsch des Schiffsbauers, Brett-Nachschub und mehrere Bootszyklen.
+	for _t in 4000:
+		eco.tick()
+	var boats := int(eco.hq_stock.get(Goods.BOAT, 0))
+	var bs: Economy.BState = eco.bstates.get(state.map.idx(12, 12))
+	var produced := boats
+	if bs != null:
+		produced += int(bs.out_stock.get(Goods.BOAT, 0))
+	_check(produced > 0, "Werft (Küste): produziert Boote aus Brettern (%d)" % produced)
+
+	# --- Inland: keine Produktion, klare Meldung ---
+	var imap := _flat_map(28, 28)
+	var istate := WorldState.new(imap)
+	var ieco := Economy.new(istate)
+	ieco.ai_enabled = false
+	var ihq := istate.place_building(6, 6, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	var isy := istate.place_building(12, 12, WorldState.BQ_HOUSE, false, "shipyard", 0, false)
+	istate.build_road(ihq.flag_pos, isy.flag_pos)
+	ieco.hq_people = { Jobs.HELPER: 4 }
+	ieco.hq_stock = { Goods.HAMMER: 1, Goods.BOARDS: 60 }
+	ieco.resync()
+	_check(not ieco._water_near(Vector2i(12, 12)), "Werft (inland): kein Wasser in Reichweite")
+	for _t in 4000:
+		ieco.tick()
+	_check(int(ieco.hq_stock.get(Goods.BOAT, 0)) == 0, "Werft (inland): produziert keine Boote")
+	var info := ieco.building_info(isy)
+	_check(String(info.get("warning", "")) == "Kein Wasser in Reichweite",
+		"Werft (inland): meldet 'Kein Wasser in Reichweite' (war '%s')" % info.get("warning", ""))
 
 
 ## Bauernhof-Felder (Issue #26), original-getreu an RTTR nofFarmer/noGrainfield:

@@ -1882,6 +1882,11 @@ func _tick_work(bs: BState) -> void:
 			if not _has_inputs(bs):
 				bs.idle_reason = IDLE_NO_INPUTS
 				return
+			# Küstengebäude (Werft, #46): produziert nur mit Wasser in Reichweite. Wie der
+			# Fischer baubar überall, arbeitet aber nur an der Küste.
+			if bool(bs.def.get("needs_water", false)) and not _water_near(bs.bld.pos):
+				bs.idle_reason = IDLE_NO_RESOURCE
+				return
 			# Ausgangsgut dieses Zyklus wählen (Werkzeugmacher/Schmiede gewichtet;
 			# sonst das feste output-Gut). -1 bei Produzenten = nichts wählbar
 			# (alle Werkzeug-Prioritäten 0) → warten, NICHT Eingänge verbrauchen.
@@ -3298,9 +3303,12 @@ func building_info(bld: WorldState.Building) -> Dictionary:
 			IDLE_OUT_FULL: info.warning = "Ausgang voll — Abtransport stockt"
 			IDLE_NO_INPUTS: info.warning = "Wartet auf Waren"
 			IDLE_NO_RESOURCE:
-				info.warning = "Keine Fische in Reichweite" \
-					if String(bs.def.get("resource", "")) == "water" \
-					else "Kein Rohstoff in Reichweite"
+				if String(bs.def.get("resource", "")) == "water":
+					info.warning = "Keine Fische in Reichweite"
+				elif bool(bs.def.get("needs_water", false)):
+					info.warning = "Kein Wasser in Reichweite"
+				else:
+					info.warning = "Kein Rohstoff in Reichweite"
 			IDLE_NO_OUTPUT: info.warning = "Kein Werkzeug ausgewählt (alle Prioritäten 0)"
 	return info
 

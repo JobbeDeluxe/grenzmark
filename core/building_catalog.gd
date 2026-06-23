@@ -97,6 +97,16 @@ static func defs() -> Dictionary:
 			inputs = { Goods.PIG: 1 }, output = Goods.MEAT,
 			work = 120, resource = "", influence = 0, category = "nahrung",
 		},
+		# Werft (#46): baut aus Brettern Boote (für Wasserstraßen/Fähre). Wie der Fischer
+		# überall baubar, produziert aber nur mit Wasser in Reichweite (needs_water). In
+		# Phase 3 kommt der Schiffe-Modus (See-Einheiten) dazu.
+		"shipyard": {
+			id = "shipyard", name = "Werft", size = M,
+			cost = { Goods.BOARDS: 3, Goods.STONE: 2 },
+			inputs = { Goods.BOARDS: 2 }, output = Goods.BOAT,
+			work = 180, resource = "", needs_water = true,
+			influence = 0, category = "wasser",
+		},
 		"toolmaker": {
 			id = "toolmaker", name = "Werkzeugmacher", size = M,
 			cost = { Goods.BOARDS: 3, Goods.STONE: 2 },
@@ -195,6 +205,7 @@ static func menu_order() -> Array:
 		"pigfarm", "slaughterhouse",
 		"coalmine", "ironmine", "goldmine", "granitemine",
 		"smelter", "mint", "brewery", "smithy", "toolmaker",
+		"shipyard",
 		"guardhouse", "watchtower", "fortress", "catapult",
 	]
 
@@ -227,4 +238,5 @@ static func job_of(def_id: String) -> int:
 		"mint": return Jobs.MINTER
 		"brewery": return Jobs.BREWER
 		"smithy": return Jobs.ARMORER
+		"shipyard": return Jobs.SHIPWRIGHT
 	return -1

@@ -44,9 +44,11 @@ enum {
 	CLEAVER,     # 28 Beil        -> Schlachter
 	ROLLING_PIN, # 29 Nudelholz   -> Bäcker
 	BOW,         # 30 Bogen       -> Jäger/Späher
+	# --- See (#46), angehängt ab 31 ---
+	BOAT,        # 31 Boot        -> Werft; für Wasserstraßen/Fähre über schmale Wasserstellen
 }
 
-const COUNT := 31
+const COUNT := 32
 
 ## Erste/letzte ID des zusammenhängenden Werkzeug-Blocks (für [method is_tool_good]).
 const FIRST_TOOL := TONGS
@@ -59,6 +61,7 @@ const KEYS := [
 	"sword", "shield", "pig",
 	"tongs", "hammer", "axe", "saw", "pickaxe", "shovel", "crucible",
 	"rod_and_line", "scythe", "cleaver", "rolling_pin", "bow",
+	"boat",
 ]
 
 
@@ -95,6 +98,7 @@ static func name_of(g: int) -> String:
 		CLEAVER: return "Beil"
 		ROLLING_PIN: return "Nudelholz"
 		BOW: return "Bogen"
+		BOAT: return "Boot"
 	return "?"
 
 
