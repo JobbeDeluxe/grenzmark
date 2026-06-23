@@ -387,11 +387,24 @@ static func boat_texture(owner := 0) -> Texture2D:
 	return _tex("res://assets/ships/boat.png")
 
 
+## Richtungs-/Paddel-Sheet fuer Wasserstrassenboote: 4 Frames x 6 Richtungen.
+static func boat_sheet_texture(owner := 0) -> Texture2D:
+	if owner != 0:
+		var t := _tex("res://assets/ships/boat_sheet_%d.png" % owner)
+		if t != null:
+			return t
+	return _tex("res://assets/ships/boat_sheet.png")
+
+
 static func boat_draw_size() -> Vector2:
 	var s = _design().get("boat_size", null)
 	if s != null:
 		return _to_vec(s)
 	return Vector2(24.0, 24.0)
+
+
+static func boat_carrier_size() -> float:
+	return float(_design().get("boat_carrier_size", 28.0))
 
 
 ## assets/ships/ship.png: grosses See-Schiff; ship_stage1.png = Baugerippe.
@@ -404,8 +417,21 @@ static func ship_texture(owner := 0) -> Texture2D:
 	return _tex("res://assets/ships/ship.png")
 
 
+## Richtungs-Sheet fuer grosse Schiffe: 4 Frames x 6 Richtungen.
+static func ship_sheet_texture(owner := 0) -> Texture2D:
+	if owner != 0:
+		var t := _tex("res://assets/ships/ship_sheet_%d.png" % owner)
+		if t != null:
+			return t
+	return _tex("res://assets/ships/ship_sheet.png")
+
+
 static func ship_construction_stage1_texture() -> Texture2D:
 	return _tex("res://assets/ships/ship_stage1.png")
+
+
+static func ship_construction_stage1_sheet_texture() -> Texture2D:
+	return _tex("res://assets/ships/ship_stage1_sheet.png")
 
 
 static func ship_draw_size() -> Vector2:

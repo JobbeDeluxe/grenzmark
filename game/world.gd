@@ -3266,15 +3266,14 @@ func _handle_road_click() -> bool:
 		return false  # nur Startflagge gewählt — keine Struktur-Änderung
 	var r := state.build_road(road_start, hover)
 	# Fähre/Wasserstraße (#46): klappt kein Landweg, aber eine kurze Wasserquerung, dann mit
-	# einem Boot aus dem nächsten Lager eine Wasserstraße bauen.
+	# Wasserstraße bauen. Das Boot wird später vom Wasserstraßen-Träger aus dem Lager geholt.
 	if r == null and not state.plan_waterway(road_start, hover).is_empty():
-		if economy.take_boat_near(state.map.idx(road_start.x, road_start.y)):
-			r = state.build_waterway(road_start, hover)
-			if r != null:
-				economy.resync()
-				_flash("Wasserstrasse gebaut (Boot verbraucht).")
-		else:
-			_flash("Wasserstrasse braucht ein Boot (Werft baut Boote).")
+		var has_boat := economy.has_boat_near(state.map.idx(road_start.x, road_start.y))
+		r = state.build_waterway(road_start, hover)
+		if r != null:
+			economy.resync()
+			_flash("Wasserstrasse gebaut; Traeger holt Boot." if has_boat else
+				"Wasserstrasse gebaut; wartet auf Boot aus der Werft.")
 	if r != null:
 		road_start = r.b
 		unit_renderer.road_start = road_start
@@ -3392,7 +3391,7 @@ func _build_save_data() -> Dictionary:
 		decay_fields = economy.decay_fields_state(),
 		ships = economy.ships_state(),  # #46: See-Schiffe inkl. Fracht
 		buildings = [], flags = [], roads = [],
-		hq_stock = economy.hq_stock.duplicate(),
+		hq_stock = economy.total_hq_stock(),
 		# Gesamtbevölkerung (Reserve + eingesetzte Träger/Arbeiter), Issue #9: beim
 		# Laden verteilt resync() daraus alles neu (Personen laufen wieder vom Lager los).
 		hq_people = economy.total_people(),

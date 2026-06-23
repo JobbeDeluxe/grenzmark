@@ -82,6 +82,7 @@ class Carrier:
 	var active := false      # erst aktiv, wenn der Träger vom HQ angekommen ist
 	var dispatched := false  # Träger wurde schon vom HQ losgeschickt (Marsch läuft)
 	var has_person := false  # hält einen HELPER aus dem Lager (Issue #9, Rückgabe bei Abriss)
+	var has_boat := false    # Wasserstraßen-Träger: hält ein verbrauchtes BOOT aus dem Lager
 	# Tür-Exkursion (#66): trägt die Ware von der Gebäudeflagge bis in die Tür.
 	var dphase := 0          # D_* (D_NONE = kein Tür-Gang)
 	var dt := 0.0            # 0 = an der Flagge, 1 = an der Tür
@@ -447,6 +448,8 @@ func resync() -> void:
 				_spawn_stray(old)
 			if old.has_person:
 				_return_person(Jobs.HELPER, old.road.owner)  # Träger kehrt ins Lager zurück (#9)
+			if old.has_boat:
+				_return_boat(old.road.owner)  # Wasserstraßen-Boot geht zurück ins Lager (#46)
 			carriers.erase(r)
 	# Unbesetzte Straßen werden NICHT mehr sofort alle gleichzeitig besetzt, sondern
 	# nach und nach in `_tick_dispatch()` (gestaffelt) — sonst marschieren bei vielen
@@ -615,6 +618,17 @@ func total_people() -> Dictionary:
 		var bs: BState = bstates[i]
 		if bs.has_person:
 			tot[bs.person_job] = int(tot.get(bs.person_job, 0)) + 1
+	return tot
+
+
+## Save-Sicht des HQ-Bestands: eingesetzte Wasserstraßen-Boote mitzählen, damit sie
+## beim Laden wieder aus dem Lager zum Fährträger geschickt werden können.
+func total_hq_stock() -> Dictionary:
+	var tot: Dictionary = hq_stock.duplicate()
+	for r in carriers:
+		var c: Carrier = carriers[r]
+		if c.has_boat and c.road.owner == 0:
+			tot[Goods.BOAT] = int(tot.get(Goods.BOAT, 0)) + 1
 	return tot
 
 
@@ -1270,6 +1284,12 @@ func has_boat_near(flag_idx: int, owner := 0) -> bool:
 		func(s: Storage) -> bool: return int(s.stock.get(Goods.BOAT, 0)) > 0) != null
 
 
+func _return_boat(owner: int) -> void:
+	if owner != 0:
+		return
+	hq_stock[Goods.BOAT] = int(hq_stock.get(Goods.BOAT, 0)) + 1
+
+
 ## Flaggenposition des HQ eines Besitzers (nicht der Gebäudeknoten!).
 func _hq_flag_pos(owner := 0) -> Vector2i:
 	for i in state.buildings:
@@ -1294,6 +1314,8 @@ func _apply_split(sp: Dictionary) -> void:
 		# reservierten Träger gibt er dabei ins Lager zurück (#9).
 		if c.has_person:
 			_return_person(Jobs.HELPER, c.road.owner)
+		if c.has_boat:
+			_return_boat(c.road.owner)
 		return
 	var k := int(sp.k)
 	var on_r1: bool = c.seg_pos <= float(k)
@@ -1358,12 +1380,19 @@ func _dispatch_carrier(c: Carrier) -> void:
 			best_end = endi
 	if best.is_empty():
 		return  # nicht mit HQ verbunden → unbesetzt lassen
+	var start_flag := state.map.idx(c.road.a.x, c.road.a.y)
+	if c.road.waterway and not c.has_boat and not has_boat_near(start_flag, c.road.owner):
+		return  # Wasserstraßen-Träger braucht ein Boot aus einem erreichbaren Lager (#46)
 	# S2-Personalmodell (Issue #9): ein Träger braucht einen HELPER aus dem Lager.
 	# Ist keiner verfügbar, bleibt die Straße unbesetzt und wird später erneut versucht.
 	if not c.has_person:
 		if not _take_person(Jobs.HELPER, c.road.owner):
 			return
 		c.has_person = true
+	if c.road.waterway and not c.has_boat:
+		if not take_boat_near(start_flag, c.road.owner):
+			return
+		c.has_boat = true
 	c.dispatched = true
 	if best.size() < 2:
 		_activate_carrier(c.road, best_end)  # HQ-Flagge ist schon das Straßenende

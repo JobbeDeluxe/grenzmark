@@ -1939,17 +1939,49 @@ func _test_waterway() -> void:
 	_check(not state.find_route(Vector2i(8, 6), Vector2i(12, 6)).is_empty(),
 		"Wasserstraße: verbindet beide Ufer im Routing")
 
-	# Boot-Verbrauch (Economy-Schicht).
-	var fmap := _flat_map(16, 16)
+	# Boot-Verbrauch (Economy-Schicht): Die Struktur selbst verbraucht kein Boot;
+	# erst der Wasserstraßen-Träger nimmt eins aus dem Lager und fährt damit los.
+	var fmap := _channel_map(20, 12, 9, 11)
 	var fstate := WorldState.new(fmap)
 	var feco := Economy.new(fstate)
-	var hq := fstate.place_building(8, 8, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	feco.ai_enabled = false
+	var hq := fstate.place_building(5, 6, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	_check(hq != null, "Wasserstraße: HQ am Ufer platzierbar")
+	if hq == null:
+		return
+	_check(fstate.place_flag(8, 6) != null, "Wasserstraße: Startflagge am Ufer setzbar")
+	var land := fstate.build_road(hq.flag_pos, Vector2i(8, 6))
+	var ferry := fstate.build_waterway(Vector2i(8, 6), Vector2i(12, 6))
+	_check(land != null and ferry != null, "Wasserstraße: HQ-Netz mit Fähre verbunden")
+	if land == null or ferry == null:
+		return
 	feco.resync()
+	feco.hq_people = { Jobs.HELPER: 4 }
+	feco._helper_timer = 1_000_000_000
+	feco.hq_stock[Goods.BOAT] = 0
+	var fc: Economy.Carrier = feco.carriers.get(ferry)
+	_check(fc != null, "Wasserstraße: Fähr-Carrier angelegt")
+	if fc == null:
+		return
+	feco._dispatch_carrier(fc)
+	_check(fc != null and not fc.has_boat,
+		"Wasserstraße: Träger nimmt ohne Boot im Lager kein Boot")
+	_check(not fc.has_person and int(feco.hq_people.get(Jobs.HELPER, 0)) == 4,
+		"Wasserstraße: ohne Boot wird auch kein Träger reserviert")
+	_check(int(feco.hq_stock.get(Goods.BOAT, 0)) == 0,
+		"Wasserstraße: Bau der Struktur verbraucht kein Boot")
 	feco.hq_stock[Goods.BOAT] = 1
-	var hq_flag := fstate.map.idx(hq.flag_pos.x, hq.flag_pos.y)
-	_check(feco.has_boat_near(hq_flag), "Wasserstraße: Boot im Lager erkannt")
-	_check(feco.take_boat_near(hq_flag), "Wasserstraße: Boot verbraucht")
-	_check(not feco.take_boat_near(hq_flag), "Wasserstraße: kein zweites Boot mehr da")
+	feco._dispatch_carrier(fc)
+	_check(fc.has_person and fc.has_boat and fc.dispatched,
+		"Wasserstraße: Fährträger reserviert Träger und Boot beim Loslaufen")
+	for t in 1000:
+		feco.tick()
+	_check(fc != null and fc.has_boat, "Wasserstraße: Träger verbraucht Boot beim Loslaufen")
+	_check(int(feco.hq_stock.get(Goods.BOAT, 0)) == 0,
+		"Wasserstraße: Bootbestand nach Träger-Dispatch leer")
+	_check(int(feco.total_hq_stock().get(Goods.BOAT, 0)) == 1,
+		"Wasserstraße: Save-Bestand zählt eingesetztes Boot mit")
+	_check(fc != null and fc.active, "Wasserstraße: Träger mit Boot wird als Fähre aktiv")
 
 
 ## Bauernhof-Felder (Issue #26), original-getreu an RTTR nofFarmer/noGrainfield:

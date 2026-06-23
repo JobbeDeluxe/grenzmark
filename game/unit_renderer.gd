@@ -33,6 +33,11 @@ func _process(delta: float) -> void:
 ## Einheit zeichnen: gerichtetes Sprite-Sheet (pro Spieler eigenes PNG) wenn
 ## vorhanden, sonst Platzhalter-Figur in der Spielerfarbe.
 func _unit(kind: String, p: Vector2, facing: Vector2, owner := 0, carrying := -1) -> void:
+	_unit_scaled(kind, p, facing, owner, carrying, GameTheme.unit_size())
+
+
+func _unit_scaled(kind: String, p: Vector2, facing: Vector2, owner := 0,
+		carrying := -1, target_h := 18.0) -> void:
 	var tex := GameTheme.unit_texture(kind, owner)
 	if tex == null:
 		_figure(p, GameTheme.player_color(owner), carrying)
@@ -42,7 +47,6 @@ func _unit(kind: String, p: Vector2, facing: Vector2, owner := 0, carrying := -1
 	var cw := float(tex.get_width()) / cols    # Zellengröße im Sheet
 	var ch := float(tex.get_height()) / rows
 	# Auf Ziel-Höhe skalieren (Config), damit große PNGs nicht riesig wirken.
-	var target_h := GameTheme.unit_size()
 	var sc := target_h / maxf(ch, 1.0)
 	var dw := cw * sc
 	var dh := ch * sc
@@ -80,6 +84,39 @@ func _dir6(v: Vector2) -> int:
 			best_dot = dot
 			best = i
 	return best
+
+
+func _sheet_region(tex: Texture2D, facing: Vector2, frame: int) -> Rect2:
+	var cols := GameTheme.ANIM_FRAMES
+	var rows := GameTheme.ANIM_DIRS
+	var cw := float(tex.get_width()) / cols
+	var ch := float(tex.get_height()) / rows
+	var diri := _dir6(facing)
+	var f := clampi(frame, 0, cols - 1)
+	return Rect2(f * cw, diri * ch, cw, ch)
+
+
+func _draw_vehicle_sheet(tex: Texture2D, p: Vector2, facing: Vector2, sz: Vector2) -> void:
+	if tex == null:
+		return
+	var frame := int(_anim_time * 5.0) % GameTheme.ANIM_FRAMES
+	var region := _sheet_region(tex, facing, frame)
+	draw_texture_rect_region(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y * 0.5, sz.x, sz.y), region)
+
+
+func _draw_vehicle_sheet_grow(tex: Texture2D, p: Vector2, facing: Vector2, sz: Vector2,
+		frac: float) -> void:
+	if tex == null:
+		return
+	var f := clampf(frac, 0.0, 1.0)
+	if f <= 0.0:
+		return
+	var frame := int(_anim_time * 5.0) % GameTheme.ANIM_FRAMES
+	var region := _sheet_region(tex, facing, frame)
+	var vis := sz.y * f
+	region.position.y += region.size.y * (1.0 - f)
+	region.size.y *= f
+	draw_texture_rect_region(tex, Rect2(p.x - sz.x * 0.5, p.y + sz.y * 0.5 - vis, sz.x, vis), region)
 
 
 var _occluders: Array = []   # Gebäude/Bäume mit Sprite (für Y-Occlusion); gecacht
@@ -472,7 +509,10 @@ func _draw_carriers() -> void:
 			continue
 		var p := economy.carrier_world(c)
 		var carry := c.carrying.type if c.carrying != null else -1
-		_unit("carrier", p, economy.carrier_facing(c), c.road.owner, carry)
+		if c.road.waterway:
+			_draw_boat_driver(p, economy.carrier_facing(c), c.road.owner, carry)
+		else:
+			_unit("carrier", p, economy.carrier_facing(c), c.road.owner, carry)
 		_occlude(p)
 
 
@@ -522,7 +562,11 @@ func _draw_marchers() -> void:
 		var p := economy.marcher_world(m)
 		var facing := economy.marcher_facing(m)
 		if m.purpose_carrier:
-			_unit("carrier", p, facing, m.attacker_owner)
+			if m.car_road != null and m.car_road.waterway:
+				_unit_scaled("boat_carrier", p, facing, m.attacker_owner, -1,
+					GameTheme.boat_carrier_size())
+			else:
+				_unit("carrier", p, facing, m.attacker_owner)
 		elif m.purpose_worker or m.purpose_return:
 			_unit("worker", p, facing, m.attacker_owner)
 		else:
@@ -537,6 +581,30 @@ func _draw_strays() -> void:
 		var carry: int = s.good.type if s.good != null else -1
 		_unit("carrier", p, s.facing, 0, carry)
 		_occlude(p)
+
+
+func _draw_boat_driver(p: Vector2, facing: Vector2, owner: int, carrying := -1) -> void:
+	var tex := GameTheme.boat_sheet_texture(owner)
+	if tex != null:
+		var sz := GameTheme.boat_draw_size()
+		_draw_vehicle_sheet(tex, p, facing, sz)
+		if carrying >= 0:
+			var gt := GameTheme.good_texture(carrying)
+			if gt != null:
+				draw_texture_rect(gt, Rect2(p.x - 5.0, p.y - sz.y * 0.5 - 6.0, 10.0, 10.0), false)
+			else:
+				draw_rect(Rect2(p.x - 2.0, p.y - sz.y * 0.5 - 4.0, 4.0, 4.0),
+					GameTheme.good_color(carrying))
+		return
+	var boat := GameTheme.boat_texture(owner)
+	if boat != null:
+		var sz := GameTheme.boat_draw_size()
+		_draw_oriented_texture(boat, p, facing, sz)
+		if carrying >= 0:
+			draw_rect(Rect2(p.x - 2.0, p.y - sz.y * 0.5 - 4.0, 4.0, 4.0),
+				GameTheme.good_color(carrying))
+		return
+	_draw_ship_fallback(p, facing, owner)
 
 
 ## Sichtbarer Schiffsbau in der Werft: erst Gerippe, dann das fertige Schiff darueber.
@@ -558,19 +626,28 @@ func _draw_shipyard_progress() -> void:
 			var dock_p := state.map.node_world(dock.x, dock.y)
 			p = dock_p + GameTheme.ship_build_offset()
 			facing = dock_p - base_p
+		var stage1_sheet := GameTheme.ship_construction_stage1_sheet_texture()
+		var fin_sheet := GameTheme.ship_sheet_texture(bs.bld.owner)
 		var stage1 := GameTheme.ship_construction_stage1_texture()
 		var fin := GameTheme.ship_texture(bs.bld.owner)
 		var sz := GameTheme.ship_draw_size()
-		if stage1 == null and fin == null:
+		if stage1_sheet == null and fin_sheet == null and stage1 == null and fin == null:
 			_draw_ship_fallback(p, facing, bs.bld.owner)
 			continue
 		var split := 0.58
 		if progress < split:
-			_draw_oriented_grow_texture(stage1 if stage1 != null else fin, p, facing, sz, progress / split)
+			if stage1_sheet != null:
+				_draw_vehicle_sheet_grow(stage1_sheet, p, facing, sz, progress / split)
+			else:
+				_draw_oriented_grow_texture(stage1 if stage1 != null else fin, p, facing, sz, progress / split)
 		else:
-			if stage1 != null:
+			if stage1_sheet != null:
+				_draw_vehicle_sheet(stage1_sheet, p, facing, sz)
+			elif stage1 != null:
 				_draw_oriented_texture(stage1, p, facing, sz)
-			if fin != null:
+			if fin_sheet != null:
+				_draw_vehicle_sheet_grow(fin_sheet, p, facing, sz, (progress - split) / (1.0 - split))
+			elif fin != null:
 				_draw_oriented_grow_texture(fin, p, facing, sz, (progress - split) / (1.0 - split))
 
 
@@ -610,6 +687,15 @@ func _draw_ships() -> void:
 	for s in economy.ships:
 		var p: Vector2 = s.pos
 		var f: Vector2 = s.facing if s.facing.length() > 0.01 else Vector2.RIGHT
+		var sheet := GameTheme.ship_sheet_texture(s.owner)
+		if sheet != null:
+			var sz := GameTheme.ship_draw_size()
+			_draw_vehicle_sheet(sheet, p, f, sz)
+			draw_circle(p + Vector2(0.0, -sz.y * 0.34), 2.0, GameTheme.player_color(s.owner))
+			if not s.cargo.is_empty():
+				draw_rect(Rect2(p.x - 2.0, p.y - 2.0, 4.0, 4.0),
+					GameTheme.good_color(int(s.cargo[0].type)))
+			continue
 		var tex := GameTheme.ship_texture(s.owner)
 		if tex != null:
 			var sz := GameTheme.ship_draw_size()
