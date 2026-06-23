@@ -3247,6 +3247,16 @@ func _handle_road_click() -> bool:
 			unit_renderer.road_start = road_start
 		return false  # nur Startflagge gewählt — keine Struktur-Änderung
 	var r := state.build_road(road_start, hover)
+	# Fähre/Wasserstraße (#46): klappt kein Landweg, aber eine kurze Wasserquerung, dann mit
+	# einem Boot aus dem nächsten Lager eine Wasserstraße bauen.
+	if r == null and not state.plan_waterway(road_start, hover).is_empty():
+		if economy.take_boat_near(state.map.idx(road_start.x, road_start.y)):
+			r = state.build_waterway(road_start, hover)
+			if r != null:
+				economy.resync()
+				_flash("Wasserstrasse gebaut (Boot verbraucht).")
+		else:
+			_flash("Wasserstrasse braucht ein Boot (Werft baut Boote).")
 	if r != null:
 		road_start = r.b
 		unit_renderer.road_start = road_start
@@ -3256,6 +3266,9 @@ func _handle_road_click() -> bool:
 
 func _update_preview() -> void:
 	var path := state.plan_road(road_start, hover)  # gleiches optimales A* wie der Bau
+	if path.is_empty():
+		# Kein Landweg → evtl. eine Wasserstraße/Fähre? (#46) Vorschau in Wasserfarbe.
+		path = state.plan_waterway(road_start, hover)
 	unit_renderer.preview_path = path
 	unit_renderer.preview_ok = not path.is_empty()
 
@@ -3393,6 +3406,7 @@ func _build_save_data() -> Dictionary:
 		data.roads.append({
 			nodes = r.nodes.duplicate(), a = r.a, b = r.b,
 			owner = r.owner, traffic = r.traffic, level = r.level,
+			waterway = r.waterway,  # #46
 		})
 	return data
 
@@ -3511,6 +3525,7 @@ func _apply_save_data(data: Dictionary) -> void:
 		rr.owner = int(rd.get("owner", 0))
 		rr.traffic = int(rd.get("traffic", 0))
 		rr.level = int(rd.get("level", WorldState.ROAD_DIRT))
+		rr.waterway = bool(rd.get("waterway", false))  # #46
 		for k in range(1, rr.nodes.size() - 1):
 			state.occupied[map.idx(rr.nodes[k].x, rr.nodes[k].y)] = WorldState.OBJ_ROAD
 		state.roads.append(rr)

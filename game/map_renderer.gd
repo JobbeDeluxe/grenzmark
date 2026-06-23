@@ -805,6 +805,13 @@ func _draw_roads() -> void:
 		var nodes := r.nodes
 		if nodes.size() < 2:
 			continue
+		# Wasserstraße/Fähre (#46): eigene helle Wasserlinie statt Wegtextur.
+		if r.waterway:
+			for k in range(nodes.size() - 1):
+				var wa := state.map.node_world(nodes[k].x, nodes[k].y)
+				var wb := state.map.node_world(nodes[k + 1].x, nodes[k + 1].y)
+				draw_line(wa, wb, Color(0.55, 0.78, 0.95, 0.85), ROAD_W * 0.8, true)
+			continue
 		# Segmentweise: jedes Teilstück nach dem Untergrund seines Knotens texturieren.
 		for k in range(nodes.size() - 1):
 			var a := state.map.node_world(nodes[k].x, nodes[k].y)

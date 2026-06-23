@@ -30,6 +30,7 @@ func _initialize() -> void:
 	_test_shipyard()
 	_test_sea_navigation()
 	_test_harbor_and_ships()
+	_test_waterway()
 	_test_farm_fields()
 	_test_catalog_complete()
 	_test_asset_files()
@@ -1860,6 +1861,42 @@ func _test_harbor_and_ships() -> void:
 			eco._add_out(bs, Goods.BOAT)
 		_check(eco.ships.size() == ships_before + 1, "Werft (Schiffe-Modus): Schiff vom Stapel gelaufen")
 		_check(int(bs.out_stock.get(Goods.BOAT, 0)) == 0, "Werft (Schiffe-Modus): kein Boot im Ausgang")
+
+
+## Wasserstraße / Fähre (#46): kurze Querung über schmales Wasser zwischen zwei Ufer-
+## flaggen; verbindet das Straßennetz beider Ufer; braucht ein Boot.
+func _test_waterway() -> void:
+	var map := _channel_map(20, 12, 9, 11)   # 3 Spalten Wasser → schmale Stelle
+	var state := WorldState.new(map)
+	var left := state.place_flag(8, 6)
+	_check(left != null, "Wasserstraße: Ufer-Flagge links setzbar")
+	var path := state.plan_waterway(Vector2i(8, 6), Vector2i(12, 6))
+	_check(path.size() >= 3 and path[0] == Vector2i(8, 6) and path[path.size() - 1] == Vector2i(12, 6),
+		"Wasserstraße: Querung geplant (%d Knoten)" % path.size())
+	# Zu breite Querung wird abgelehnt.
+	var wide := _channel_map(30, 12, 8, 20)
+	var wstate := WorldState.new(wide)
+	wstate.place_flag(7, 6)
+	_check(wstate.plan_waterway(Vector2i(7, 6), Vector2i(21, 6)).is_empty(),
+		"Wasserstraße: zu breite Stelle (> WATERWAY_MAX) abgelehnt")
+
+	# Bau verbindet beide Ufer im Straßennetz.
+	var r := state.build_waterway(Vector2i(8, 6), Vector2i(12, 6))
+	_check(r != null and r.waterway, "Wasserstraße: gebaut und als Wasserstraße markiert")
+	_check(not state.find_route(Vector2i(8, 6), Vector2i(12, 6)).is_empty(),
+		"Wasserstraße: verbindet beide Ufer im Routing")
+
+	# Boot-Verbrauch (Economy-Schicht).
+	var fmap := _flat_map(16, 16)
+	var fstate := WorldState.new(fmap)
+	var feco := Economy.new(fstate)
+	var hq := fstate.place_building(8, 8, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	feco.resync()
+	feco.hq_stock[Goods.BOAT] = 1
+	var hq_flag := fstate.map.idx(hq.flag_pos.x, hq.flag_pos.y)
+	_check(feco.has_boat_near(hq_flag), "Wasserstraße: Boot im Lager erkannt")
+	_check(feco.take_boat_near(hq_flag), "Wasserstraße: Boot verbraucht")
+	_check(not feco.take_boat_near(hq_flag), "Wasserstraße: kein zweites Boot mehr da")
 
 
 ## Bauernhof-Felder (Issue #26), original-getreu an RTTR nofFarmer/noGrainfield:

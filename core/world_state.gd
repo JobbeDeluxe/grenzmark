@@ -58,6 +58,7 @@ class Road:
 	var owner := 0
 	var traffic := 0
 	var level := ROAD_DIRT
+	var waterway := false              # #46: Fähre über schmale Wasserstelle (Boot nötig)
 	func length() -> int:
 		return nodes.size() - 1
 
@@ -149,6 +150,22 @@ func node_navigable(x: int, y: int) -> bool:
 		if not Terrain.is_water(t):
 			return false
 	return true
+
+
+## Anzahl Wasser-Dreiecke um einen Knoten (0..6).
+func _water_tris(x: int, y: int) -> int:
+	var c := 0
+	for t in map.terrains_around(x, y):
+		if Terrain.is_water(t):
+			c += 1
+	return c
+
+
+## Per Fähre überquerbar (#46): überwiegend Wasser (>= 3 Dreiecke). Lockerer als
+## node_navigable (Tiefsee) — auch ufernahe Wasserknoten einer schmalen Stelle zählen,
+## über die eine Wasserstraße führt.
+func node_ferryable(x: int, y: int) -> bool:
+	return map.in_bounds(x, y) and _water_tris(x, y) >= 3
 
 
 ## Verwirft den gecachten Meeres-Komponenten-Graphen (nach Terrain-Änderungen).
@@ -939,6 +956,103 @@ func build_road(from: Vector2i, to: Vector2i, owner := -1) -> Road:
 		occupied[map.idx(path[k].x, path[k].y)] = OBJ_ROAD
 	roads.append(r)
 	invalidate_routes()  # Graph/Routen-Cache verwerfen (#30)
+	return r
+
+
+const WATERWAY_MAX := 5   # max. Wasserknoten einer Wasserstraße (nur schmale Stellen)
+
+
+## Plant eine Wasserstraße/Fähre (#46): kurze Querung über bis zu WATERWAY_MAX überquerbare
+## Wasserknoten zwischen zwei Land-Flaggen. [from] ist eine bestehende Flagge, [to] eine
+## Flagge oder ein freier Flaggenplatz am Gegenufer. Liefert [from, Wasser…, to] oder leer.
+## Eigene BFS (kurze Strecke) — der Land-A* bleibt unangetastet.
+func plan_waterway(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	var empty: Array[Vector2i] = []
+	if flag_at(from) == null or from == to or not map.in_bounds(to.x, to.y):
+		return empty
+	if not node_walkable(from.x, from.y) or not node_walkable(to.x, to.y):
+		return empty   # beide Enden müssen begehbares Land (Ufer) sein
+	var occ_to := _occ(to.x, to.y)
+	if occ_to != OBJ_FLAG and not can_place_flag(to.x, to.y):
+		return empty
+	# BFS über überquerbare Wasserknoten, Start = Wassernachbarn von `from`, Ziel = ein
+	# Wasserknoten, der an `to` grenzt. Tiefe (Wasserknoten) ≤ WATERWAY_MAX.
+	var came := {}   # water idx -> Vorgänger water idx (-1 = direkt am from-Ufer)
+	var depth := {}
+	var queue: Array[int] = []
+	for dir in Grid.DIRS:
+		var n := map.neighbor(from.x, from.y, dir)
+		if n.x >= 0 and node_ferryable(n.x, n.y) and _occ(n.x, n.y) == OBJ_NONE:
+			var ni := map.idx(n.x, n.y)
+			if not came.has(ni):
+				came[ni] = -1
+				depth[ni] = 1
+				queue.append(ni)
+	var head := 0
+	var reached := -1
+	while head < queue.size():
+		var cur: int = queue[head]
+		head += 1
+		var cp := Vector2i(cur % map.width, cur / map.width)
+		if hex_distance(cp, to) == 1:
+			reached = cur
+			break
+		if int(depth[cur]) >= WATERWAY_MAX:
+			continue
+		for dir in Grid.DIRS:
+			var n := map.neighbor(cp.x, cp.y, dir)
+			if n.x < 0 or not node_ferryable(n.x, n.y) or _occ(n.x, n.y) != OBJ_NONE:
+				continue
+			var ni := map.idx(n.x, n.y)
+			if came.has(ni):
+				continue
+			came[ni] = cur
+			depth[ni] = int(depth[cur]) + 1
+			queue.append(ni)
+	if reached < 0:
+		return empty
+	var water: Array[Vector2i] = []
+	var node := reached
+	while node != -1:
+		water.append(Vector2i(node % map.width, node / map.width))
+		node = came[node]
+	water.reverse()
+	var path: Array[Vector2i] = [from]
+	path.append_array(water)
+	path.append(to)
+	return path
+
+
+func can_build_waterway(from: Vector2i, to: Vector2i) -> bool:
+	return not plan_waterway(from, to).is_empty()
+
+
+## Baut eine Wasserstraße aus dem geplanten Pfad (am Gegenufer ggf. neue Flagge). Der
+## Boot-Verbrauch wird vom Aufrufer (Economy/world.gd) geprüft — hier nur die Struktur.
+func build_waterway(from: Vector2i, to: Vector2i, owner := -1) -> Road:
+	var start_flag := flag_at(from)
+	if start_flag == null:
+		return null
+	var road_owner := start_flag.owner if owner < 0 else owner
+	var path := plan_waterway(from, to)
+	if path.is_empty():
+		return null
+	var end := path[path.size() - 1]
+	if flag_at(end) == null:
+		if place_flag(end.x, end.y, road_owner) == null:
+			return null
+	else:
+		flag_at(end).owner = road_owner
+	var r := Road.new()
+	r.nodes = path
+	r.a = from
+	r.b = end
+	r.owner = road_owner
+	r.waterway = true
+	for k in range(1, path.size() - 1):
+		occupied[map.idx(path[k].x, path[k].y)] = OBJ_ROAD
+	roads.append(r)
+	invalidate_routes()
 	return r
 
 

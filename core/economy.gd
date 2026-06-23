@@ -1241,6 +1241,25 @@ func _nearest_storage(from_flag: int, owner: int, pred: Callable) -> Storage:
 	return best
 
 
+## Verbraucht ein Boot (#46) aus dem nächstgelegenen erreichbaren Lager mit Vorrat — für
+## den Bau einer Wasserstraße/Fähre. Liefert true, wenn eines abgebucht wurde.
+func take_boat_near(flag_idx: int, owner := 0) -> bool:
+	var st := _nearest_storage(flag_idx, owner,
+		func(s: Storage) -> bool: return int(s.stock.get(Goods.BOAT, 0)) > 0)
+	if st == null:
+		return false
+	st.stock[Goods.BOAT] = int(st.stock[Goods.BOAT]) - 1
+	if int(st.stock[Goods.BOAT]) <= 0:
+		st.stock.erase(Goods.BOAT)
+	return true
+
+
+## Hat ein erreichbares Lager ein Boot? (UI-Hinweis vor dem Wasserstraßenbau.)
+func has_boat_near(flag_idx: int, owner := 0) -> bool:
+	return _nearest_storage(flag_idx, owner,
+		func(s: Storage) -> bool: return int(s.stock.get(Goods.BOAT, 0)) > 0) != null
+
+
 ## Flaggenposition des HQ eines Besitzers (nicht der Gebäudeknoten!).
 func _hq_flag_pos(owner := 0) -> Vector2i:
 	for i in state.buildings:
