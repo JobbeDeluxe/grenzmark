@@ -751,6 +751,48 @@ func place_building(x: int, y: int, size: int, is_hq := false,
 	return b
 
 
+## Gründet per Expedition (#46) einen Hafen auf einem Hafenpunkt — auch AUSSERHALB des
+## eigenen Territoriums (Kolonie, wie der HQ-Start). Umgeht daher die Territoriums-Gates
+## von can_place_building; prüft nur Hafenpunkt, freie Stelle und gültige Eingangsflagge.
+func found_harbor(p: Vector2i, owner: int) -> Building:
+	if not map.is_harbor_point(p.x, p.y) or _occ(p.x, p.y) != OBJ_NONE:
+		return null
+	var se := map.neighbor(p.x, p.y, Grid.SE)
+	if se.x < 0:
+		return null
+	if _occ(se.x, se.y) != OBJ_FLAG:
+		ensure_flag(se.x, se.y, owner)
+	else:
+		var f := flag_at(se)
+		if f != null:
+			f.owner = owner
+	var b := Building.new()
+	b.pos = p
+	b.size = BQ_HOUSE
+	b.flag_pos = se
+	b.def_id = "harbor"
+	b.owner = owner
+	b.under_construction = false
+	var i := map.idx(p.x, p.y)
+	buildings[i] = b
+	occupied[i] = OBJ_BUILDING
+	invalidate_routes()
+	return b
+
+
+## Deckt einen Hex-Umkreis dauerhaft auf (explored) und setzt ihn aktuell sichtbar
+## (visible) — für die Schiff-Sicht auf See (#46/#21).
+func reveal_around(x: int, y: int, radius: int) -> void:
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var p := Vector2i(x + dx, y + dy)
+			if not map.in_bounds(p.x, p.y) or hex_distance(Vector2i(x, y), p) > radius:
+				continue
+			var i := map.idx(p.x, p.y)
+			visible[i] = true
+			explored[i] = true
+
+
 ## S2: große Gebäude (Burg/HQ) belegen zusätzlich ihre 3 Extension-Knoten oben-
 ## links (W/NW/NE). Reserviert die freien davon als belegt und merkt sie am
 ## Gebäude (für den Abriss). Idempotent — kann nach Laden erneut aufgerufen werden.

@@ -30,6 +30,7 @@ func _initialize() -> void:
 	_test_shipyard()
 	_test_sea_navigation()
 	_test_harbor_and_ships()
+	_test_expedition()
 	_test_waterway()
 	_test_farm_fields()
 	_test_catalog_complete()
@@ -1861,6 +1862,52 @@ func _test_harbor_and_ships() -> void:
 			eco._add_out(bs, Goods.BOAT)
 		_check(eco.ships.size() == ships_before + 1, "Werft (Schiffe-Modus): Schiff vom Stapel gelaufen")
 		_check(int(bs.out_stock.get(Goods.BOAT, 0)) == 0, "Werft (Schiffe-Modus): kein Boot im Ausgang")
+
+
+## Expedition (#46): ein Hafen schickt ein Schiff mit Material zum nächsten freien
+## Hafenpunkt, das dort einen neuen Hafen (Kolonie) gründet; Schiffe decken Nebel auf.
+func _test_expedition() -> void:
+	var map := _channel_map(34, 16, 12, 21)
+	map.set_harbor_point(10, 8, true)
+	map.set_harbor_point(23, 8, true)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	eco.ai_enabled = false
+	var ha := state.place_building(10, 8, WorldState.BQ_HOUSE, false, "harbor", 0, false)
+	_check(ha != null, "Expedition: Start-Hafen platziert")
+	if ha == null:
+		return
+	eco.resync()
+	var sa := eco._storage_by_flag(state.map.idx(ha.flag_pos.x, ha.flag_pos.y))
+	sa.stock[Goods.BOARDS] = 10
+	sa.stock[Goods.STONE] = 10
+	var dock_a := state.dock_node(ha.pos)
+	eco._spawn_ship(dock_a, 0)
+	# Schiff andocken lassen (Heimathafen finden).
+	for _t in 80:
+		eco.tick()
+	var ship: Economy.Ship = eco.ships[0]
+	_check(ship.home == state.map.idx(ha.flag_pos.x, ha.flag_pos.y), "Expedition: Schiff am Start-Hafen angedockt")
+
+	# Expedition starten → Ziel ist der freie Hafenpunkt (23,8).
+	var msg := eco.start_expedition(state.map.idx(ha.flag_pos.x, ha.flag_pos.y), 0)
+	_check(msg == "", "Expedition: gestartet (kein Fehler: '%s')" % msg)
+	_check(ship.expedition and ship.target_point == Vector2i(23, 8),
+		"Expedition: Schiff segelt zum freien Hafenpunkt (23,8)")
+	# Material wurde geladen (vom Start-Hafen abgebucht).
+	_check(int(sa.stock.get(Goods.BOARDS, 0)) == 10 - Economy.EXPEDITION_BOARDS,
+		"Expedition: Bretter vom Start-Hafen abgebucht")
+
+	# Fahren lassen, bis der neue Hafen gegründet ist.
+	for _t in 2000:
+		eco.tick()
+	var nb: WorldState.Building = state.buildings.get(state.map.idx(23, 8))
+	_check(nb != null and nb.def_id == "harbor", "Expedition: neuer Hafen gegründet (Kolonie)")
+	_check(eco._harbor_storages().size() == 2, "Expedition: neuer Hafen als Lager registriert")
+	_check(not ship.expedition, "Expedition: Schiff nach Gründung wieder frei")
+
+	# Schiff-Sicht: der Nebel ist entlang der Route aufgedeckt (explored gesetzt).
+	_check(state.explored.has(state.map.idx(16, 8)), "Expedition: Schiff deckt Nebel auf See auf")
 
 
 ## Wasserstraße / Fähre (#46): kurze Querung über schmales Wasser zwischen zwei Ufer-

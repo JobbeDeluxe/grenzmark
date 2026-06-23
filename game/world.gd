@@ -2357,6 +2357,8 @@ func _open_building_window(b: WorldState.Building) -> void:
 	var settings_btn := _tbutton(actions, "Werkzeuge", _open_building_settings.bind(idx))
 	# Werft (#46): zwischen Boot- und Schiffbau umschalten.
 	var shipmode_btn := _tbutton(actions, "Baut: Boote", _toggle_shipyard_mode_window.bind(idx))
+	# Hafen (#46): Expedition zum nächsten freien Hafenpunkt starten.
+	var expedition_btn := _tbutton(actions, "Expedition", _start_expedition_window.bind(idx))
 
 	_building_windows[idx] = {
 		panel = panel, title = title, icon = icon, info = info,
@@ -2365,6 +2367,7 @@ func _open_building_window(b: WorldState.Building) -> void:
 		stop = stop, coins = coins,
 		goto_btn = goto_btn, demolish = demolish, attack = attack,
 		settings_btn = settings_btn, shipmode_btn = shipmode_btn,
+		expedition_btn = expedition_btn,
 	}
 	_update_one_building_window(idx)
 
@@ -2448,6 +2451,9 @@ func _update_one_building_window(idx: int) -> void:
 	if shipmode_btn.visible:
 		var sm_bs: Economy.BState = economy.bstates.get(idx)
 		shipmode_btn.text = "Baut: Schiffe" if (sm_bs != null and sm_bs.build_ships) else "Baut: Boote"
+	# Expeditions-Knopf nur am eigenen Hafen (#46).
+	var expedition_btn: Button = entry["expedition_btn"]
+	expedition_btn.visible = own and b.def_id == "harbor"
 
 
 ## Garnison + Rang als Icons (statt Textzeile): gefüllte Spielerfarb-Plätze für
@@ -2587,6 +2593,18 @@ func _toggle_shipyard_mode_window(idx: int) -> void:
 	bs.ship_progress = 0
 	_flash("Werft baut jetzt %s." % ("Schiffe" if bs.build_ships else "Boote"))
 	_update_one_building_window(idx)
+
+
+## Hafen (#46): Expedition zum nächsten freien Hafenpunkt starten.
+func _start_expedition_window(idx: int) -> void:
+	if not state.buildings.has(idx):
+		return
+	var b: WorldState.Building = state.buildings[idx]
+	if b.owner != 0 or b.def_id != "harbor":
+		return
+	var msg := economy.start_expedition(state.map.idx(b.flag_pos.x, b.flag_pos.y), 0)
+	_flash("Expedition gestartet!" if msg == "" else "Expedition: %s" % msg)
+	renderer.queue_redraw()
 
 
 ## Münzanforderung eines Militärgebäudes an-/abschalten (S2: Goldmünzen an/aus).

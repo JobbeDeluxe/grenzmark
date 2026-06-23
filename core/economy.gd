@@ -48,6 +48,11 @@ const SEA_BALANCE_MARGIN := 2
 const SHIP_CAPACITY := 6
 const SHIP_SPEED := 1.8
 const SHIP_BUILD_CYCLES := 3   # Bootszyklen (Werft) bis ein Schiff fertig ist
+const SHIP_VISION := 4         # Hex-Sichtradius eines Schiffs (Fog-Aufdeckung, #46/#21)
+# Expedition (#46): Materialien, die ein Hafen für die Gründung eines neuen Hafens
+# mitschickt (entspricht den Hafen-Baukosten).
+const EXPEDITION_BOARDS := 4
+const EXPEDITION_STONES := 6
 
 
 class Good:
@@ -144,6 +149,8 @@ class Ship:
 	var path_i := 0
 	var cargo: Array = []                # Array[Good] — geladene Waren
 	var facing := Vector2.RIGHT
+	var expedition := false              # #46: unterwegs, um einen neuen Hafen zu gründen
+	var target_point := Vector2i(-1, -1) # Ziel-Hafenpunkt der Expedition
 
 
 # Tür↔Flagge-Träger (nur HQ/Lager): bewegt Waren zwischen Gebäudetür und Flagge.
@@ -732,6 +739,7 @@ func ships_state() -> Array:
 			owner = s.owner, node = s.node, pos = s.pos, state = s.state,
 			home = s.home, dest = s.dest, path = s.path.duplicate(),
 			path_i = s.path_i, cargo = cargo_types,
+			expedition = s.expedition, target_point = s.target_point,
 		})
 	return out
 
@@ -753,6 +761,8 @@ func restore_ships(arr) -> void:
 			for p in path:
 				s.path.append(p)
 		s.path_i = int(d.get("path_i", 0))
+		s.expedition = bool(d.get("expedition", false))
+		s.target_point = d.get("target_point", Vector2i(-1, -1))
 		var cargo = d.get("cargo", [])
 		if cargo is Array:
 			for t in cargo:
@@ -3066,6 +3076,9 @@ func _tick_ships() -> void:
 	for s in ships:
 		if s.state == SHIP_SAILING:
 			_advance_ship(s)
+		# Schiff-Sicht (#46/#21): deckt den Nebel entlang der Route auf (nur Spieler).
+		if s.owner == 0 and s.node.x >= 0:
+			state.reveal_around(s.node.x, s.node.y, SHIP_VISION)
 
 
 ## Weist leerlaufenden Schiffen Fahrten zu: gleicht Hafenbestände derselben Meeres-
@@ -3076,7 +3089,7 @@ func _assign_ships() -> void:
 	if harbors.is_empty():
 		return
 	for s in ships:
-		if s.state != SHIP_IDLE:
+		if s.state != SHIP_IDLE or s.expedition:
 			continue
 		if s.home < 0:
 			_send_ship_to_nearest_harbor(s, harbors)
@@ -3156,7 +3169,7 @@ func _assign_ferry(s: Ship, harbors: Array[Storage]) -> void:
 ## Bewegt ein fahrendes Schiff entlang seines See-Pfads; am Ziel andocken + entladen.
 func _advance_ship(s: Ship) -> void:
 	if s.path.is_empty() or s.path_i >= s.path.size():
-		_ship_arrive(s)
+		_ship_arrived(s)
 		return
 	var tnode := s.path[s.path_i]
 	var tw := state.map.node_world(tnode.x, tnode.y)
@@ -3167,11 +3180,19 @@ func _advance_ship(s: Ship) -> void:
 		s.node = tnode
 		s.path_i += 1
 		if s.path_i >= s.path.size():
-			_ship_arrive(s)
+			_ship_arrived(s)
 	else:
 		s.facing = d / dist
 		s.pos += s.facing * SHIP_SPEED
 	dirty = true
+
+
+## Ankunft am Ziel: Expedition gründet einen Hafen, sonst normale Fracht-Ankunft.
+func _ship_arrived(s: Ship) -> void:
+	if s.expedition:
+		_found_harbor(s)
+	else:
+		_ship_arrive(s)
 
 
 ## Schiff hat den Ziel-Hafen erreicht: Fracht ins Hafenlager buchen, dort andocken.
@@ -3189,6 +3210,78 @@ func _ship_arrive(s: Ship) -> void:
 	s.path = []
 	s.path_i = 0
 	s.state = SHIP_IDLE
+	dirty = true
+
+
+## Liegt auf diesem Hafenpunkt bereits ein Hafen?
+func _harbor_at_point(p: Vector2i) -> bool:
+	var b: WorldState.Building = state.buildings.get(state.map.idx(p.x, p.y))
+	return b != null and b.def_id == "harbor"
+
+
+## Startet eine Expedition (#46): ein am Hafen liegendes Schiff lädt Baumaterial und segelt
+## zum nächsten erreichbaren leeren Hafenpunkt derselben See, um dort einen Hafen zu gründen.
+## Liefert "" bei Erfolg oder einen Fehlertext (für die UI).
+func start_expedition(harbor_flag: int, owner := 0) -> String:
+	var src := _storage_by_flag(harbor_flag)
+	if src == null:
+		return "Kein Hafen."
+	if int(src.stock.get(Goods.BOARDS, 0)) < EXPEDITION_BOARDS \
+			or int(src.stock.get(Goods.STONE, 0)) < EXPEDITION_STONES:
+		return "Zu wenig Material (%d Bretter, %d Steine nötig)." % [EXPEDITION_BOARDS, EXPEDITION_STONES]
+	var ship: Ship = null
+	for s in ships:
+		if s.state == SHIP_IDLE and not s.expedition and s.home == harbor_flag:
+			ship = s
+			break
+	if ship == null:
+		return "Kein Schiff am Hafen."
+	var src_dock := _harbor_dock(src)
+	if src_dock.x < 0:
+		return "Kein Andockknoten."
+	var src_comp := state.sea_component_at(src_dock.x, src_dock.y)
+	var best_point := Vector2i(-1, -1)
+	var best_path: Array[Vector2i] = []
+	for p in state.map.harbor_point_list():
+		if _harbor_at_point(p):
+			continue
+		var dock := state.dock_node(p)
+		if dock.x < 0 or state.sea_component_at(dock.x, dock.y) != src_comp:
+			continue
+		var path := state.find_sea_path(src_dock, dock)
+		if path.is_empty():
+			continue
+		if best_path.is_empty() or path.size() < best_path.size():
+			best_path = path
+			best_point = p
+	if best_point.x < 0:
+		return "Kein erreichbarer freier Hafenpunkt."
+	src.stock[Goods.BOARDS] = int(src.stock[Goods.BOARDS]) - EXPEDITION_BOARDS
+	src.stock[Goods.STONE] = int(src.stock[Goods.STONE]) - EXPEDITION_STONES
+	ship.expedition = true
+	ship.target_point = best_point
+	ship.dest = -1
+	ship.path = best_path
+	ship.path_i = 1 if best_path.size() > 1 else 0
+	ship.state = SHIP_SAILING
+	return ""
+
+
+## Schiff hat den Ziel-Hafenpunkt erreicht: gründet dort einen Hafen (Kolonie) und macht
+## ihn zu seinem neuen Heimathafen.
+func _found_harbor(s: Ship) -> void:
+	var b := state.found_harbor(s.target_point, s.owner)
+	s.expedition = false
+	s.target_point = Vector2i(-1, -1)
+	s.cargo.clear()
+	s.path = []
+	s.path_i = 0
+	s.state = SHIP_IDLE
+	if b != null:
+		_register_storage(state.map.idx(b.pos.x, b.pos.y), b)
+		s.home = state.map.idx(b.flag_pos.x, b.flag_pos.y)
+		if s.owner == 0:
+			state.reveal_around(b.pos.x, b.pos.y, SHIP_VISION)
 	dirty = true
 
 
