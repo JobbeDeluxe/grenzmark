@@ -97,6 +97,16 @@ static func defs() -> Dictionary:
 			inputs = { Goods.PIG: 1 }, output = Goods.MEAT,
 			work = 120, resource = "", influence = 0, category = "nahrung",
 		},
+		# Hafen (#46): Küstenlager auf einem festen Hafenpunkt. Kategorie "lager" → wird
+		# automatisch als Storage mit eigenem Tür-Träger registriert (#31) und ist über
+		# Schiffe mit anderen Häfen derselben See verbunden (Waren-Pendeln). Einzel-
+		# Fußabdruck (Größe M), Sonder-Baubarkeit am Ufer (siehe can_place_building).
+		"harbor": {
+			id = "harbor", name = "Hafen", size = M,
+			cost = { Goods.BOARDS: 4, Goods.STONE: 6 },
+			inputs = {}, output = -1, work = 0, resource = "",
+			needs_water = true, influence = 0, category = "lager",
+		},
 		# Werft (#46): baut aus Brettern Boote (für Wasserstraßen/Fähre). Wie der Fischer
 		# überall baubar, produziert aber nur mit Wasser in Reichweite (needs_water). In
 		# Phase 3 kommt der Schiffe-Modus (See-Einheiten) dazu.
@@ -205,7 +215,7 @@ static func menu_order() -> Array:
 		"pigfarm", "slaughterhouse",
 		"coalmine", "ironmine", "goldmine", "granitemine",
 		"smelter", "mint", "brewery", "smithy", "toolmaker",
-		"shipyard",
+		"shipyard", "harbor",
 		"guardhouse", "watchtower", "fortress", "catapult",
 	]
 

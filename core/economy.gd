@@ -39,6 +39,15 @@ const ATTACK_SPEED := 1.3      # Tempo angreifender Soldaten (Weltpixel/Tick)
 const PROMO_TICKS := 200       # Münze → Beförderung (Verteidigungsrüstung)
 const CATAPULT_TICKS := 260    # Katapult-Schussintervall
 const CATAPULT_RANGE := 6      # zusätzliche Reichweite des Katapults (Hex)
+# See-Transport (#46): Schiffe gleichen Hafenbestände derselben Meeres-Komponente aus
+# (Waren-Pendeln). SEA_INTERVAL = Ticks zwischen Fähren-Zuweisungen; SEA_BALANCE_MARGIN =
+# ab dieser Bestandsdifferenz lohnt eine Fahrt; SHIP_CAPACITY = Laderaum; SHIP_SPEED =
+# Weltpixel pro Tick.
+const SEA_INTERVAL := 90
+const SEA_BALANCE_MARGIN := 2
+const SHIP_CAPACITY := 6
+const SHIP_SPEED := 1.8
+const SHIP_BUILD_CYCLES := 3   # Bootszyklen (Werft) bis ein Schiff fertig ist
 
 
 class Good:
@@ -113,6 +122,28 @@ class Stray:
 	var change_dir_in := 0        # Ticks bis zur nächsten Richtungsänderung
 	var target_flag := -1         # -1 = noch wandernd; sonst gezielt diese Flagge anlaufen
 	var give_up := 0              # Notfall-Countdown bis zur Zwangs-Ablage (kein Warenverlust)
+
+
+# Schiff-Zustände (#46): am Heimathafen angedockt oder auf Fahrt zum Ziel-Hafen.
+enum { SHIP_IDLE, SHIP_SAILING }
+
+
+## Schiff (#46): trägt Waren über See zwischen Häfen DERSELBEN Meeres-Komponente.
+## Liegt im IDLE am Heimathafen, bekommt eine Fracht + Ziel-Hafen zugewiesen, segelt den
+## See-Pfad ab und bucht die Fracht am Ziel ins Hafenlager ein (Waren-Pendeln). Ein Schiff
+## ohne Heimathafen (frisch von der Werft) segelt zuerst leer zum nächsten Hafen.
+class Ship:
+	extends RefCounted
+	var owner := 0
+	var pos := Vector2.ZERO              # Weltposition (Rendering/Bewegung)
+	var node := Vector2i(-1, -1)         # aktueller Wasserknoten
+	var state := 0                       # SHIP_*
+	var home := -1                       # Heimathafen (Storage-Flaggen-Index), dort angedockt
+	var dest := -1                       # Ziel-Hafen (Storage-Flaggen-Index) der aktuellen Fahrt
+	var path: Array[Vector2i] = []       # See-Pfad (Wasserknoten) zum Andockknoten des Ziels
+	var path_i := 0
+	var cargo: Array = []                # Array[Good] — geladene Waren
+	var facing := Vector2.RIGHT
 
 
 # Tür↔Flagge-Träger (nur HQ/Lager): bewegt Waren zwischen Gebäudetür und Flagge.
@@ -202,6 +233,8 @@ class BState:
 	var idle_reason := IDLE_OK             # warum WK_IDLE nicht startet (Fensteranzeige)
 	var carry_good := -1                   # Ware, die der Arbeiter gerade zur Flagge trägt (#66)
 	var reserved_idx := -1                 # reservierter Arbeitsplatz-Knoten (Baum/Feld/…), -1 = keiner
+	var build_ships := false               # Werft-Modus (#46): Schiffe statt Boote bauen
+	var ship_progress := 0                 # Schiff-Baufortschritt in Bootszyklen (Werft)
 
 
 var state: WorldState
@@ -253,6 +286,7 @@ var ai: AIBase = null                # austauschbare Gegner-KI (Plugin)
 var ai_by_owner: Dictionary = {}     # owner -> eigene KI-Instanz (mehrere Gegner)
 var marchers: Array[Marcher] = []    # gerade marschierende Soldaten
 var strays: Array[Stray] = []        # verirrte Träger (Straße weg, tragen noch Ware)
+var ships: Array[Ship] = []          # See-Schiffe (#46): Waren-Pendeln zwischen Häfen
 var _inc_soldiers: Dictionary = {}   # building idx -> unterwegs befindliche Soldaten
 var dirty := false                   # Karte muss neu gezeichnet werden
 var terrain_dirty := false           # Gelände-Höhen geändert (Planierer #49) → Terrain neu zeichnen
@@ -263,6 +297,7 @@ var _soldier_timer := SOLDIER_TICKS
 var _promo_timer := PROMO_TICKS
 var _cata_timer := CATAPULT_TICKS
 var _helper_timer := 0               # Träger-Nachschub des HQ-Lagers (Issue #33)
+var _sea_timer := 0                  # nächste Fähren-Zuweisung (#46)
 var _growing_trees: Dictionary = {} # map idx -> Restticks bis zur nächsten Baumstufe
 var _growing_fields: Dictionary = {} # map idx -> Restticks bis nächste Feldstufe / bis Verdorren (#26)
 var _decay_fields: Dictionary = {}   # map idx -> Restticks bis Feld-Deko (Stoppel/verdorrt) verschwindet (#26)
@@ -631,6 +666,7 @@ func tick() -> void:
 		if carriers.has(r):
 			_tick_carrier(carriers[r])
 	_tick_strays()
+	_tick_ships()
 
 
 func _capacity_for(size: int) -> int:
@@ -681,6 +717,50 @@ func restore_extra_storages(arr: Array) -> void:
 				var sd: Dictionary = entry.get("stock", {})
 				st.stock = sd.duplicate()
 				break
+
+
+## Schiffe für Save/Load (#46): Position, Fahrtzustand, Heimat-/Zielhafen (Flaggen-Index,
+## stabil), See-Pfad und geladene Waren. Die Fracht wurde aus Lagern entnommen — ohne
+## Sicherung ginge sie verloren. Muss NACH resync()/restore_extra_storages geladen werden.
+func ships_state() -> Array:
+	var out: Array = []
+	for s in ships:
+		var cargo_types: Array = []
+		for g in s.cargo:
+			cargo_types.append(g.type)
+		out.append({
+			owner = s.owner, node = s.node, pos = s.pos, state = s.state,
+			home = s.home, dest = s.dest, path = s.path.duplicate(),
+			path_i = s.path_i, cargo = cargo_types,
+		})
+	return out
+
+
+func restore_ships(arr) -> void:
+	ships.clear()
+	if not (arr is Array):
+		return
+	for d in arr:
+		var s := Ship.new()
+		s.owner = int(d.get("owner", 0))
+		s.node = d.get("node", Vector2i(-1, -1))
+		s.pos = d.get("pos", Vector2.ZERO)
+		s.state = int(d.get("state", SHIP_IDLE))
+		s.home = int(d.get("home", -1))
+		s.dest = int(d.get("dest", -1))
+		var path = d.get("path", [])
+		if path is Array:
+			for p in path:
+				s.path.append(p)
+		s.path_i = int(d.get("path_i", 0))
+		var cargo = d.get("cargo", [])
+		if cargo is Array:
+			for t in cargo:
+				var g := Good.new()
+				g.type = int(t)
+				g.dest = s.dest
+				s.cargo.append(g)
+		ships.append(s)
 
 
 func tree_growth_state() -> Dictionary:
@@ -2027,6 +2107,19 @@ func _out_total(bs: BState) -> int:
 func _add_out(bs: BState, good: int) -> void:
 	if good < 0:
 		return
+	# Werft im Schiffe-Modus (#46): das "Boot" wird kein Ausgangsgut, sondern fließt in
+	# den Schiffsbau. Nach SHIP_BUILD_CYCLES Zyklen (≈ Bretter für ein Schiff) läuft ein
+	# fertiges Schiff am Andockknoten der Werft vom Stapel.
+	if good == Goods.BOAT and String(bs.def.get("id", "")) == "shipyard" and bs.build_ships:
+		bs.ship_progress += 1
+		if bs.ship_progress >= SHIP_BUILD_CYCLES:
+			bs.ship_progress = 0
+			# Andock-Radius wie _water_near (ORE_RADIUS), damit jede produktionsfähige
+			# Werft auch ein Schiff zu Wasser lassen kann.
+			var dock := state.dock_node(bs.bld.pos, ORE_RADIUS)
+			if dock.x >= 0:
+				_spawn_ship(dock, bs.bld.owner)
+		return
 	bs.out_stock[good] = int(bs.out_stock.get(good, 0)) + 1
 
 
@@ -2904,6 +2997,180 @@ func _tick_stray(s: Stray) -> bool:
 		else:
 			s.wander_ticks = 60   # noch keine erreichbare Flagge → weiter irren
 	return false
+
+
+# --------------------------------------------------------------------------
+#  See-Schiffe (#46): Waren-Pendeln zwischen Häfen
+# --------------------------------------------------------------------------
+
+## Erzeugt ein Schiff an einem befahrbaren Wasserknoten (Werft im Schiffe-Modus / Test).
+## Es sucht sich beim nächsten Fähren-Takt selbst einen Heimathafen.
+func _spawn_ship(node: Vector2i, owner: int) -> Ship:
+	var s := Ship.new()
+	s.owner = owner
+	s.node = node
+	s.pos = state.map.node_world(node.x, node.y)
+	s.state = SHIP_IDLE
+	s.home = -1
+	ships.append(s)
+	dirty = true
+	return s
+
+
+## Alle fertigen Hafenlager (Storage mit Gebäude-def "harbor").
+func _harbor_storages() -> Array[Storage]:
+	var out: Array[Storage] = []
+	for st in storages:
+		if st.idx < 0:
+			continue
+		var b: WorldState.Building = state.buildings.get(st.idx)
+		if b != null and b.def_id == "harbor" and not b.under_construction:
+			out.append(st)
+	return out
+
+
+## Andockknoten (befahrbares Wasser) eines Hafenlagers, oder (-1,-1).
+func _harbor_dock(st: Storage) -> Vector2i:
+	var b: WorldState.Building = state.buildings.get(st.idx)
+	if b == null:
+		return Vector2i(-1, -1)
+	return state.dock_node(b.pos)
+
+
+func _tick_ships() -> void:
+	if ships.is_empty():
+		return
+	_sea_timer -= 1
+	if _sea_timer <= 0:
+		_sea_timer = SEA_INTERVAL
+		_assign_ships()
+	for s in ships:
+		if s.state == SHIP_SAILING:
+			_advance_ship(s)
+
+
+## Weist leerlaufenden Schiffen Fahrten zu: gleicht Hafenbestände derselben Meeres-
+## Komponente aus (größtes Bestandsgefälle zuerst). Heimatlose Schiffe segeln leer zum
+## nächsten Hafen.
+func _assign_ships() -> void:
+	var harbors := _harbor_storages()
+	if harbors.is_empty():
+		return
+	for s in ships:
+		if s.state != SHIP_IDLE:
+			continue
+		if s.home < 0:
+			_send_ship_to_nearest_harbor(s, harbors)
+		else:
+			_assign_ferry(s, harbors)
+
+
+## Schickt ein heimatloses Schiff (frisch von der Werft) leer zum nächsten erreichbaren Hafen.
+func _send_ship_to_nearest_harbor(s: Ship, harbors: Array[Storage]) -> void:
+	var best_path: Array[Vector2i] = []
+	var best_dest := -1
+	for st in harbors:
+		var dock := _harbor_dock(st)
+		if dock.x < 0:
+			continue
+		var path := state.find_sea_path(s.node, dock)
+		if path.is_empty():
+			continue
+		if best_path.is_empty() or path.size() < best_path.size():
+			best_path = path
+			best_dest = st.flag_idx
+	if best_dest >= 0:
+		s.dest = best_dest
+		s.path = best_path
+		s.path_i = 1 if best_path.size() > 1 else 0
+		s.state = SHIP_SAILING
+
+
+## Lädt am Heimathafen die Ware mit dem größten Bestandsgefälle zu einem erreichbaren
+## Zielhafen und legt ab. Ohne lohnende Fracht bleibt das Schiff liegen.
+func _assign_ferry(s: Ship, harbors: Array[Storage]) -> void:
+	var src := _storage_by_flag(s.home)
+	if src == null:
+		return
+	var src_dock := _harbor_dock(src)
+	if src_dock.x < 0:
+		return
+	var src_comp := state.sea_component_at(src_dock.x, src_dock.y)
+	var best_good := -1
+	var best_dest: Storage = null
+	var best_diff := SEA_BALANCE_MARGIN - 1
+	for st in harbors:
+		if st.flag_idx == s.home:
+			continue
+		var dock := _harbor_dock(st)
+		if dock.x < 0 or state.sea_component_at(dock.x, dock.y) != src_comp:
+			continue
+		for g in src.stock:
+			var diff := int(src.stock[g]) - int(st.stock.get(g, 0))
+			if diff > best_diff:
+				best_diff = diff
+				best_good = int(g)
+				best_dest = st
+	if best_dest == null or best_good < 0:
+		return
+	var path := state.find_sea_path(src_dock, _harbor_dock(best_dest))
+	if path.is_empty():
+		return
+	# Halbe Differenz laden (Richtung Ausgleich), höchstens Laderaum.
+	var amount := mini(SHIP_CAPACITY, (best_diff + 1) / 2)
+	for _i in amount:
+		if int(src.stock.get(best_good, 0)) <= 0:
+			break
+		src.stock[best_good] = int(src.stock[best_good]) - 1
+		var good := Good.new()
+		good.type = best_good
+		good.dest = best_dest.flag_idx
+		s.cargo.append(good)
+	if s.cargo.is_empty():
+		return
+	s.dest = best_dest.flag_idx
+	s.path = path
+	s.path_i = 1 if path.size() > 1 else 0
+	s.state = SHIP_SAILING
+
+
+## Bewegt ein fahrendes Schiff entlang seines See-Pfads; am Ziel andocken + entladen.
+func _advance_ship(s: Ship) -> void:
+	if s.path.is_empty() or s.path_i >= s.path.size():
+		_ship_arrive(s)
+		return
+	var tnode := s.path[s.path_i]
+	var tw := state.map.node_world(tnode.x, tnode.y)
+	var d := tw - s.pos
+	var dist := d.length()
+	if dist <= SHIP_SPEED:
+		s.pos = tw
+		s.node = tnode
+		s.path_i += 1
+		if s.path_i >= s.path.size():
+			_ship_arrive(s)
+	else:
+		s.facing = d / dist
+		s.pos += s.facing * SHIP_SPEED
+	dirty = true
+
+
+## Schiff hat den Ziel-Hafen erreicht: Fracht ins Hafenlager buchen, dort andocken.
+func _ship_arrive(s: Ship) -> void:
+	var dst := _storage_by_flag(s.dest)
+	if dst != null:
+		for g in s.cargo:
+			dst.stock[g.type] = int(dst.stock.get(g.type, 0)) + 1
+		s.home = s.dest
+	else:
+		for g in s.cargo:
+			_dump_good_to_hq(g)   # Zielhafen verschwand → Fracht retten (kein Verlust)
+	s.cargo.clear()
+	s.dest = -1
+	s.path = []
+	s.path_i = 0
+	s.state = SHIP_IDLE
+	dirty = true
 
 
 func _flag_world(fi: int) -> Vector2:

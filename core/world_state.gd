@@ -93,6 +93,13 @@ var _flag_graph_cache: Dictionary = {}
 var _flag_graph_dirty := true
 var _route_cache: Dictionary = {}   # Vector2i(start_idx, goal_idx) -> Array[Vector2i]
 
+# See-Navigationsgraph (#46): Komponenten-Label je befahrbarem Wasserknoten (Tiefsee).
+# -1 = nicht befahrbar (Land/Küste). Faul berechnet, bei Terrain-Änderung verworfen
+# (Startlichtung, Expedition). Schiffe fahren nur über befahrbare Knoten DERSELBEN
+# Komponente; Häfen an derselben Komponente sind per Schiff verbunden.
+var _sea_comp_cache: PackedInt32Array = PackedInt32Array()
+var _sea_comp_dirty := true
+
 var _next_flag_id := 1
 
 
@@ -127,6 +134,127 @@ func node_walkable(x: int, y: int) -> bool:
 ## Liegt ein Karten-Objekt (Baum/Stein/Erz) auf dem Knoten?
 func has_object(x: int, y: int) -> bool:
 	return map.map_object(x, y) >= 0
+
+
+# --------------------------------------------------------------------------
+#  See-Navigation (#46): befahrbares Wasser, Meeres-Komponenten, Pfadsuche
+# --------------------------------------------------------------------------
+
+## Befahrbar (Tiefsee): ALLE sechs Dreiecke um den Knoten sind Wasser. So bleiben
+## Schiffe von der Küste weg (Uferknoten haben Land-Dreiecke und sind nicht befahrbar).
+func node_navigable(x: int, y: int) -> bool:
+	if not map.in_bounds(x, y):
+		return false
+	for t in map.terrains_around(x, y):
+		if not Terrain.is_water(t):
+			return false
+	return true
+
+
+## Verwirft den gecachten Meeres-Komponenten-Graphen (nach Terrain-Änderungen).
+func invalidate_sea() -> void:
+	_sea_comp_dirty = true
+
+
+## Label je Knoten: Meeres-Komponenten-ID (>=0) oder -1 (nicht befahrbar). Faul gebaut.
+func _sea_components() -> PackedInt32Array:
+	if not _sea_comp_dirty and _sea_comp_cache.size() == map.width * map.height:
+		return _sea_comp_cache
+	var comp := PackedInt32Array()
+	comp.resize(map.width * map.height)
+	comp.fill(-1)
+	var next_id := 0
+	for y in map.height:
+		for x in map.width:
+			var start := map.idx(x, y)
+			if comp[start] != -1 or not node_navigable(x, y):
+				continue
+			var stack: Array[int] = [start]
+			comp[start] = next_id
+			while not stack.is_empty():
+				var cur: int = stack.pop_back()
+				var cx := cur % map.width
+				@warning_ignore("integer_division")
+				var cy := cur / map.width
+				for dir in Grid.DIRS:
+					var n := map.neighbor(cx, cy, dir)
+					if n.x < 0:
+						continue
+					var ni := map.idx(n.x, n.y)
+					if comp[ni] == -1 and node_navigable(n.x, n.y):
+						comp[ni] = next_id
+						stack.append(ni)
+			next_id += 1
+	_sea_comp_cache = comp
+	_sea_comp_dirty = false
+	return comp
+
+
+## Meeres-Komponenten-ID eines Knotens (-1 = nicht befahrbar).
+func sea_component_at(x: int, y: int) -> int:
+	if not map.in_bounds(x, y):
+		return -1
+	return _sea_components()[map.idx(x, y)]
+
+
+## Der befahrbare Wasserknoten, an dem ein Gebäude (Hafen/Werft) andockt: der
+## nächstgelegene Tiefsee-Knoten im kleinen Umkreis. Vector2i(-1,-1) wenn keiner.
+func dock_node(pos: Vector2i, radius := 3) -> Vector2i:
+	for r in range(1, radius + 1):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var p := pos + Vector2i(dx, dy)
+				if hex_distance(pos, p) != r:
+					continue
+				if node_navigable(p.x, p.y):
+					return p
+	return Vector2i(-1, -1)
+
+
+## Kürzester See-Pfad (BFS über befahrbare Wasserknoten) von [from] nach [to], beide
+## befahrbar und in derselben Komponente. Liefert die Knotenfolge inkl. Endpunkte, oder
+## leeres Array, wenn nicht verbunden.
+func find_sea_path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	var empty: Array[Vector2i] = []
+	if not node_navigable(from.x, from.y) or not node_navigable(to.x, to.y):
+		return empty
+	var comp := _sea_components()
+	var start := map.idx(from.x, from.y)
+	var goal := map.idx(to.x, to.y)
+	if comp[start] < 0 or comp[start] != comp[goal]:
+		return empty
+	if start == goal:
+		return [from]
+	var came := {}   # idx -> Vorgänger-idx
+	came[start] = -1
+	var queue: Array[int] = [start]
+	var head := 0
+	while head < queue.size():
+		var cur: int = queue[head]
+		head += 1
+		if cur == goal:
+			break
+		var cx := cur % map.width
+		@warning_ignore("integer_division")
+		var cy := cur / map.width
+		for dir in Grid.DIRS:
+			var n := map.neighbor(cx, cy, dir)
+			if n.x < 0:
+				continue
+			var ni := map.idx(n.x, n.y)
+			if came.has(ni) or not node_navigable(n.x, n.y):
+				continue
+			came[ni] = cur
+			queue.append(ni)
+	if not came.has(goal):
+		return empty
+	var path: Array[Vector2i] = []
+	var node := goal
+	while node != -1:
+		path.append(Vector2i(node % map.width, node / map.width))
+		node = came[node]
+	path.reverse()
+	return path
 
 
 # --------------------------------------------------------------------------
@@ -503,7 +631,8 @@ func military_placement_clear(x: int, y: int) -> bool:
 	return true
 
 
-func can_place_building(x: int, y: int, size: int, owner := 0, influence := 0) -> bool:
+func can_place_building(x: int, y: int, size: int, owner := 0, influence := 0,
+		is_harbor := false) -> bool:
 	if not has_building_territory_margin_for(owner, x, y):
 		return false
 	if _occ(x, y) != OBJ_NONE or is_work_reserved(x, y):
@@ -520,6 +649,11 @@ func can_place_building(x: int, y: int, size: int, owner := 0, influence := 0) -
 		return false
 	if _occ(se.x, se.y) != OBJ_FLAG and not can_place_flag(se.x, se.y, owner):
 		return false
+	# Hafen (#46): Küsten-Sondergebäude. Steht bewusst am Ufer (Knoten mit Wasser-
+	# Dreiecken), wo compute_bq nur Flaggenqualität liefert — daher kein BQ-Gate,
+	# sondern die feste Hafenpunkt-Markierung als Baubedingung. Einzel-Fußabdruck.
+	if is_harbor:
+		return map.is_harbor_point(x, y)
 	if size == BQ_MINE:
 		if compute_bq(x, y) != BQ_MINE:
 			return false
@@ -574,7 +708,7 @@ func actual_build_spot_bq(x: int, y: int) -> int:
 
 func place_building(x: int, y: int, size: int, is_hq := false,
 		def_id := "", influence := 0, under_construction := true, owner := 0) -> Building:
-	if not can_place_building(x, y, size, owner, influence):
+	if not can_place_building(x, y, size, owner, influence, def_id == "harbor"):
 		return null
 	var se := map.neighbor(x, y, Grid.SE)
 	if _occ(se.x, se.y) != OBJ_FLAG:

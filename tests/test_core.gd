@@ -28,6 +28,8 @@ func _initialize() -> void:
 	_test_mine_food()
 	_test_fishery_fish()
 	_test_shipyard()
+	_test_sea_navigation()
+	_test_harbor_and_ships()
 	_test_farm_fields()
 	_test_catalog_complete()
 	_test_asset_files()
@@ -1758,6 +1760,106 @@ func _test_shipyard() -> void:
 	var info := ieco.building_info(isy)
 	_check(String(info.get("warning", "")) == "Kein Wasser in Reichweite",
 		"Werft (inland): meldet 'Kein Wasser in Reichweite' (war '%s')" % info.get("warning", ""))
+
+
+## Baut eine flache Karte mit einem senkrechten Wasserband (Spalten [x0..x1] über die
+## ganze Höhe). Links/rechts davon Land — zwei Inseln, durch See getrennt.
+func _channel_map(w: int, h: int, x0: int, x1: int) -> MapData:
+	var map := _flat_map(w, h)
+	for y in h:
+		for x in range(x0, x1 + 1):
+			map.set_tri(Vector2i(x, y), Grid.TRI_R, Terrain.WATER)
+			map.set_tri(Vector2i(x, y), Grid.TRI_D, Terrain.WATER)
+			map.set_height(x, y, 0)
+	return map
+
+
+## See-Navigation (#46): befahrbares Tiefwasser, Meeres-Komponenten, Pfadsuche.
+func _test_sea_navigation() -> void:
+	var map := _channel_map(34, 16, 12, 21)
+	var state := WorldState.new(map)
+	# Mitten im Band ist befahrbar (alle Dreiecke Wasser), am Ufer/Land nicht.
+	_check(state.node_navigable(16, 8), "See: Tiefwasser-Knoten ist befahrbar")
+	_check(not state.node_navigable(5, 8), "See: Landknoten ist nicht befahrbar")
+	_check(not state.node_navigable(11, 8), "See: direkter Uferknoten ist nicht befahrbar")
+	# Pfad innerhalb derselben Komponente vorhanden; quer übers Land nicht.
+	var path := state.find_sea_path(Vector2i(13, 4), Vector2i(20, 12))
+	_check(path.size() >= 2 and path[0] == Vector2i(13, 4) and path[path.size() - 1] == Vector2i(20, 12),
+		"See: Pfad zwischen zwei Tiefwasser-Knoten gefunden (%d)" % path.size())
+	_check(state.find_sea_path(Vector2i(13, 4), Vector2i(5, 4)).is_empty(),
+		"See: kein Pfad zu einem Landknoten")
+	# Andockknoten eines Küstengebäudes liegt auf befahrbarem Wasser.
+	var dock := state.dock_node(Vector2i(11, 8))
+	_check(dock.x >= 0 and state.node_navigable(dock.x, dock.y),
+		"See: Andockknoten am Ufer ist befahrbar")
+
+
+## Hafen + Schiffe (#46): Hafen nur auf Hafenpunkt baubar, als Lager registriert; ein
+## Schiff pendelt Waren über See von Hafen A nach Hafen B (Bestandsausgleich).
+func _test_harbor_and_ships() -> void:
+	var map := _channel_map(34, 16, 12, 21)
+	# Manuelle Hafenpunkte links/rechts des Wasserbands.
+	map.set_harbor_point(10, 8, true)
+	map.set_harbor_point(23, 8, true)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	eco.ai_enabled = false
+
+	# --- Platzierung: Hafen nur auf Hafenpunkt ---
+	_check(not state.can_place_building(5, 5, WorldState.BQ_HOUSE, 0, 0, true),
+		"Hafen: NICHT auf normalem Land baubar")
+	_check(state.can_place_building(10, 8, WorldState.BQ_HOUSE, 0, 0, true),
+		"Hafen: auf Hafenpunkt baubar")
+	var ha := state.place_building(10, 8, WorldState.BQ_HOUSE, false, "harbor", 0, false)
+	var hb := state.place_building(23, 8, WorldState.BQ_HOUSE, false, "harbor", 0, false)
+	_check(ha != null and hb != null, "Hafen: beide Häfen platziert")
+	if ha == null or hb == null:
+		return
+	eco.resync()
+
+	# --- Hafen ist ein Lager ---
+	var harbors := eco._harbor_storages()
+	_check(harbors.size() == 2, "Hafen: beide als Lager registriert (%d)" % harbors.size())
+
+	# Lager-Objekte je Hafen holen.
+	var sa := eco._storage_by_flag(state.map.idx(ha.flag_pos.x, ha.flag_pos.y))
+	var sb := eco._storage_by_flag(state.map.idx(hb.flag_pos.x, hb.flag_pos.y))
+	_check(sa != null and sb != null, "Hafen: Lager-Objekte gefunden")
+	if sa == null or sb == null:
+		return
+
+	# --- Waren-Pendeln: A hat Bretter, B nicht → Schiff bringt welche nach B ---
+	sa.stock[Goods.BOARDS] = 10
+	sb.stock.erase(Goods.BOARDS)
+	var dock_a := state.dock_node(ha.pos)
+	_check(dock_a.x >= 0, "Hafen: Andockknoten für Hafen A vorhanden")
+	eco._spawn_ship(dock_a, 0)
+	_check(eco.ships.size() == 1, "Schiff: erzeugt")
+	for _t in 1200:
+		eco.tick()
+	_check(int(sb.stock.get(Goods.BOARDS, 0)) > 0,
+		"Schiff: Bretter über See nach Hafen B gependelt (%d)" % int(sb.stock.get(Goods.BOARDS, 0)))
+	_check(int(sa.stock.get(Goods.BOARDS, 0)) < 10, "Schiff: Bestand in Hafen A entsprechend gesunken")
+	# Keine Ware verloren/dupliziert (Summe bleibt 10, plus evtl. Fracht an Bord).
+	var afloat := 0
+	for s in eco.ships:
+		afloat += s.cargo.size()
+	_check(int(sa.stock.get(Goods.BOARDS, 0)) + int(sb.stock.get(Goods.BOARDS, 0)) + afloat == 10,
+		"Schiff: keine Ware verloren oder dupliziert")
+
+	# --- Werft im Schiffe-Modus baut ein Schiff ---
+	var ships_before := eco.ships.size()
+	var sy := state.place_building(10, 6, WorldState.BQ_HOUSE, false, "shipyard", 0, false)
+	_check(sy != null, "Werft: an der Küste platziert")
+	eco.resync()
+	var bs: Economy.BState = eco.bstates.get(state.map.idx(10, 6))
+	_check(bs != null, "Werft: bstate vorhanden")
+	if bs != null:
+		bs.build_ships = true
+		for _c in Economy.SHIP_BUILD_CYCLES:
+			eco._add_out(bs, Goods.BOAT)
+		_check(eco.ships.size() == ships_before + 1, "Werft (Schiffe-Modus): Schiff vom Stapel gelaufen")
+		_check(int(bs.out_stock.get(Goods.BOAT, 0)) == 0, "Werft (Schiffe-Modus): kein Boot im Ausgang")
 
 
 ## Bauernhof-Felder (Issue #26), original-getreu an RTTR nofFarmer/noGrainfield:

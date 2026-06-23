@@ -109,6 +109,7 @@ func _draw() -> void:
 	_draw_workers()
 	_draw_marchers()
 	_draw_strays()
+	_draw_ships()
 	# Tür-Träger zuletzt → IMMER im Vordergrund (läuft technisch vor dem Gebäude).
 	_draw_house_carrier()
 	_draw_build_preview()
@@ -535,6 +536,29 @@ func _draw_strays() -> void:
 		var carry: int = s.good.type if s.good != null else -1
 		_unit("carrier", p, s.facing, 0, carry)
 		_occlude(p)
+
+
+## See-Schiffe (#46): einfacher Bootsrumpf in Spielerfarbe auf dem Wasser, mit kleinem
+## Frachtmarker, wenn beladen. (Platzhalter-Form; echtes Sprite via #13.)
+func _draw_ships() -> void:
+	for s in economy.ships:
+		var p: Vector2 = s.pos
+		var f: Vector2 = s.facing if s.facing.length() > 0.01 else Vector2.RIGHT
+		var side := Vector2(-f.y, f.x)
+		var col := GameTheme.player_color(s.owner)
+		# Rumpf als kleines Boot (Bug in Fahrtrichtung).
+		var hull := PackedVector2Array([
+			p + f * 9.0,
+			p - f * 7.0 + side * 5.0,
+			p - f * 7.0 - side * 5.0,
+		])
+		draw_colored_polygon(hull, Color(0.30, 0.20, 0.12))
+		draw_polyline(hull + PackedVector2Array([hull[0]]), col, 1.5, true)
+		# Mast/Segel als heller Punkt.
+		draw_circle(p, 2.0, Color(0.95, 0.95, 0.98))
+		if not s.cargo.is_empty():
+			draw_rect(Rect2(p.x - 2.0, p.y - 2.0, 4.0, 4.0),
+				GameTheme.good_color(int(s.cargo[0].type)))
 
 
 func _draw_preview() -> void:

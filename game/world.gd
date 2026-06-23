@@ -94,6 +94,7 @@ var _ui_root: Control
 var ui_category := "hut"
 var build_filter_bq := -1
 var build_window_spot := Vector2i(-1, -1)
+var build_harbor := false   # #46: Bauplatz ist ein Hafenpunkt → nur der Hafen wird angeboten
 var selected: WorldState.Building
 var map_source := "random"
 var map_seed_text := "1337"
@@ -1335,6 +1336,9 @@ func _toggle_build_panel() -> void:
 		_build_panel.move_to_front()
 		build_filter_bq = -1
 		build_window_spot = Vector2i(-1, -1)
+		build_harbor = false
+		if ui_category == "harbor":   # Hafen nur über Hafenpunkt-Klick, nicht im allg. Menü
+			ui_category = "house"
 		_position_build_panel_default()
 		_show_category(ui_category)
 
@@ -2351,6 +2355,8 @@ func _open_building_window(b: WorldState.Building) -> void:
 	# Direkter Einstieg in die passende Einstellungsseite (Werkzeugmacher → Werkzeug,
 	# Schmiede → Militär). Label/Sichtbarkeit setzt _update_one_building_window.
 	var settings_btn := _tbutton(actions, "Werkzeuge", _open_building_settings.bind(idx))
+	# Werft (#46): zwischen Boot- und Schiffbau umschalten.
+	var shipmode_btn := _tbutton(actions, "Baut: Boote", _toggle_shipyard_mode_window.bind(idx))
 
 	_building_windows[idx] = {
 		panel = panel, title = title, icon = icon, info = info,
@@ -2358,7 +2364,7 @@ func _open_building_window(b: WorldState.Building) -> void:
 		mil_box = mil_box, mil_sig = "",
 		stop = stop, coins = coins,
 		goto_btn = goto_btn, demolish = demolish, attack = attack,
-		settings_btn = settings_btn,
+		settings_btn = settings_btn, shipmode_btn = shipmode_btn,
 	}
 	_update_one_building_window(idx)
 
@@ -2436,6 +2442,12 @@ func _update_one_building_window(idx: int) -> void:
 	# Passende Einstellungsseite direkt aus dem Gebäude öffnen.
 	settings_btn.visible = own and (b.def_id == "smithy" or b.def_id == "toolmaker")
 	settings_btn.text = "Militär" if b.def_id == "smithy" else "Werkzeuge"
+	# Werft-Modus-Umschalter (#46): nur an der eigenen Werft.
+	var shipmode_btn: Button = entry["shipmode_btn"]
+	shipmode_btn.visible = own and b.def_id == "shipyard"
+	if shipmode_btn.visible:
+		var sm_bs: Economy.BState = economy.bstates.get(idx)
+		shipmode_btn.text = "Baut: Schiffe" if (sm_bs != null and sm_bs.build_ships) else "Baut: Boote"
 
 
 ## Garnison + Rang als Icons (statt Textzeile): gefüllte Spielerfarb-Plätze für
@@ -2566,6 +2578,17 @@ func _toggle_production_window(idx: int) -> void:
 	_update_one_building_window(idx)
 
 
+## Werft (#46): zwischen Boot- und Schiffbau umschalten.
+func _toggle_shipyard_mode_window(idx: int) -> void:
+	var bs: Economy.BState = economy.bstates.get(idx)
+	if bs == null or String(bs.def.get("id", "")) != "shipyard":
+		return
+	bs.build_ships = not bs.build_ships
+	bs.ship_progress = 0
+	_flash("Werft baut jetzt %s." % ("Schiffe" if bs.build_ships else "Boote"))
+	_update_one_building_window(idx)
+
+
 ## Münzanforderung eines Militärgebäudes an-/abschalten (S2: Goldmünzen an/aus).
 func _toggle_coins_window(idx: int) -> void:
 	if not state.buildings.has(idx):
@@ -2677,10 +2700,15 @@ func _group_label(group: String) -> String:
 		"hut": return "Kleine Häuser"
 		"house": return "Mittlere Häuser"
 		"castle": return "Große Häuser"
+		"harbor": return "Hafen"
 	return group
 
 
 func _building_in_group(id: String, group: String) -> bool:
+	if group == "harbor":   # #46: Hafenpunkt-Auswahl zeigt nur den Hafen
+		return id == "harbor"
+	if id == "harbor":      # Hafen erscheint NUR in der Hafenpunkt-Auswahl, nicht regulär
+		return false
 	var size: int = BuildingCatalog.get_def(id).get("size", WorldState.BQ_HUT)
 	match group:
 		"hut": return size == WorldState.BQ_HUT
@@ -2869,8 +2897,11 @@ func _build_from_spot(id: String) -> void:
 		_flash("Baustelle gesetzt: " + String(BuildingCatalog.get_def(id).get("name", id)))
 		build_window_spot = Vector2i(-1, -1)
 		build_filter_bq = -1
+		build_harbor = false
 		if _build_panel != null:
 			_build_panel.visible = false
+		if ui_category == "harbor":
+			ui_category = "house"
 		_show_category(ui_category)
 	else:
 		_flash("Passt hier nicht mehr.")
@@ -3157,6 +3188,22 @@ func _handle_build_spot_click() -> bool:
 			renderer.queue_redraw()
 			_flash("Strassen-Flagge gesetzt.")
 		return true
+	# Hafenpunkt (#46): hier ist (nur) der Hafen baubar — das Küsten-Sondergebäude, das
+	# compute_bq am Ufer nicht als Bauplatz ausweist. Baufenster mit Hafen-Auswahl öffnen.
+	if state.map.is_harbor_point(hover.x, hover.y) \
+			and state._occ(hover.x, hover.y) == WorldState.OBJ_NONE \
+			and state.has_building_territory_margin(hover.x, hover.y):
+		build_window_spot = hover
+		build_filter_bq = -1
+		build_harbor = true
+		ui_category = "harbor"
+		if _build_panel != null:
+			_hide_management_panels(_build_panel)
+			_build_panel.visible = true
+			_position_build_panel_near_node(hover)
+		_show_category("harbor")
+		_flash("Hafenpunkt gewaehlt: Hafen baubar.")
+		return true
 	var bq := state.actual_build_spot_bq(hover.x, hover.y)
 	if bq < WorldState.BQ_FLAG:
 		return false
@@ -3169,6 +3216,7 @@ func _handle_build_spot_click() -> bool:
 		return true
 	build_window_spot = hover
 	build_filter_bq = bq
+	build_harbor = false
 	ui_category = _first_category_for_bq(bq)
 	if _build_panel != null:
 		_hide_management_panels(_build_panel)
@@ -3311,6 +3359,7 @@ func _build_save_data() -> Dictionary:
 		tree_growth = economy.tree_growth_state(),
 		field_growth = economy.field_growth_state(),
 		decay_fields = economy.decay_fields_state(),
+		ships = economy.ships_state(),  # #46: See-Schiffe inkl. Fracht
 		buildings = [], flags = [], roads = [],
 		hq_stock = economy.hq_stock.duplicate(),
 		# Gesamtbevölkerung (Reserve + eingesetzte Träger/Arbeiter), Issue #9: beim
@@ -3523,6 +3572,8 @@ func _apply_save_data(data: Dictionary) -> void:
 	var extra_storages = data.get("extra_storages", [])
 	if extra_storages is Array:
 		economy.restore_extra_storages(extra_storages)
+	# See-Schiffe (#46) nach den Lagern zurückspielen (Fracht/Heimathafen referenzieren sie).
+	economy.restore_ships(data.get("ships", []))
 	# Geladene Gebäude/Straßen werden direkt erzeugt (umgehen das inkrementelle
 	# Aufdecken) — daher hier einmalig die Sichtbarkeit voll aufbauen (Issue #30).
 	state.recompute_visibility()
