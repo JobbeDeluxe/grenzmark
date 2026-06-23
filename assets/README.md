@@ -26,6 +26,7 @@ Typ Ordner, Dateiname und empfohlene Größe.
 | `assets/buildings/` | `<def_id>.png` | Gebäude-Sprite = **fertiger Bau / Baustufe 2** (Boden = untere Kante) | ~64×64 |
 | `assets/objects/`   | `tree_<typ>.png`, `tree_<typ>_seed.png`, `tree_<typ>_small.png`, `field_seed.png`, `field_young.png`, `field_growing.png`, `field_ripe.png`, `field_cut.png`, `field_withered.png`, `stone.png`, `stone_stage2.png`, `stone_stage3.png`, `ore.png` | Karten-Objekte, Baumtypen, Kornfeld- & Stein-Stufen | frei; Bäume werden per Zielhöhe skaliert |
 | `assets/goods/`     | `<nummer>.png` | Waren-Symbol | ~16×16 |
+| `assets/ships/`     | `boat.png`, `ship_stage1.png`, `ship.png` | Wasserstraßen-Boot, Schiffbau-Gerippe, fertiges See-Schiff | ~128×128 / ~224×224 |
 | `assets/units/`     | `carrier.png`, `worker.png`, `soldier.png`, `builder.png` (+ `_<spieler>` Varianten) | Lauf-Sprite-Sheet (4×6) | Zelle ~32×32 |
 | `assets/ui/`        | `main_menu_background.png`, `flag_<spieler>.png`, `build_spots/*.png` | Hauptmenü, Spielflaggen & Bauhilfe-Symbole | 16:9 / ~64×64 |
 | `assets/`           | `ui.json` | UI-Skin/Layouts: Farben, Randabstände, Panel-/Buttongrößen | Text/JSON |

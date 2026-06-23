@@ -47,7 +47,7 @@ const SEA_INTERVAL := 90
 const SEA_BALANCE_MARGIN := 2
 const SHIP_CAPACITY := 6
 const SHIP_SPEED := 1.8
-const SHIP_BUILD_CYCLES := 3   # Bootszyklen (Werft) bis ein Schiff fertig ist
+const SHIP_BUILD_CYCLES := 12  # S2/10th: 12 Planken-/Arbeitszyklen bis ein Schiff fertig ist
 const SHIP_VISION := 4         # Hex-Sichtradius eines Schiffs (Fog-Aufdeckung, #46/#21)
 # Expedition (#46): Materialien, die ein Hafen für die Gründung eines neuen Hafens
 # mitschickt (entspricht den Hafen-Baukosten).
@@ -2137,7 +2137,7 @@ func _add_out(bs: BState, good: int) -> void:
 	if good < 0:
 		return
 	# Werft im Schiffe-Modus (#46): das "Boot" wird kein Ausgangsgut, sondern fließt in
-	# den Schiffsbau. Nach SHIP_BUILD_CYCLES Zyklen (≈ Bretter für ein Schiff) läuft ein
+	# den Schiffsbau. Nach SHIP_BUILD_CYCLES Zyklen (S2/10th: 12 Bretter) läuft ein
 	# fertiges Schiff am Andockknoten der Werft vom Stapel.
 	if good == Goods.BOAT and String(bs.def.get("id", "")) == "shipyard" and bs.build_ships:
 		bs.ship_progress += 1

@@ -1711,6 +1711,12 @@ func _test_shipyard() -> void:
 	_check(not def.is_empty(), "Werft: im Katalog vorhanden")
 	_check(int(def.get("output", -1)) == Goods.BOAT, "Werft: Ausgang ist Boot")
 	_check(bool(def.get("needs_water", false)), "Werft: braucht Wasser in Reichweite")
+	var cost: Dictionary = def.get("cost", {})
+	var inputs: Dictionary = def.get("inputs", {})
+	_check(int(cost.get(Goods.BOARDS, 0)) == 2 and int(cost.get(Goods.STONE, 0)) == 3,
+		"Werft: S2/10th-Baukosten 2 Bretter + 3 Stein")
+	_check(int(inputs.get(Goods.BOARDS, 0)) == 1, "Werft: Boot/Raft braucht 1 Brett")
+	_check(Economy.SHIP_BUILD_CYCLES == 12, "Werft: Schiff braucht 12 Arbeitszyklen")
 	_check(BuildingCatalog.job_of("shipyard") == Jobs.SHIPWRIGHT, "Werft -> Schiffsbauer")
 	_check(Jobs.tool_for(Jobs.SHIPWRIGHT) == Goods.HAMMER, "Schiffsbauer braucht Hammer")
 

@@ -811,6 +811,12 @@ func _draw_roads() -> void:
 				var wa := state.map.node_world(nodes[k].x, nodes[k].y)
 				var wb := state.map.node_world(nodes[k + 1].x, nodes[k + 1].y)
 				draw_line(wa, wb, Color(0.55, 0.78, 0.95, 0.85), ROAD_W * 0.8, true)
+			var boat := GameTheme.boat_texture()
+			if boat != null:
+				var mid := int((nodes.size() - 2) / 2)
+				var ba := state.map.node_world(nodes[mid].x, nodes[mid].y)
+				var bb := state.map.node_world(nodes[mid + 1].x, nodes[mid + 1].y)
+				_draw_oriented_sprite(boat, (ba + bb) * 0.5, bb - ba, GameTheme.boat_draw_size())
 			continue
 		# Segmentweise: jedes Teilstück nach dem Untergrund seines Knotens texturieren.
 		for k in range(nodes.size() - 1):
@@ -837,6 +843,15 @@ func _road_quad(a: Vector2, b: Vector2, tex: Texture2D, width := ROAD_W) -> void
 	var uvs := PackedVector2Array([Vector2(0, 0), Vector2(uw, 0), Vector2(uw, 1), Vector2(0, 1)])
 	var white := PackedColorArray([Color.WHITE, Color.WHITE, Color.WHITE, Color.WHITE])
 	draw_polygon(pts, white, uvs, tex)
+
+
+func _draw_oriented_sprite(tex: Texture2D, p: Vector2, facing: Vector2, sz: Vector2) -> void:
+	if tex == null:
+		return
+	var angle := facing.angle() if facing.length() > 0.01 else 0.0
+	draw_set_transform(p, angle, Vector2.ONE)
+	draw_texture_rect(tex, Rect2(-sz.x * 0.5, -sz.y * 0.5, sz.x, sz.y), false)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 ## Kurzer Weg von der Eingangsflagge zur Tür des Gebäudes (wie in S2).

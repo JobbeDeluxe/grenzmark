@@ -105,6 +105,7 @@ func _draw() -> void:
 	_draw_preview()
 	_draw_goods()
 	_draw_construction()
+	_draw_shipyard_progress()
 	_draw_carriers()
 	_draw_workers()
 	_draw_marchers()
@@ -538,27 +539,103 @@ func _draw_strays() -> void:
 		_occlude(p)
 
 
-## See-Schiffe (#46): einfacher Bootsrumpf in Spielerfarbe auf dem Wasser, mit kleinem
-## Frachtmarker, wenn beladen. (Platzhalter-Form; echtes Sprite via #13.)
+## Sichtbarer Schiffsbau in der Werft: erst Gerippe, dann das fertige Schiff darueber.
+func _draw_shipyard_progress() -> void:
+	for i in economy.bstates:
+		var bs: Economy.BState = economy.bstates[i]
+		if String(bs.def.get("id", "")) != "shipyard":
+			continue
+		if bs.is_construction or not bs.build_ships:
+			continue
+		var progress := _shipyard_ship_progress(bs)
+		if progress <= 0.01:
+			continue
+		var base_p := state.map.node_world(bs.bld.pos.x, bs.bld.pos.y)
+		var dock := state.dock_node(bs.bld.pos, Economy.ORE_RADIUS)
+		var p := base_p + GameTheme.ship_build_offset()
+		var facing := Vector2.RIGHT
+		if dock.x >= 0:
+			var dock_p := state.map.node_world(dock.x, dock.y)
+			p = dock_p + GameTheme.ship_build_offset()
+			facing = dock_p - base_p
+		var stage1 := GameTheme.ship_construction_stage1_texture()
+		var fin := GameTheme.ship_texture()
+		var sz := GameTheme.ship_draw_size()
+		if stage1 == null and fin == null:
+			_draw_ship_fallback(p, facing, bs.bld.owner)
+			continue
+		var split := 0.58
+		if progress < split:
+			_draw_oriented_grow_texture(stage1 if stage1 != null else fin, p, facing, sz, progress / split)
+		else:
+			if stage1 != null:
+				_draw_oriented_texture(stage1, p, facing, sz)
+			if fin != null:
+				_draw_oriented_grow_texture(fin, p, facing, sz, (progress - split) / (1.0 - split))
+
+
+func _shipyard_ship_progress(bs: Economy.BState) -> float:
+	var cycle_frac := 0.0
+	if bs.producing and bs.cur_output == Goods.BOAT and bs.wphase == Economy.WK_WORK:
+		cycle_frac = clampf(1.0 - bs.ph_t / maxf(bs.ph_total, 1.0), 0.0, 1.0)
+	var cycles := maxf(float(Economy.SHIP_BUILD_CYCLES), 1.0)
+	return clampf((float(bs.ship_progress) + cycle_frac) / cycles, 0.0, 1.0)
+
+
+func _draw_oriented_texture(tex: Texture2D, p: Vector2, facing: Vector2, sz: Vector2) -> void:
+	if tex == null:
+		return
+	var angle := facing.angle() if facing.length() > 0.01 else 0.0
+	draw_set_transform(p, angle, Vector2.ONE)
+	draw_texture_rect(tex, Rect2(-sz.x * 0.5, -sz.y * 0.5, sz.x, sz.y), false)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _draw_oriented_grow_texture(tex: Texture2D, p: Vector2, facing: Vector2, sz: Vector2, frac: float) -> void:
+	if tex == null:
+		return
+	var f := clampf(frac, 0.0, 1.0)
+	if f <= 0.0:
+		return
+	var vis := sz.y * f
+	var region := Rect2(0, tex.get_height() * (1.0 - f), tex.get_width(), tex.get_height() * f)
+	var angle := facing.angle() if facing.length() > 0.01 else 0.0
+	draw_set_transform(p, angle, Vector2.ONE)
+	draw_texture_rect_region(tex, Rect2(-sz.x * 0.5, sz.y * 0.5 - vis, sz.x, vis), region)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## See-Schiffe (#46): Sprite auf dem Wasser, mit kleinem Frachtmarker, wenn beladen.
 func _draw_ships() -> void:
 	for s in economy.ships:
 		var p: Vector2 = s.pos
 		var f: Vector2 = s.facing if s.facing.length() > 0.01 else Vector2.RIGHT
-		var side := Vector2(-f.y, f.x)
-		var col := GameTheme.player_color(s.owner)
-		# Rumpf als kleines Boot (Bug in Fahrtrichtung).
-		var hull := PackedVector2Array([
-			p + f * 9.0,
-			p - f * 7.0 + side * 5.0,
-			p - f * 7.0 - side * 5.0,
-		])
-		draw_colored_polygon(hull, Color(0.30, 0.20, 0.12))
-		draw_polyline(hull + PackedVector2Array([hull[0]]), col, 1.5, true)
-		# Mast/Segel als heller Punkt.
-		draw_circle(p, 2.0, Color(0.95, 0.95, 0.98))
+		var tex := GameTheme.ship_texture()
+		if tex != null:
+			var sz := GameTheme.ship_draw_size()
+			_draw_oriented_texture(tex, p, f, sz)
+			draw_circle(p + Vector2(0.0, -sz.y * 0.34), 2.0, GameTheme.player_color(s.owner))
+			if not s.cargo.is_empty():
+				draw_rect(Rect2(p.x - 2.0, p.y - 2.0, 4.0, 4.0),
+					GameTheme.good_color(int(s.cargo[0].type)))
+			continue
+		_draw_ship_fallback(p, f, s.owner)
 		if not s.cargo.is_empty():
 			draw_rect(Rect2(p.x - 2.0, p.y - 2.0, 4.0, 4.0),
 				GameTheme.good_color(int(s.cargo[0].type)))
+
+
+func _draw_ship_fallback(p: Vector2, f: Vector2, owner: int) -> void:
+	var side := Vector2(-f.y, f.x)
+	var col := GameTheme.player_color(owner)
+	var hull := PackedVector2Array([
+		p + f * 9.0,
+		p - f * 7.0 + side * 5.0,
+		p - f * 7.0 - side * 5.0,
+	])
+	draw_colored_polygon(hull, Color(0.30, 0.20, 0.12))
+	draw_polyline(hull + PackedVector2Array([hull[0]]), col, 1.5, true)
+	draw_circle(p, 2.0, Color(0.95, 0.95, 0.98))
 
 
 func _draw_preview() -> void:

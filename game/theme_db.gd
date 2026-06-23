@@ -376,6 +376,42 @@ static func good_texture(good_id: int) -> Texture2D:
 	return _tex("res://assets/goods/%d.png" % good_id)
 
 
+# --- Wasserfahrzeuge ------------------------------------------------------
+## assets/ships/boat.png: kleines Boot/Faehre fuer Wasserstrassen.
+static func boat_texture() -> Texture2D:
+	return _tex("res://assets/ships/boat.png")
+
+
+static func boat_draw_size() -> Vector2:
+	var s = _design().get("boat_size", null)
+	if s != null:
+		return _to_vec(s)
+	return Vector2(24.0, 24.0)
+
+
+## assets/ships/ship.png: grosses See-Schiff; ship_stage1.png = Baugerippe.
+static func ship_texture() -> Texture2D:
+	return _tex("res://assets/ships/ship.png")
+
+
+static func ship_construction_stage1_texture() -> Texture2D:
+	return _tex("res://assets/ships/ship_stage1.png")
+
+
+static func ship_draw_size() -> Vector2:
+	var s = _design().get("ship_size", null)
+	if s != null:
+		return _to_vec(s)
+	return Vector2(46.0, 46.0)
+
+
+static func ship_build_offset() -> Vector2:
+	var s = _design().get("ship_build_offset", null)
+	if s != null:
+		return _to_vec(s)
+	return Vector2.ZERO
+
+
 # --- Einheiten-Animation --------------------------------------------------
 # Optionales Sprite-Sheet je Einheitstyp: assets/units/<kind>.png
 # Raster: ANIM_FRAMES Spalten (Lauf-Phasen) x 6 Zeilen (Weg-Richtungen:

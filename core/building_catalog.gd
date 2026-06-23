@@ -107,13 +107,13 @@ static func defs() -> Dictionary:
 			inputs = {}, output = -1, work = 0, resource = "",
 			needs_water = true, influence = 0, category = "lager",
 		},
-		# Werft (#46): baut aus Brettern Boote (für Wasserstraßen/Fähre). Wie der Fischer
-		# überall baubar, produziert aber nur mit Wasser in Reichweite (needs_water). In
-		# Phase 3 kommt der Schiffe-Modus (See-Einheiten) dazu.
+		# Werft (#46): baut aus Brettern Boote (für Wasserstraßen/Fähre) oder im
+		# Schiffe-Modus See-Schiffe. S2/10th-nah: Werft 2 Bretter + 3 Stein,
+		# Boot = 1 Brett, Schiff = 12 Boots-/Brettzyklen.
 		"shipyard": {
 			id = "shipyard", name = "Werft", size = M,
-			cost = { Goods.BOARDS: 3, Goods.STONE: 2 },
-			inputs = { Goods.BOARDS: 2 }, output = Goods.BOAT,
+			cost = { Goods.BOARDS: 2, Goods.STONE: 3 },
+			inputs = { Goods.BOARDS: 1 }, output = Goods.BOAT,
 			work = 180, resource = "", needs_water = true,
 			influence = 0, category = "wasser",
 		},
