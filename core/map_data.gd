@@ -29,6 +29,11 @@ var ore_kind: Dictionary = {}  # idx -> ORE_* (nur Deko-Objekte)
 # Analog zu den Erz-Lagerstätten eine versteckte Mengen-Schicht (kein Rendering).
 var fish_stock: Dictionary = {}  # idx -> verbleibende Fische (>0)
 
+# Feste Hafenpunkte (#46, S2-treu): vom Generator deterministisch markierte Küsten-
+# knoten, an denen (und nur dort) ein Hafen gebaut werden darf. Zugleich die Ziele für
+# Expeditionen. Knoten an einer großen Meeres-Komponente, mit Mindestabstand zueinander.
+var harbor_points: Dictionary = {}  # idx -> true
+
 # Unterirdische Erz-Lagerstätten (in S2 unsichtbar bis ein Geologe sie aufdeckt).
 # Eine Mine baut im Umkreis ab; jedes Vorkommen liefert `amount` Einheiten, dann
 # ist es erschöpft. `found` wird später vom Geologen/Debug gesetzt (#21).
@@ -316,6 +321,28 @@ func take_fish(x: int, y: int) -> bool:
 	else:
 		fish_stock[i] = amount
 	return true
+
+
+# --- Hafenpunkte (#46) ----------------------------------------------------
+
+func is_harbor_point(x: int, y: int) -> bool:
+	return harbor_points.has(idx(x, y))
+
+
+func set_harbor_point(x: int, y: int, on: bool) -> void:
+	if on:
+		harbor_points[idx(x, y)] = true
+	else:
+		harbor_points.erase(idx(x, y))
+
+
+## Alle Hafenpunkte als Knoten-Koordinaten (für Expeditions-Zielwahl/Rendering).
+func harbor_point_list() -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for i in harbor_points:
+		@warning_ignore("integer_division")
+		out.append(Vector2i(int(i) % width, int(i) / width))
+	return out
 
 
 ## Bildschirmposition eines Knotens inklusive seiner Höhe.

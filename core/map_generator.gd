@@ -57,6 +57,11 @@ const RIVER_BANK_RISE := 1.6       # Höhenanstieg pro Uferknoten (kleiner = san
 # Gewässer-Größe (#58): schmale Gewässer (Flüsse, kleine Teiche) sind kleiner als
 # SEA_MIN_SIZE Knoten und bekommen Wiesenufer statt Strand; größere = Meer/See.
 const SEA_MIN_SIZE := 48
+# Hafenpunkte (#46): baubare Küstenknoten an einer großen Meeres-Komponente. Mindest-
+# abstand verhindert Hafen-Cluster (S2 setzt Hafenpunkte ebenfalls verteilt). Max-Slope
+# stellt sicher, dass dort später wirklich ein (großes) Hafengebäude passt.
+const HARBOR_POINT_MIN_SEPARATION := 8
+const HARBOR_POINT_MAX_SLOPE := 2
 # Sand fleckenweise (#58, wie Sumpf): Strand nur gebrochen am Meer, plus seltene
 # Wüsten-Flecken im Trockenen. Rauschmaske statt durchgehendem Höhenband.
 const SAND_PATCH_FREQ := 0.05
@@ -183,6 +188,10 @@ static func generate(width: int, height: int, seed: int = 12345, options: Dictio
 	_seed_mountain_meadows(map, node_terrain, seed)
 	_paint_node_terrain(map, node_terrain)
 	_cleanup_terrain(map)
+	# Hafenpunkte (#46): NACH dem Malen/Aufräumen, damit die Baubarkeit an den final
+	# gemalten Dreiecken geprüft wird (das Knoten-Raster vor dem Malen weicht am Rand ab).
+	# water_region_size bleibt gültig — Wasserknoten ändern sich beim Malen nicht.
+	_mark_harbor_points(map, node_terrain, water_region_size)
 
 	_scatter_objects(map, seed, options)
 	seed_coastal_fish(map)
@@ -730,6 +739,49 @@ static func _node_neighbor_has_large_water(map: MapData, terrain: PackedByteArra
 		if int(terrain[ni]) == Terrain.WATER and region_size[ni] >= SEA_MIN_SIZE:
 			return true
 	return false
+
+
+## Markiert feste Hafenpunkte (#46): baubare Wiesenknoten mit geringer Hangneigung, die
+## an eine große Meeres-Komponente (>= SEA_MIN_SIZE) grenzen, mit Mindestabstand zueinander.
+## Deterministisch (feste Zeilen-Reihenfolge), also reproduzierbar aus dem Welt-Code.
+static func _mark_harbor_points(map: MapData, terrain: PackedByteArray,
+		water_region_size: PackedInt32Array) -> void:
+	var picked: Array[Vector2i] = []
+	for y in map.height:
+		for x in map.width:
+			# Baubare Küstenwiese auf der FINAL gemalten Karte (mind. ein Wiesen-Dreieck
+			# am Knoten, keine Wasser-/Sperr-Dreiecke), flach genug fürs Hafengebäude.
+			if not _node_buildable_meadow(map, x, y):
+				continue
+			if map.max_slope(x, y) > HARBOR_POINT_MAX_SLOPE:
+				continue
+			if not _node_neighbor_has_large_water(map, terrain, water_region_size, x, y):
+				continue
+			var p := Vector2i(x, y)
+			var ok := true
+			for q in picked:
+				if WorldState.hex_distance(p, q) < HARBOR_POINT_MIN_SEPARATION:
+					ok = false
+					break
+			if ok:
+				picked.append(p)
+				map.set_harbor_point(x, y, true)
+
+
+## Ufer-Knoten mit solider Landauflage (#46): mindestens ein Wiesen-Dreieck als Fundament,
+## mehrheitlich baubares Land, kein Sperr-Terrain (Schnee). Wasser-Dreiecke sind erlaubt und
+## erwünscht — der Hafen ist das Küsten-Sondergebäude (Sonder-Baubarkeit folgt in Phase 3).
+static func _node_buildable_meadow(map: MapData, x: int, y: int) -> bool:
+	var meadow := false
+	var land := 0
+	for t in map.terrains_around(x, y):
+		if t == Terrain.SNOW:
+			return false
+		if t == Terrain.MEADOW:
+			meadow = true
+		if Terrain.is_buildable(t):
+			land += 1
+	return meadow and land >= 3
 
 
 static func _node_neighbor_has_terrain(map: MapData, terrain: PackedByteArray,

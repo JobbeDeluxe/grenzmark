@@ -172,6 +172,7 @@ func _draw() -> void:
 	# Reihenfolge: Straßen zuerst (flach auf Boden), dann Objekte (Bäume davor), dann Gebäude.
 	_draw_roads()
 	_draw_entrance_paths()
+	_draw_harbor_points()
 	# Alle aufrechten Sprites (Bäume, Steine, Erz, Gebäude, Flaggen) in EINEM nach
 	# Fußpunkt (y) sortierten Durchgang zeichnen — so verdeckt korrekt immer das
 	# weiter vorne (größeres y) stehende Objekt das dahinterliegende. Vorher lagen
@@ -461,6 +462,30 @@ func _draw_ore_hint(p: Vector2, kind: int) -> void:
 		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
 	else:
 		_paint_ore(p, kind)
+
+
+## Hafenpunkte (#46): dezenter, flacher Boden-Marker (Anker-Ring) auf jedem festen
+## Hafenpunkt — zeigt dem Spieler, wo ein Hafen gebaut werden kann. Liegt flach, wird
+## von Gebäuden/Bäumen im y-Pass überzeichnet; der Fog-Overlay verdeckt Unerkundetes.
+func _draw_harbor_points() -> void:
+	var map := state.map
+	if map.harbor_points.is_empty():
+		return
+	var col := Color(0.95, 0.88, 0.35, 0.85)
+	for i in map.harbor_points:
+		var x := int(i) % map.width
+		@warning_ignore("integer_division")
+		var y := int(i) / map.width
+		var p := map.node_world(x, y)
+		if not _in_view(p):
+			continue
+		# Wenn dort schon ein Hafen steht, keinen Marker mehr (Gebäude zeigt es selbst).
+		if state._occ(x, y) != WorldState.OBJ_NONE:
+			continue
+		draw_arc(p, 7.0, 0.0, TAU, 20, col, 1.5)
+		draw_arc(p, 3.0, 0.0, TAU, 12, col, 1.5)
+		draw_line(p + Vector2(0, -6), p + Vector2(0, 6), col, 1.5)
+		draw_line(p + Vector2(-5, 4), p + Vector2(5, 4), col, 1.5)
 
 
 func _draw_ore_debug() -> void:

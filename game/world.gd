@@ -3301,6 +3301,7 @@ func _build_save_data() -> Dictionary:
 		ore_deposit_amount = map.ore_deposit_amount.duplicate(),
 		ore_deposit_found = map.ore_deposit_found.duplicate(),
 		fish_stock = map.fish_stock.duplicate(),
+		harbor_points = map.harbor_points.duplicate(),  # #46
 		tree_stage = map.tree_stage.duplicate(),
 		tree_type = map.tree_type.duplicate(),
 		stone_stage = map.stone_stage.duplicate(),
@@ -3410,6 +3411,9 @@ func _apply_save_data(data: Dictionary) -> void:
 	var saved_fish = data.get("fish_stock", {})
 	if saved_fish is Dictionary:
 		map.fish_stock = saved_fish
+	var saved_harbor = data.get("harbor_points", {})  # #46
+	if saved_harbor is Dictionary:
+		map.harbor_points = saved_harbor
 	var saved_tree_stage = data.get("tree_stage", {})
 	if saved_tree_stage is Dictionary:
 		map.tree_stage = saved_tree_stage

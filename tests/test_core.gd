@@ -17,6 +17,7 @@ func _initialize() -> void:
 	_test_seed_hash()
 	_test_world_code()
 	_test_map_types()
+	_test_harbor_points()
 	_test_worldgen_96()
 	_test_mountain_meadow_plateaus()
 	_test_mapgen_cleanup_and_stone_clusters()
@@ -252,6 +253,58 @@ func _test_map_types() -> void:
 	# Sumpf ist jetzt klein (vorher ~5-9 %) und nur in Ufernähe.
 	var swamp_pct := 100.0 * float(_count_terrain(flat, Terrain.SWAMP)) / float(n)
 	_check(swamp_pct < 4.0, "Sumpf: deutlich kleiner als früher (%.1f%%)" % swamp_pct)
+
+
+## Hafenpunkte (#46): Inselkarten haben feste Hafenpunkte, deterministisch je Seed,
+## an Küsten (Wassernachbar) und mit Mindestabstand zueinander.
+func _test_harbor_points() -> void:
+	var island := MapGenerator.generate(128, 128, 4242, { "map_type": "insel" })
+	var pts := island.harbor_point_list()
+	_check(pts.size() > 0, "Hafenpunkte: Inselkarte hat mindestens einen (%d)" % pts.size())
+
+	# Determinismus: gleicher Seed -> identische Hafenpunkt-Menge.
+	var island2 := MapGenerator.generate(128, 128, 4242, { "map_type": "insel" })
+	var same := island.harbor_points.size() == island2.harbor_points.size()
+	if same:
+		for i in island.harbor_points:
+			if not island2.harbor_points.has(i):
+				same = false
+				break
+	_check(same, "Hafenpunkte: deterministisch aus dem Seed (gleiche Menge)")
+
+	# Jeder Hafenpunkt ist baubare Wiese mit einem Wassernachbarn (Küste).
+	var all_coast := true
+	for p in pts:
+		var is_meadow := false
+		for t in island.terrains_around(p.x, p.y):
+			if t == Terrain.MEADOW:
+				is_meadow = true
+				break
+		var has_water_neighbor := false
+		for dir in Grid.DIRS:
+			var nb := island.neighbor(p.x, p.y, dir)
+			if nb.x >= 0:
+				for t in island.terrains_around(nb.x, nb.y):
+					if Terrain.is_water(t):
+						has_water_neighbor = true
+						break
+			if has_water_neighbor:
+				break
+		if not (is_meadow and has_water_neighbor):
+			all_coast = false
+			break
+	_check(all_coast, "Hafenpunkte: liegen auf baubarer Küste (Wiese + Wassernachbar)")
+
+	# Mindestabstand zueinander eingehalten.
+	var min_sep_ok := true
+	for a in range(pts.size()):
+		for b in range(a + 1, pts.size()):
+			if WorldState.hex_distance(pts[a], pts[b]) < MapGenerator.HARBOR_POINT_MIN_SEPARATION:
+				min_sep_ok = false
+				break
+		if not min_sep_ok:
+			break
+	_check(min_sep_ok, "Hafenpunkte: Mindestabstand zueinander eingehalten")
 
 
 func _count_terrain(map: MapData, kind: int) -> int:
