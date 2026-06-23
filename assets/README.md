@@ -26,7 +26,7 @@ Typ Ordner, Dateiname und empfohlene Größe.
 | `assets/buildings/` | `<def_id>.png` | Gebäude-Sprite = **fertiger Bau / Baustufe 2** (Boden = untere Kante) | ~64×64 |
 | `assets/objects/`   | `tree_<typ>.png`, `tree_<typ>_seed.png`, `tree_<typ>_small.png`, `field_seed.png`, `field_young.png`, `field_growing.png`, `field_ripe.png`, `field_cut.png`, `field_withered.png`, `stone.png`, `stone_stage2.png`, `stone_stage3.png`, `ore.png` | Karten-Objekte, Baumtypen, Kornfeld- & Stein-Stufen | frei; Bäume werden per Zielhöhe skaliert |
 | `assets/goods/`     | `<nummer>.png` | Waren-Symbol | ~16×16 |
-| `assets/ships/`     | `boat.png`, `ship_stage1.png`, `ship.png` | Wasserstraßen-Boot, Schiffbau-Gerippe, fertiges See-Schiff | ~128×128 / ~224×224 |
+| `assets/ships/`     | `boat.png`, optional `boat_<spieler>.png`, `ship_stage1.png`, `ship.png`, optional `ship_<spieler>.png` | Wasserstraßen-Boot, Schiffbau-Gerippe, fertiges See-Schiff | ~128×128 / ~224×224 |
 | `assets/units/`     | `carrier.png`, `worker.png`, `soldier.png`, `builder.png` (+ `_<spieler>` Varianten) | Lauf-Sprite-Sheet (4×6) | Zelle ~32×32 |
 | `assets/ui/`        | `main_menu_background.png`, `flag_<spieler>.png`, `build_spots/*.png` | Hauptmenü, Spielflaggen & Bauhilfe-Symbole | 16:9 / ~64×64 |
 | `assets/`           | `ui.json` | UI-Skin/Layouts: Farben, Randabstände, Panel-/Buttongrößen | Text/JSON |
@@ -79,6 +79,7 @@ ist eindeutig. Schema: an den Basisnamen `_<spielernummer>` anhängen
 | **Flagge** | `assets/ui/flag.png` | `assets/ui/flag_0.png`, `flag_1.png`, … |
 | **Gebäude** | `assets/buildings/<def_id>.png` | `assets/buildings/<def_id>_1.png`, … |
 | **Einheiten** | `assets/units/<kind>.png` | `assets/units/<kind>_1.png`, … |
+| **Schiffe** | `assets/ships/boat.png`, `ship.png` | `assets/ships/boat_1.png`, `ship_1.png`, … |
 
 - Liegt **keine** `_<nummer>`-Variante vor, gilt die gemeinsame Datei für alle.
   So musst du z. B. Wirtschaftsgebäude nur einmal zeichnen, aber Militärgebäude
@@ -88,7 +89,8 @@ ist eindeutig. Schema: an den Basisnamen `_<spielernummer>` anhängen
   Für Gebäude sind aktuell die roten Gegnervarianten `assets/buildings/*_1.png`
   dort erzeugt, wo die Basisgrafik blaue Spielerflächen enthält. Weitere
   Gebäudefarben (`_2`–`_5`) werden erst festgelegt, wenn das Multiplayer-Farbschema
-  entschieden ist.
+  entschieden ist. Für Schiffe sind aktuell `assets/ships/boat_1.png` und
+  `assets/ships/ship_1.png` als rote Gegnervarianten vorhanden.
 - Flaggengröße in `assets/design.json` über `"flag_size": [breite, höhe]`
   (Pfahl-Fuß sitzt auf dem Knoten, Bild geht nach oben). Fehlt ein PNG, zeichnet
   das Spiel eine einfache Platzhalter-Flagge in der Spieler-Standardfarbe

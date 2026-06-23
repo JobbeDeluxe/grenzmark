@@ -811,7 +811,7 @@ func _draw_roads() -> void:
 				var wa := state.map.node_world(nodes[k].x, nodes[k].y)
 				var wb := state.map.node_world(nodes[k + 1].x, nodes[k + 1].y)
 				draw_line(wa, wb, Color(0.55, 0.78, 0.95, 0.85), ROAD_W * 0.8, true)
-			var boat := GameTheme.boat_texture()
+			var boat := GameTheme.boat_texture(r.owner)
 			if boat != null:
 				var mid := int((nodes.size() - 2) / 2)
 				var ba := state.map.node_world(nodes[mid].x, nodes[mid].y)

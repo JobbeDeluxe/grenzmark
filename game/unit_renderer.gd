@@ -559,7 +559,7 @@ func _draw_shipyard_progress() -> void:
 			p = dock_p + GameTheme.ship_build_offset()
 			facing = dock_p - base_p
 		var stage1 := GameTheme.ship_construction_stage1_texture()
-		var fin := GameTheme.ship_texture()
+		var fin := GameTheme.ship_texture(bs.bld.owner)
 		var sz := GameTheme.ship_draw_size()
 		if stage1 == null and fin == null:
 			_draw_ship_fallback(p, facing, bs.bld.owner)
@@ -610,7 +610,7 @@ func _draw_ships() -> void:
 	for s in economy.ships:
 		var p: Vector2 = s.pos
 		var f: Vector2 = s.facing if s.facing.length() > 0.01 else Vector2.RIGHT
-		var tex := GameTheme.ship_texture()
+		var tex := GameTheme.ship_texture(s.owner)
 		if tex != null:
 			var sz := GameTheme.ship_draw_size()
 			_draw_oriented_texture(tex, p, f, sz)

@@ -378,7 +378,12 @@ static func good_texture(good_id: int) -> Texture2D:
 
 # --- Wasserfahrzeuge ------------------------------------------------------
 ## assets/ships/boat.png: kleines Boot/Faehre fuer Wasserstrassen.
-static func boat_texture() -> Texture2D:
+## Pro Spieler eigenes PNG moeglich: boat_<owner>.png (z. B. boat_1.png).
+static func boat_texture(owner := 0) -> Texture2D:
+	if owner != 0:
+		var t := _tex("res://assets/ships/boat_%d.png" % owner)
+		if t != null:
+			return t
 	return _tex("res://assets/ships/boat.png")
 
 
@@ -390,7 +395,12 @@ static func boat_draw_size() -> Vector2:
 
 
 ## assets/ships/ship.png: grosses See-Schiff; ship_stage1.png = Baugerippe.
-static func ship_texture() -> Texture2D:
+## Pro Spieler eigenes PNG moeglich: ship_<owner>.png (z. B. ship_1.png).
+static func ship_texture(owner := 0) -> Texture2D:
+	if owner != 0:
+		var t := _tex("res://assets/ships/ship_%d.png" % owner)
+		if t != null:
+			return t
 	return _tex("res://assets/ships/ship.png")
 
 
