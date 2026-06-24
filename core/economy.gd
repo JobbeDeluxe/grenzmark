@@ -41,7 +41,7 @@ const PROMO_TICKS := 200       # Münze → Beförderung (echte Rangstufe, #52)
 const SOLDIER_RANKS := 5
 const RANK_MAX := 4
 const RANK_HP: Array[int] = [3, 4, 5, 6, 7]
-const RANK_NAMES: Array[String] = ["Gefreiter", "Obergefreiter", "Feldwebel", "Offizier", "General"]
+const RANK_NAMES: Array[String] = ["Gefreiter", "Unteroffizier", "Leutnant", "Major", "Brigadegeneral"]
 # RTTR MILITARY_SETTINGS_SCALE (Nenner je Regler, #52): Verteidiger/Angriff 0..5,
 # Besatzung nach Grenznähe 0..8. (Rekrutierung 0..10 = recruiting_ratio, #41.)
 const MIL_SCALE_DEFENSE := 5
@@ -881,7 +881,7 @@ func _damage_defender(b: WorldState.Building) -> void:
 		b.garrison -= 1
 
 
-## Kompakte Rang-Aufschlüsselung einer Garnison für UI/Tooltip, z. B. "1×General, 2×Gefreiter".
+## Kompakte Rang-Aufschlüsselung einer Garnison für UI/Tooltip, z. B. "1×Major, 2×Gefreiter".
 func garrison_rank_text(b: WorldState.Building) -> String:
 	var rn := b.ranks_normalized()
 	var parts: Array[String] = []

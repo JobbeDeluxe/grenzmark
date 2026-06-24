@@ -1241,20 +1241,20 @@ func _test_soldier_ranks() -> void:
 	var b := WorldState.Building.new()
 	b.garrison = 2; b.ranks = [2, 0, 0, 0, 0]
 	_check(eco._promote_one(b), "#52: Beförderung möglich")
-	_check(b.ranks[0] == 1 and b.ranks[1] == 1, "#52: ein Gefreiter wird Obergefreiter")
+	_check(b.ranks[0] == 1 and b.ranks[1] == 1, "#52: ein Gefreiter wird Unteroffizier")
 
-	# General (Rang 4) ist nicht weiter beförderbar.
+	# Brigadegeneral (Rang 4) ist nicht weiter beförderbar.
 	var g := WorldState.Building.new()
 	g.garrison = 1; g.ranks = [0, 0, 0, 0, 1]
-	_check(not eco._promote_one(g), "#52: General nicht weiter beförderbar")
+	_check(not eco._promote_one(g), "#52: Brigadegeneral nicht weiter beförderbar")
 
-	# Kampf: ein Obergefreiter (Rang 1) hält 2 Treffer aus.
+	# Kampf: ein Unteroffizier (Rang 1) hält 2 Treffer aus.
 	var d := WorldState.Building.new()
 	d.garrison = 1; d.ranks = [0, 1, 0, 0, 0]
 	eco._damage_defender(d)
-	_check(d.garrison == 1, "#52: Obergefreiter überlebt den 1. Treffer")
+	_check(d.garrison == 1, "#52: Unteroffizier überlebt den 1. Treffer")
 	eco._damage_defender(d)
-	_check(d.garrison == 0, "#52: Obergefreiter fällt beim 2. Treffer")
+	_check(d.garrison == 0, "#52: Unteroffizier fällt beim 2. Treffer")
 
 	# Reconcile: direkt gesetzte Garnison ohne Rang-Daten zählt als Gefreite.
 	var c := WorldState.Building.new()
