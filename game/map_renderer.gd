@@ -14,7 +14,9 @@ const ENTRANCE_ROAD_W := 7.0
 const ROAD_TILE := 48.0    # Kachellänge der Straßentextur entlang des Wegs
 
 var state: WorldState
+var economy                      # Economy — gesetzt von World (für Schiffe im y-Pass, #46)
 var _font: Font = ThemeDB.fallback_font
+var _anim_time := 0.0           # Animationszeit für Schiffs-Sprite-Frames
 var show_ore_debug := false     # Dev/Test: unterirdische Erzvorkommen anzeigen
 # Terrain-Chunks (#30): Statt EINES CanvasItems über die ganze Karte (auf 256x128 =
 # ~65k Polygone, die jedes Frame an die GPU gehen) wird das statische Terrain in ein
@@ -102,7 +104,8 @@ func refresh_terrain(node_rect := Rect2i()) -> void:
 				_terrain_chunks[k].queue_redraw()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_anim_time += delta
 	# Viewport-Culling (#30): Bei Kamerabewegung/Zoom neu zeichnen, damit der gezeichnete
 	# (und damit pro Frame an die GPU gehende) Inhalt nur den sichtbaren Ausschnitt umfasst.
 	# Im Stillstand wird NICHT neu gezeichnet → die GPU rastert nur die sichtbaren Primitive.
@@ -172,6 +175,11 @@ func _draw() -> void:
 	# Reihenfolge: Straßen zuerst (flach auf Boden), dann Objekte (Bäume davor), dann Gebäude.
 	_draw_roads()
 	_draw_entrance_paths()
+	# See-Schiffe (#46) liegen auf dem Wasser und gehören HINTER die Ufer-Gebäude (anders
+	# als Träger/Soldaten, die im unit_renderer über allem laufen). Darum hier — nach dem
+	# Terrain, aber VOR den aufrechten Sprites, sodass Küstengebäude sie verdecken. Der
+	# Hafen steht im Wasser; ein Schiff an ihm wirkt dadurch korrekt „dahinter/daneben".
+	_draw_ships()
 	# Alle aufrechten Sprites (Bäume, Steine, Erz, Gebäude, Flaggen) in EINEM nach
 	# Fußpunkt (y) sortierten Durchgang zeichnen — so verdeckt korrekt immer das
 	# weiter vorne (größeres y) stehende Objekt das dahinterliegende. Vorher lagen
@@ -992,3 +1000,82 @@ func _paint_own_flag(p: Vector2, f: WorldState.Flag) -> void:
 		draw_texture_rect(tex, Rect2(p.x - sz.x * 0.5, p.y - sz.y, sz.x, sz.y), false)
 	else:
 		_paint_flag(p + Vector2(0, -16), GameTheme.flag_color(f.owner))
+
+
+# --- See-Schiffe (#46) -----------------------------------------------------
+# Hierher aus dem unit_renderer verlagert, damit Schiffe HINTER Ufer-Gebäuden liegen
+# (gleicher CanvasItem wie das Terrain/die Gebäude, gezeichnet vor den Gebäuden).
+
+func _draw_ships() -> void:
+	if economy == null:
+		return
+	for s in economy.ships:
+		var p: Vector2 = s.pos
+		if not _in_view(p):
+			continue
+		var f: Vector2 = s.facing if s.facing.length() > 0.01 else Vector2.RIGHT
+		var owner: int = s.owner
+		var sz := GameTheme.ship_draw_size()
+		var sheet := GameTheme.ship_sheet_texture(owner)
+		if sheet != null:
+			var frame := int(_anim_time * 5.0) % GameTheme.ANIM_FRAMES
+			var region := _ship_sheet_region(sheet, f, frame)
+			draw_texture_rect_region(sheet,
+				Rect2(p.x - sz.x * 0.5, p.y - sz.y * 0.5, sz.x, sz.y), region)
+		else:
+			var tex := GameTheme.ship_texture(owner)
+			if tex != null:
+				draw_set_transform(p, f.angle(), Vector2.ONE)
+				draw_texture_rect(tex, Rect2(-sz.x * 0.5, -sz.y * 0.5, sz.x, sz.y), false)
+				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			else:
+				_draw_ship_fallback(p, f, owner)
+		draw_circle(p + Vector2(0.0, -sz.y * 0.34), 2.0, GameTheme.player_color(owner))
+		if not s.cargo.is_empty():
+			draw_rect(Rect2(p.x - 2.0, p.y - 2.0, 4.0, 4.0),
+				GameTheme.good_color(int(s.cargo[0].type)))
+
+
+func _ship_sheet_region(tex: Texture2D, facing: Vector2, frame: int) -> Rect2:
+	var cols := GameTheme.ANIM_FRAMES
+	var rows := GameTheme.ANIM_DIRS
+	var cw := float(tex.get_width()) / cols
+	var ch := float(tex.get_height()) / rows
+	var diri := _ship_dir6(facing)
+	var fr := clampi(frame, 0, cols - 1)
+	return Rect2(fr * cw, diri * ch, cw, ch)
+
+
+func _ship_dir6(v: Vector2) -> int:
+	if v.length() <= 0.01:
+		return 2
+	var dirs := [
+		Vector2(1.0, -1.0).normalized(), # NE
+		Vector2(1.0, 0.0),               # E
+		Vector2(1.0, 1.0).normalized(),  # SE
+		Vector2(-1.0, 1.0).normalized(), # SW
+		Vector2(-1.0, 0.0),              # W
+		Vector2(-1.0, -1.0).normalized() # NW
+	]
+	var n := v.normalized()
+	var best := 0
+	var best_dot := -999999.0
+	for i in range(dirs.size()):
+		var dot := n.dot(dirs[i])
+		if dot > best_dot:
+			best_dot = dot
+			best = i
+	return best
+
+
+func _draw_ship_fallback(p: Vector2, f: Vector2, owner: int) -> void:
+	var side := Vector2(-f.y, f.x)
+	var col := GameTheme.player_color(owner)
+	var hull := PackedVector2Array([
+		p + f * 9.0,
+		p - f * 7.0 + side * 5.0,
+		p - f * 7.0 - side * 5.0,
+	])
+	draw_colored_polygon(hull, Color(0.30, 0.20, 0.12))
+	draw_polyline(hull + PackedVector2Array([hull[0]]), col, 1.5, true)
+	draw_circle(p, 2.0, Color(0.95, 0.95, 0.98))

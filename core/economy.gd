@@ -3064,6 +3064,11 @@ func _tick_stray(s: Stray) -> bool:
 ## Erzeugt ein Schiff an einem befahrbaren Wasserknoten (Werft im Schiffe-Modus / Test).
 ## Es sucht sich beim nächsten Fähren-Takt selbst einen Heimathafen.
 func _spawn_ship(node: Vector2i, owner: int) -> Ship:
+	# Stapel-Schutz: kein zweites Schiff auf denselben Knoten setzen.
+	if _ship_on_node(node, null):
+		var alt := _free_navigable_near(node, null)
+		if alt.x >= 0:
+			node = alt
 	var s := Ship.new()
 	s.owner = owner
 	s.node = node
@@ -3073,6 +3078,30 @@ func _spawn_ship(node: Vector2i, owner: int) -> Ship:
 	ships.append(s)
 	dirty = true
 	return s
+
+
+## Steht ein (anderes) Schiff auf [node]? Grundlage des Stapel-Schutzes (#): nie zwei
+## Schiffe auf demselben Wasserknoten.
+func _ship_on_node(node: Vector2i, except_s: Ship) -> bool:
+	for o in ships:
+		if o == except_s:
+			continue
+		if o.node == node:
+			return true
+	return false
+
+
+## Nächster befahrbarer, von keinem Schiff besetzter Wasserknoten um [node] (Ringe 1..2).
+func _free_navigable_near(node: Vector2i, except_s: Ship) -> Vector2i:
+	for r in range(1, 3):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var p := node + Vector2i(dx, dy)
+				if state.hex_distance(node, p) != r:
+					continue
+				if state.node_navigable(p.x, p.y) and not _ship_on_node(p, except_s):
+					return p
+	return Vector2i(-1, -1)
 
 
 ## Alle fertigen Hafenlager (Storage mit Gebäude-def "harbor").
@@ -3105,6 +3134,14 @@ func _tick_ships() -> void:
 	for s in ships:
 		if s.state == SHIP_SAILING:
 			_advance_ship(s)
+		elif _ship_on_node(s.node, s):
+			# Stapel-Schutz (#): zwei leerlaufende Schiffe auf demselben Knoten (z. B. am
+			# selben Hafen-Dock) — eines auf einen freien Nachbarknoten verholen.
+			var alt := _free_navigable_near(s.node, s)
+			if alt.x >= 0:
+				s.node = alt
+				s.pos = state.map.node_world(alt.x, alt.y)
+				dirty = true
 		# Schiff-Sicht (#46/#21): deckt den Nebel entlang der Route auf (nur Spieler).
 		if s.owner == 0 and s.node.x >= 0:
 			state.reveal_around(s.node.x, s.node.y, SHIP_VISION)
@@ -3201,6 +3238,11 @@ func _advance_ship(s: Ship) -> void:
 		_ship_arrived(s)
 		return
 	var tnode := s.path[s.path_i]
+	# Stapel-Schutz (#): nicht in einen bereits von einem anderen Schiff besetzten Knoten
+	# fahren — diesen Takt warten. Der Blockierer fährt selbst weiter oder wird (falls
+	# leerlaufend) in _tick_ships entzerrt, sodass kein Dauerstau entsteht.
+	if tnode != s.node and _ship_on_node(tnode, s):
+		return
 	var tw := state.map.node_world(tnode.x, tnode.y)
 	var d := tw - s.pos
 	var dist := d.length()

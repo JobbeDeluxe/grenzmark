@@ -224,6 +224,7 @@ func _wire_world() -> void:
 		c.queue_free()
 	renderer = MapRenderer.new()
 	renderer.setup(state)
+	renderer.economy = economy   # #46: Schiffe im y-Pass des map_renderer (hinter Ufergebäuden)
 	add_child(renderer)
 
 	unit_renderer = UnitRenderer.new()

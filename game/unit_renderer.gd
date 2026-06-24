@@ -147,7 +147,7 @@ func _draw() -> void:
 	_draw_workers()
 	_draw_marchers()
 	_draw_strays()
-	_draw_ships()
+	# See-Schiffe zeichnet jetzt der map_renderer (im y-Pass HINTER den Ufer-Gebäuden, #46).
 	# Tür-Träger zuletzt → IMMER im Vordergrund (läuft technisch vor dem Gebäude).
 	_draw_house_carrier()
 	_draw_build_preview()
@@ -623,8 +623,10 @@ func _draw_shipyard_progress() -> void:
 		var p := base_p + GameTheme.ship_build_offset()
 		var facing := Vector2.RIGHT
 		if dock.x >= 0:
+			# Schiff wird AUF LAND an der Wasserkante gebaut (Helling), nicht im Wasser:
+			# Bauplatz liegt nah am Werft-Knoten Richtung Dock, aber landseitig (Anteil < 0.5).
 			var dock_p := state.map.node_world(dock.x, dock.y)
-			p = dock_p + GameTheme.ship_build_offset()
+			p = base_p.lerp(dock_p, 0.35) + GameTheme.ship_build_offset()
 			facing = dock_p - base_p
 		var stage1_sheet := GameTheme.ship_construction_stage1_sheet_texture()
 		var fin_sheet := GameTheme.ship_sheet_texture(bs.bld.owner)
@@ -680,35 +682,6 @@ func _draw_oriented_grow_texture(tex: Texture2D, p: Vector2, facing: Vector2, sz
 	draw_set_transform(p, angle, Vector2.ONE)
 	draw_texture_rect_region(tex, Rect2(-sz.x * 0.5, sz.y * 0.5 - vis, sz.x, vis), region)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-
-
-## See-Schiffe (#46): Sprite auf dem Wasser, mit kleinem Frachtmarker, wenn beladen.
-func _draw_ships() -> void:
-	for s in economy.ships:
-		var p: Vector2 = s.pos
-		var f: Vector2 = s.facing if s.facing.length() > 0.01 else Vector2.RIGHT
-		var sheet := GameTheme.ship_sheet_texture(s.owner)
-		if sheet != null:
-			var sz := GameTheme.ship_draw_size()
-			_draw_vehicle_sheet(sheet, p, f, sz)
-			draw_circle(p + Vector2(0.0, -sz.y * 0.34), 2.0, GameTheme.player_color(s.owner))
-			if not s.cargo.is_empty():
-				draw_rect(Rect2(p.x - 2.0, p.y - 2.0, 4.0, 4.0),
-					GameTheme.good_color(int(s.cargo[0].type)))
-			continue
-		var tex := GameTheme.ship_texture(s.owner)
-		if tex != null:
-			var sz := GameTheme.ship_draw_size()
-			_draw_oriented_texture(tex, p, f, sz)
-			draw_circle(p + Vector2(0.0, -sz.y * 0.34), 2.0, GameTheme.player_color(s.owner))
-			if not s.cargo.is_empty():
-				draw_rect(Rect2(p.x - 2.0, p.y - 2.0, 4.0, 4.0),
-					GameTheme.good_color(int(s.cargo[0].type)))
-			continue
-		_draw_ship_fallback(p, f, s.owner)
-		if not s.cargo.is_empty():
-			draw_rect(Rect2(p.x - 2.0, p.y - 2.0, 4.0, 4.0),
-				GameTheme.good_color(int(s.cargo[0].type)))
 
 
 func _draw_ship_fallback(p: Vector2, f: Vector2, owner: int) -> void:
