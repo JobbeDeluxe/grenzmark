@@ -227,6 +227,7 @@ func _build_settings_panel(box: Container) -> void:
 	_checkbox(_dev_section, "Startterritorium = ganze Karte", "dev_full_territory", false)
 	_checkbox(_dev_section, "Erze sichtbar", "dev_show_ore", false)
 	_checkbox(_dev_section, "Alles aufgedeckt", "dev_reveal_all", false)
+	_checkbox(_dev_section, "Ressourcen manipulierbar", "dev_resources_editable", false)
 
 	var editor_btn := _button(inner, "Design-Editor", _on_editor)
 	editor_btn.custom_minimum_size = Vector2(160, 34) * UISkin.ui_scale()
