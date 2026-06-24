@@ -934,13 +934,22 @@ func _paint_tower(p: Vector2, b: WorldState.Building) -> void:
 		draw_rect(Rect2(p.x - w * 0.5 + k * bw, p.y - h - 4, bw - 1.5, 4), C_STONE.darkened(0.1))
 	draw_rect(Rect2(p.x - 3, p.y - 10, 6, 10), C_DOOR)
 	_paint_flag(p + Vector2(w * 0.5 - 2, -h - 4), Color(0.75, 0.20, 0.20))
-	# Garnison: gefüllte Punkte = Soldaten, leere = freie Plätze
+	# Garnison: gefüllte Punkte = Soldaten (heller = höherer Rang), leere = freie Plätze
+	var rn := b.ranks_normalized()
+	var slot_ranks: Array[int] = []
+	for r in range(4, -1, -1):
+		for _k in rn[r]:
+			slot_ranks.append(r)
 	for k in b.capacity:
-		var c := Color(0.30, 0.45, 0.85) if k < b.garrison else Color(0.3, 0.3, 0.3)
-		draw_circle(p + Vector2(-w * 0.5 + 3 + k * 5.0, 4), 2.0, c)
-	# Beförderungen (Münzen) = goldene Punkte darüber
-	for k in b.promotions:
-		draw_circle(p + Vector2(-w * 0.5 + 3 + k * 4.0, -1), 1.5, Color(0.95, 0.82, 0.3))
+		var dot := p + Vector2(-w * 0.5 + 3 + k * 5.0, 4)
+		if k < slot_ranks.size():
+			var rr: int = slot_ranks[k]
+			draw_circle(dot, 2.0, Color(0.30, 0.45, 0.85).lightened(rr * 0.16))
+			# kleine goldene Rang-Ticks über dem Punkt (Rang 0 = keiner)
+			for t in rr:
+				draw_circle(dot + Vector2(t * 1.6 - rr * 0.8, -3.2), 0.8, Color(0.95, 0.82, 0.3))
+		else:
+			draw_circle(dot, 2.0, Color(0.3, 0.3, 0.3))
 
 
 func _paint_hq(p: Vector2) -> void:

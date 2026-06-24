@@ -108,6 +108,7 @@ class Carrier:
 class Marcher:
 	extends RefCounted
 	var route: Array[Vector2i] = []   # Flaggenfolge HQ → Zielgebäude
+	var rank := 0                     # Rang des marschierenden Soldaten (#52)
 	var leg := 0                      # aktuelle Etappe (Straße route[leg]→route[leg+1])
 	var pos := 0.0                    # Position entlang der aktuellen Straße
 	var nodes: Array[Vector2i] = []   # Knotenpolylinie der aktuellen Etappe
@@ -298,7 +299,8 @@ var hq_outbox: Array:
 var hq_house: HouseCarrier:
 	get: return storages[0].house
 	set(value): storages[0].house = value
-var soldiers := 0                    # ausgebildete Soldaten im HQ (Reserve)
+var soldiers := 0                    # ausgebildete Soldaten im HQ (Reserve, = Summe soldier_ranks)
+var soldier_ranks: Array[int] = [0, 0, 0, 0, 0]  # Reserve je Rang (#52); Rekruten = Gefreiter (0)
 # --- Spieler-Einstellungen (RTTR-Regler, nur Spieler 0; deterministisch) ---
 var tool_priority: Dictionary = {}   # Werkzeug-Gut -> Gewicht 0..10 (Werkzeugmacher)
 var tool_orders: Dictionary = {}     # Werkzeug-Gut -> noch offene Bestellmenge (Vorrang)
@@ -585,13 +587,16 @@ func resync() -> void:
 			var bs_gone: BState = bstates[i]
 			if bs_gone.has_person:
 				_return_person(bs_gone.person_job, bs_gone.bld.owner)  # Arbeiter kehrt zurück (#9)
-			# Garnison eines abgerissenen eigenen Militärgebäudes kehrt in die HQ-Reserve
-			# zurück (#69). Münz-Beförderungen (promotions) sind verbrauchtes Gold und
-			# verfallen mit dem Gebäude (S2-getreu). Nur echter Abriss (gone), nicht
-			# Eroberung (Besitzerwechsel bleibt in state.buildings).
+			# Garnison eines abgerissenen eigenen Militärgebäudes kehrt rangerhaltend in die
+			# HQ-Reserve zurück (#69/#52). Nur echter Abriss (gone), nicht Eroberung
+			# (Besitzerwechsel bleibt in state.buildings).
 			if gone and bs_gone.bld != null and bs_gone.bld.owner == 0 and bs_gone.bld.garrison > 0:
+				var rn := bs_gone.bld.ranks_normalized()
+				for r in range(SOLDIER_RANKS):
+					soldier_ranks[r] += rn[r]
 				soldiers += bs_gone.bld.garrison
 				bs_gone.bld.garrison = 0
+				bs_gone.bld.ranks = [0, 0, 0, 0, 0]
 			_release_target(bs_gone)  # reservierten Arbeitsplatz freigeben (#66)
 			bstates.erase(i)
 
@@ -605,8 +610,12 @@ func resync() -> void:
 			# Garnison eines abgerissenen eigenen Hafens (#46 militärisches Lager) kehrt
 			# in die HQ-Reserve zurück (#69), analog zu Militärgebäuden mit bstate.
 			if st_gone and st.bld != null and st.bld.owner == 0 and st.bld.garrison > 0:
+				var hr := st.bld.ranks_normalized()
+				for r in range(SOLDIER_RANKS):
+					soldier_ranks[r] += hr[r]
 				soldiers += st.bld.garrison
 				st.bld.garrison = 0
+				st.bld.ranks = [0, 0, 0, 0, 0]
 			for g in st.stock:
 				storages[0].stock[g] = int(storages[0].stock.get(g, 0)) + int(st.stock[g])
 			for good in st.outbox:
@@ -635,6 +644,7 @@ func _init_hq_stock() -> void:
 	hq_stock = Tuning.hq_start_goods()
 	hq_people = Tuning.hq_start_people()
 	soldiers = Tuning.hq_start_soldiers()  # Anfangsbesatzung, hält Militärgebäude sofort
+	soldier_ranks = [soldiers, 0, 0, 0, 0]  # Startsoldaten sind Gefreite (#52)
 	_helper_timer = Tuning.helper_produce_ticks()  # erster Träger-Nachschub nach einem Takt
 
 
@@ -773,6 +783,126 @@ func _capacity_for(size: int) -> int:
 		WorldState.BQ_CASTLE: return 6
 		WorldState.BQ_HOUSE: return 4
 	return 2
+
+
+# --------------------------------------------------------------------------
+#  Soldaten-Ränge (#52/#28) — Reserve und Garnison rangweise verwalten
+# --------------------------------------------------------------------------
+
+## Reserve-Rangverteilung an [soldiers] angleichen (Fehlbestand = Gefreite, Überhang von
+## oben kappen). Nötig, weil soldiers an einigen Stellen direkt verändert wird.
+func _reserve_normalize() -> void:
+	var s := 0
+	for r in soldier_ranks:
+		s += r
+	if s < soldiers:
+		soldier_ranks[0] += soldiers - s
+	elif s > soldiers:
+		var over := s - soldiers
+		var r := RANK_MAX
+		while over > 0 and r >= 0:
+			var take: int = mini(over, soldier_ranks[r])
+			soldier_ranks[r] -= take
+			over -= take
+			r -= 1
+
+
+## Einen Soldaten des Rangs [rank] in die HQ-Reserve legen.
+func _reserve_add(rank: int) -> void:
+	soldier_ranks[clampi(rank, 0, RANK_MAX)] += 1
+	soldiers += 1
+
+
+## Schwächsten Soldaten aus der Reserve nehmen (Gefreite zuerst); Rang zurückgeben oder -1.
+func _reserve_take_weakest() -> int:
+	if soldiers <= 0:
+		return -1
+	_reserve_normalize()
+	for r in range(SOLDIER_RANKS):
+		if soldier_ranks[r] > 0:
+			soldier_ranks[r] -= 1
+			soldiers -= 1
+			return r
+	return -1
+
+
+## Einen Soldaten des Rangs [rank] in die Garnison von [b] aufnehmen.
+func _garrison_add(b: WorldState.Building, rank: int) -> void:
+	b.ranks = b.ranks_normalized()
+	b.ranks[clampi(rank, 0, RANK_MAX)] += 1
+	b.garrison += 1
+
+
+## Schwächsten Garnisonssoldaten aus [b] entfernen und seinen Rang zurückgeben (oder -1).
+func _garrison_take_weakest(b: WorldState.Building) -> int:
+	if b.garrison <= 0:
+		return -1
+	b.ranks = b.ranks_normalized()
+	for r in range(SOLDIER_RANKS):
+		if b.ranks[r] > 0:
+			b.ranks[r] -= 1
+			b.garrison -= 1
+			b.def_hp = 0  # Frontverteidiger neu wählen
+			return r
+	return -1
+
+
+## Stärksten Garnisonssoldaten aus [b] entfernen und seinen Rang zurückgeben (oder -1).
+func _garrison_take_strongest(b: WorldState.Building) -> int:
+	if b.garrison <= 0:
+		return -1
+	b.ranks = b.ranks_normalized()
+	for r in range(RANK_MAX, -1, -1):
+		if b.ranks[r] > 0:
+			b.ranks[r] -= 1
+			b.garrison -= 1
+			b.def_hp = 0
+			return r
+	return -1
+
+
+## Ein Angreifer-Treffer auf [b]: der stärkste Verteidiger hält Rang+1 Treffer aus (echte
+## Ränge ersetzen die alte Münz-„Rüstung", #52). Fällt er, sinkt die Garnison um eins.
+func _damage_defender(b: WorldState.Building) -> void:
+	if b.garrison <= 0:
+		return
+	b.ranks = b.ranks_normalized()
+	if b.def_hp <= 0:
+		var r := RANK_MAX
+		while r >= 0 and b.ranks[r] <= 0:
+			r -= 1
+		if r < 0:
+			return
+		b.def_rank = r
+		b.def_hp = r + 1   # Gefreiter 1 Treffer … General 5 Treffer
+	b.def_hp -= 1
+	if b.def_hp <= 0:
+		b.ranks[b.def_rank] -= 1
+		b.garrison -= 1
+
+
+## Kompakte Rang-Aufschlüsselung einer Garnison für UI/Tooltip, z. B. "1×General, 2×Gefreiter".
+func garrison_rank_text(b: WorldState.Building) -> String:
+	var rn := b.ranks_normalized()
+	var parts: Array[String] = []
+	for r in range(RANK_MAX, -1, -1):
+		if rn[r] > 0:
+			parts.append("%d×%s" % [rn[r], RANK_NAMES[r]])
+	return ", ".join(parts)
+
+
+## Eine Münze befördert in [b] den stärksten noch nicht maximalen Soldaten um einen Rang
+## (RTTR: Beförderung von oben). Liefert true, wenn jemand befördert wurde.
+func _promote_one(b: WorldState.Building) -> bool:
+	if b.garrison <= 0:
+		return false
+	b.ranks = b.ranks_normalized()
+	for r in range(RANK_MAX - 1, -1, -1):
+		if b.ranks[r] > 0:
+			b.ranks[r] -= 1
+			b.ranks[r + 1] += 1
+			return true
+	return false
 
 
 func _init_tree_growth_from_map() -> void:
@@ -1051,7 +1181,7 @@ func hq_pos_of(owner: int) -> Vector2i:
 	return Vector2i(-1, -1)
 
 
-## Münzen aus dem HQ befördern eigene Garnisonen (Verteidigungsrüstung).
+## Münzen aus dem HQ befördern eigene Garnisonen rangweise (#52, RTTR Beförderung von oben).
 func _tick_promotions() -> void:
 	if hq_flag < 0:
 		return
@@ -1067,15 +1197,15 @@ func _tick_promotions() -> void:
 			continue
 		if not b.wants_coins:
 			continue  # Spieler hat Münzanforderung für dieses Gebäude abgeschaltet
-		if b.garrison <= 0 or b.promotions >= b.garrison:
-			continue
+		if b.garrison <= 0 or b.ranks_normalized()[RANK_MAX] >= b.garrison:
+			continue  # leer oder schon alle auf Höchstrang → keine Beförderung nötig
 		var bs: BState = bstates.get(i)
 		if bs == null or int(bs.delivered.get(Goods.COINS, 0)) <= 0:
 			continue
-		bs.delivered[Goods.COINS] = int(bs.delivered[Goods.COINS]) - 1
-		b.promotions += 1
-		dirty = true
-		return
+		if _promote_one(b):
+			bs.delivered[Goods.COINS] = int(bs.delivered[Goods.COINS]) - 1
+			dirty = true
+			return
 
 
 ## Katapulte beschießen das nächste feindliche Militärgebäude in Reichweite.
@@ -1099,10 +1229,7 @@ func _tick_catapults() -> void:
 				best_d = d
 				best = p
 		if best != null:
-			if best.promotions > 0:
-				best.promotions -= 1
-			elif best.garrison > 0:
-				best.garrison -= 1
+			_damage_defender(best)  # ein Katapultschuss = ein Treffer (#52)
 			state.recompute_territory()
 			dirty = true
 
@@ -1149,12 +1276,15 @@ func _regulate_garrisons() -> void:
 			continue
 		var excess := b.garrison - _required_troops(b)
 		while excess > 0 and b.garrison > 1:
-			b.garrison -= 1
-			soldiers += 1
+			# Überzählige rangerhaltend in die Reserve zurück. RTTR: bei hoher
+			# Verteidigerstärke gehen die SCHWACHEN zuerst (Starke bleiben an der Front).
+			var rank := _garrison_take_weakest(b) if mil_defense * 2 > MIL_SCALE_DEFENSE \
+				else _garrison_take_strongest(b)
+			if rank < 0:
+				break
+			_reserve_add(rank)
 			excess -= 1
 			dirty = true
-		if b.promotions > b.garrison:
-			b.promotions = b.garrison  # Rüstung kann nie über die Garnison hinausgehen
 
 
 ## Soldaten ausbilden, Marschierende bewegen, neue Soldaten entsenden.
@@ -1187,13 +1317,17 @@ func _tick_soldiers() -> void:
 		var route := state.find_route(hq_pos, b.flag_pos)
 		if route.size() < 2:
 			continue
-		# Soldaten losschicken (einer pro Tick).
+		# Soldaten losschicken (einer pro Tick) — den schwächsten Rekruten aus der Reserve;
+		# Aufstieg erfolgt vor Ort per Münze (#52).
 		var m := Marcher.new()
 		m.route = route
 		m.dest_building = i
 		if not _load_leg(m):
 			continue
-		soldiers -= 1
+		var send_rank := _reserve_take_weakest()
+		if send_rank < 0:
+			continue
+		m.rank = send_rank
 		_inc_soldiers[i] = inc + 1
 		marchers.append(m)
 		return
@@ -1218,7 +1352,7 @@ func _try_recruit() -> void:
 	hq_stock[Goods.SHIELD] = int(hq_stock[Goods.SHIELD]) - 1
 	hq_stock[Goods.BEER] = int(hq_stock[Goods.BEER]) - 1
 	hq_people[Jobs.HELPER] = int(hq_people[Jobs.HELPER]) - 1
-	soldiers += 1
+	_reserve_add(0)  # frischer Rekrut ist Gefreiter (Rang 0, #52)
 
 
 func _tick_marchers() -> void:
@@ -1269,6 +1403,8 @@ func send_attackers(src: WorldState.Building, tgt: WorldState.Building) -> int:
 		m.t = -0.18 * k  # gestaffelt loslaufen
 		marchers.append(m)
 	src.garrison = 0
+	src.ranks = [0, 0, 0, 0, 0]
+	src.def_hp = 0
 	state.recompute_territory()
 	dirty = true
 	return n
@@ -1285,15 +1421,13 @@ func _resolve_attack(m: Marcher) -> void:
 		state.recompute_territory()
 		dirty = true
 		return
-	if tgt.promotions > 0:
-		tgt.promotions -= 1  # Rüstung (Münz-Beförderung) fängt den Treffer ab
-	elif tgt.garrison > 0:
-		tgt.garrison -= 1    # ein Verteidiger fällt (1:1)
-	if tgt.garrison <= 0 and tgt.promotions <= 0:
-		# Erobert → Besitzerwechsel.
+	_damage_defender(tgt)  # stärkster Verteidiger hält Rang+1 Treffer aus (#52)
+	if tgt.garrison <= 0:
+		# Erobert → Besitzerwechsel; frischer Gefreiter besetzt das Gebäude.
 		tgt.owner = m.attacker_owner
 		tgt.garrison = 1
-		tgt.promotions = 0
+		tgt.ranks = [1, 0, 0, 0, 0]
+		tgt.def_hp = 0
 		resync()  # Simulation an neuen Besitzer anpassen (bstates)
 	state.recompute_territory()
 	dirty = true
@@ -1316,18 +1450,18 @@ func _arrive_marcher(m: Marcher) -> void:
 			bstates[m.work_bidx].staffed = true
 		return
 	if bstates.has(m.dest_building):
-		bstates[m.dest_building].bld.garrison += 1
+		_garrison_add(bstates[m.dest_building].bld, m.rank)
 		state.recompute_territory()
 		dirty = true
 	elif state.buildings.has(m.dest_building):
 		# Hafen (#46): Storage ohne bstate, aber militärisch — Garnison direkt am Gebäude.
-		state.buildings[m.dest_building].garrison += 1
+		_garrison_add(state.buildings[m.dest_building], m.rank)
 		state.recompute_territory()
 		dirty = true
 	else:
 		# Ziel-Militärgebäude wurde abgerissen, während der Soldat marschierte (#69):
-		# er kehrt in die HQ-Reserve zurück statt zu verschwinden.
-		soldiers += 1
+		# er kehrt rangerhaltend in die HQ-Reserve zurück statt zu verschwinden.
+		_reserve_add(m.rank)
 	_inc_soldiers[m.dest_building] = maxi(0, _inc_soldiers.get(m.dest_building, 0) - 1)
 
 
@@ -1344,7 +1478,7 @@ func _drop_marcher(m: Marcher) -> void:
 		if bstates.has(m.work_bidx):
 			bstates[m.work_bidx].staffed = true  # Fallback: trotzdem besetzen
 		return
-	soldiers += 1  # Soldat kehrt in die Reserve zurück
+	_reserve_add(m.rank)  # Soldat kehrt rangerhaltend in die Reserve zurück
 	_inc_soldiers[m.dest_building] = maxi(0, _inc_soldiers.get(m.dest_building, 0) - 1)
 
 
@@ -2001,11 +2135,11 @@ func _cost_value(cost: Dictionary) -> float:
 func _request_inputs(bs: BState) -> void:
 	# Militärgebäude (#66): Münzen werden wie eine Ware vom Lager angefordert und vom
 	# Straßenträger in die Tür getragen (statt direkt aus dem HQ-Bestand). Sollbestand =
-	# offene Beförderungen (Garnison − bereits Befördertе), eine Münze je Beförderung.
+	# noch nicht auf Höchstrang beförderte Soldaten, eine Münze je Beförderungsschritt.
 	if int(bs.def.get("influence", 0)) > 0:
 		if bs.bld.wants_coins and bs.bld.garrison > 0:
 			var have_c := int(bs.delivered.get(Goods.COINS, 0)) + int(bs.incoming.get(Goods.COINS, 0))
-			var want_c := bs.bld.garrison - bs.bld.promotions
+			var want_c := bs.bld.garrison - bs.bld.ranks_normalized()[RANK_MAX]
 			if have_c < want_c:
 				_request_from_hq(bs, Goods.COINS, want_c - have_c)
 		return
@@ -3662,18 +3796,16 @@ func _resolve_sea_raid(s: Ship) -> void:
 		state.recompute_territory()
 		dirty = true
 		return
-	# Gefecht: jeder Soldat räumt erst Rang (Münz-Beförderung), dann je einen Verteidiger.
-	while n > 0 and (tgt.garrison > 0 or tgt.promotions > 0):
-		if tgt.promotions > 0:
-			tgt.promotions -= 1
-		else:
-			tgt.garrison -= 1
+	# Gefecht: jeder mitgebrachte Soldat landet einen Treffer (stärkster Verteidiger zäh, #52).
+	while n > 0 and tgt.garrison > 0:
+		_damage_defender(tgt)
 		n -= 1
-	if tgt.garrison <= 0 and tgt.promotions <= 0:
-		# Erobert → Besitzerwechsel; verbleibende Angreifer bilden die Garnison.
+	if tgt.garrison <= 0:
+		# Erobert → Besitzerwechsel; verbleibende Angreifer bilden die Garnison (Gefreite).
 		tgt.owner = s.owner
-		tgt.promotions = 0
 		tgt.garrison = clampi(n, 1, maxi(tgt.capacity, 1))
+		tgt.ranks = [tgt.garrison, 0, 0, 0, 0]
+		tgt.def_hp = 0
 		var f := state.flag_at(tgt.flag_pos)
 		if f != null:
 			f.owner = s.owner
@@ -4070,7 +4202,10 @@ func building_status(bld: WorldState.Building) -> String:
 	if _is_producer(bs):
 		s += "  → Ausgang %d" % _out_total(bs)
 	if int(bs.def.get("influence", 0)) > 0:
-		s += "  Garnison %d/%d  Rang +%d" % [bld.garrison, bld.capacity, bld.promotions]
+		s += "  Garnison %d/%d" % [bld.garrison, bld.capacity]
+		var rtext := garrison_rank_text(bld)
+		if rtext != "":
+			s += "  [%s]" % rtext
 	return s
 
 

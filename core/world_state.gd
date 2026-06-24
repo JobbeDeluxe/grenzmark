@@ -42,12 +42,34 @@ class Building:
 	var influence := 0   # Einflussradius (militärisch / HQ), 0 = keiner
 	var under_construction := true  # Baustelle, bis Material geliefert ist
 	var planing := false # Baustelle wartet/arbeitet noch mit Planierer, noch kein Bauplatz
-	var garrison := 0    # stationierte Soldaten
+	var garrison := 0    # stationierte Soldaten (= Summe von ranks)
 	var capacity := 0    # max. Soldaten (Militärgebäude)
-	var promotions := 0  # Beförderungen durch Münzen (Verteidigungs-Rüstung)
+	# Soldaten je Rang (#52/#28, 5 Stufen Gefreiter..General). Münzen befördern die
+	# Garnison rangweise; höhere Ränge sind im Kampf zäher (Treffer = Rang+1).
+	var ranks: Array[int] = [0, 0, 0, 0, 0]
+	var def_hp := 0      # transient: Resttreffer des aktuellen Frontverteidigers (nicht gespeichert)
+	var def_rank := 0    # transient: Rang des aktuellen Frontverteidigers
 	var wants_coins := true  # fordert dieses Militärgebäude Gold zur Beförderung an? (S2)
 	var owner := 0       # 0 = Spieler, 1 = Gegner
 	var ext_nodes: Array[Vector2i] = []  # zusätzlich belegte Extension-Knoten (Burg/HQ)
+
+	## Rangverteilung normalisiert auf garrison (Summe == garrison): Fehlbestand zählt als
+	## Gefreite (Rang 0), Überhang wird von oben gekappt. Mutiert NICHT — für Anzeige UND
+	## als Reconcile-Basis, da garrison vielerorts direkt gesetzt wird (Laden/Eroberung/KI).
+	func ranks_normalized() -> Array[int]:
+		var out: Array[int] = [ranks[0], ranks[1], ranks[2], ranks[3], ranks[4]]
+		var s := out[0] + out[1] + out[2] + out[3] + out[4]
+		if s < garrison:
+			out[0] += garrison - s
+		elif s > garrison:
+			var over := s - garrison
+			var r := 4
+			while over > 0 and r >= 0:
+				var take: int = mini(over, out[r])
+				out[r] -= take
+				over -= take
+				r -= 1
+		return out
 
 
 class Road:

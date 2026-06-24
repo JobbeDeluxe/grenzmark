@@ -2496,7 +2496,8 @@ func _update_window_military(entry: Dictionary, b: WorldState.Building) -> void:
 		mil_box.visible = false
 		return
 	mil_box.visible = true
-	var sig := "%d/%d/%d/%d" % [b.garrison, b.capacity, b.promotions, b.owner]
+	var rn := b.ranks_normalized()
+	var sig := "%d/%d/%d/%s" % [b.garrison, b.capacity, b.owner, str(rn)]
 	if sig == String(entry.get("mil_sig", "")):
 		return
 	entry["mil_sig"] = sig
@@ -2505,26 +2506,29 @@ func _update_window_military(entry: Dictionary, b: WorldState.Building) -> void:
 		c.queue_free()
 	var px := UISkin.layout_num("good_icon_size", 18)
 	var col := GameTheme.player_color(b.owner)
+	# Besetzte Plätze nach Rang (stark zuerst), höhere Ränge heller + Rang-Chevrons.
+	var slot_ranks: Array[int] = []
+	for r in range(Economy.RANK_MAX, -1, -1):
+		for _k in rn[r]:
+			slot_ranks.append(r)
 	for i in maxi(b.capacity, b.garrison):
-		var slot := ColorRect.new()
-		slot.custom_minimum_size = Vector2(px * 0.7, px)
-		slot.color = col if i < b.garrison else Color(col.r, col.g, col.b, 0.22)
-		slot.tooltip_text = "Garnison %d/%d" % [b.garrison, b.capacity]
-		slot.mouse_filter = Control.MOUSE_FILTER_PASS
-		mil_box.add_child(slot)
-	if b.promotions > 0:
-		var gap := Control.new()
-		gap.custom_minimum_size = Vector2(px * 0.5, 0)
-		mil_box.add_child(gap)
-	for i in b.promotions:
-		var coin := TextureRect.new()
-		coin.custom_minimum_size = Vector2(px, px)
-		coin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		coin.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		coin.texture = UISkin.good_texture(Goods.COINS)
-		coin.tooltip_text = "Rangbonus (Rüstung): %d" % b.promotions
-		coin.mouse_filter = Control.MOUSE_FILTER_PASS
-		mil_box.add_child(coin)
+		if i < slot_ranks.size():
+			var rr: int = slot_ranks[i]
+			var slot := Label.new()
+			slot.custom_minimum_size = Vector2(px * 0.8, px)
+			slot.text = ">".repeat(rr + 1)  # Rang 0 = ">", General = ">>>>>"
+			slot.add_theme_font_size_override("font_size", maxi(8, int(px * 0.55)))
+			slot.add_theme_color_override("font_color", col.lightened(rr * 0.16))
+			slot.tooltip_text = "%s (Garnison %d/%d)" % [Economy.RANK_NAMES[rr], b.garrison, b.capacity]
+			slot.mouse_filter = Control.MOUSE_FILTER_PASS
+			mil_box.add_child(slot)
+		else:
+			var empty := ColorRect.new()
+			empty.custom_minimum_size = Vector2(px * 0.7, px)
+			empty.color = Color(col.r, col.g, col.b, 0.22)
+			empty.tooltip_text = "Freier Platz (%d/%d)" % [b.garrison, b.capacity]
+			empty.mouse_filter = Control.MOUSE_FILTER_PASS
+			mil_box.add_child(empty)
 
 
 func _building_window_title(b: WorldState.Building) -> String:
@@ -3172,8 +3176,10 @@ func _update_selection_panel() -> void:
 		_sel_icon.texture = GameTheme.building_texture(selected.def_id, selected.owner)
 	var lines := economy.building_status(selected)
 	if selected.influence > 0:
-		lines += "\nGarnison: %d/%d  Rangbonus: %d" % [
-			selected.garrison, selected.capacity, selected.promotions]
+		lines += "\nGarnison: %d/%d" % [selected.garrison, selected.capacity]
+		var rtext := economy.garrison_rank_text(selected)
+		if rtext != "":
+			lines += "\nRänge: %s" % rtext
 	_sel_label.text = lines
 	# Aktionen kontextabhängig: eigene Gebäude verwalten, Gegner-Militär angreifen.
 	var own := selected.owner == 0
@@ -3522,6 +3528,7 @@ func _build_save_data() -> Dictionary:
 		# Laden verteilt resync() daraus alles neu (Personen laufen wieder vom Lager los).
 		hq_people = economy.total_people(),
 		soldiers = economy.soldiers,
+		soldier_ranks = economy.soldier_ranks.duplicate(),  # Reserve je Rang (#52)
 		# Spieler-Regler (Werkzeug-Prioritäten/-Bestellungen, Rekrutierungsrate, #41).
 		tool_priority = economy.tool_priority.duplicate(),
 		tool_orders = economy.tool_orders.duplicate(),
@@ -3545,7 +3552,8 @@ func _build_save_data() -> Dictionary:
 		data.buildings.append({
 			pos = b.pos, size = b.size, flag = b.flag_pos, hq = b.is_hq,
 			def = b.def_id, infl = b.influence, build = b.under_construction,
-			gar = b.garrison, cap = b.capacity, owner = b.owner, promo = b.promotions,
+			gar = b.garrison, cap = b.capacity, owner = b.owner,
+			ranks = b.ranks.duplicate(),  # Soldaten je Rang (#52)
 			coins = b.wants_coins,
 		})
 	for i in state.flags:
@@ -3663,7 +3671,10 @@ func _apply_save_data(data: Dictionary) -> void:
 		bb.under_construction = bd.build
 		bb.garrison = bd.get("gar", 0); bb.capacity = bd.get("cap", 0)
 		bb.owner = bd.get("owner", 0)
-		bb.promotions = bd.get("promo", 0)
+		var saved_ranks = bd.get("ranks", null)  # Soldaten je Rang (#52)
+		if saved_ranks is Array and (saved_ranks as Array).size() == 5:
+			for ri in 5:
+				bb.ranks[ri] = int(saved_ranks[ri])
 		bb.wants_coins = bool(bd.get("coins", true))
 		var i := map.idx(bb.pos.x, bb.pos.y)
 		state.buildings[i] = bb
@@ -3693,6 +3704,13 @@ func _apply_save_data(data: Dictionary) -> void:
 	# ab. Alt-Spielstände ohne Sektion bekommen die Standard-Startpersonen.
 	economy.hq_people = data.get("hq_people", Tuning.hq_start_people())
 	economy.soldiers = int(data.get("soldiers", 0))
+	# Reserve-Ränge (#52); ältere Saves ohne Sektion → alle als Gefreite.
+	var sr = data.get("soldier_ranks", null)
+	if sr is Array and (sr as Array).size() == 5:
+		for ri in 5:
+			economy.soldier_ranks[ri] = int(sr[ri])
+	else:
+		economy.soldier_ranks = [economy.soldiers, 0, 0, 0, 0]
 	# Spieler-Regler zurückspielen (Defaults stehen schon aus _init_settings, #41).
 	var tp = data.get("tool_priority", null)
 	if tp is Dictionary and not (tp as Dictionary).is_empty():

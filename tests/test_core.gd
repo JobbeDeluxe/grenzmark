@@ -63,6 +63,7 @@ func _initialize() -> void:
 	_test_harbor_no_planing()
 	_test_military_settings()
 	_test_occupation_by_frontier()
+	_test_soldier_ranks()
 	_test_tools_and_recruitment()
 	_test_combat()
 	_test_enemy_road_people()
@@ -1216,6 +1217,49 @@ func _test_occupation_by_frontier() -> void:
 	_raw(state, Vector2i(18, 20), "guardhouse", 5, 1, 2, 2, false)
 	_check(eco._occupy_setting_for(wt) == eco.occupy_border, "#52: naher Feind → Grenz-Zone")
 	_check(eco._required_troops(wt) == cap, "#52: Grenze (occupy 8) → volle Kapazität")
+
+
+## #52/#28: Soldaten-Ränge — Rekruten sind Gefreite, Münzen befördern rangweise,
+## höhere Ränge sind im Kampf zäher (Treffer = Rang+1), direkt gesetzte Garnison wird
+## als Gefreite normalisiert.
+func _test_soldier_ranks() -> void:
+	var map := _flat_map(20, 20)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+
+	# Rekrut ist Gefreiter (Rang 0).
+	eco.soldiers = 0
+	eco.soldier_ranks = [0, 0, 0, 0, 0]
+	eco._recruit_accum = 0
+	eco.recruiting_ratio = 10
+	eco.hq_stock = { Goods.SWORD: 1, Goods.SHIELD: 1, Goods.BEER: 1 }
+	eco.hq_people = { Jobs.HELPER: 1 }
+	eco._try_recruit()
+	_check(eco.soldiers == 1 and eco.soldier_ranks[0] == 1, "#52: Rekrut ist Gefreiter (Rang 0)")
+
+	# Beförderung: stärkster Soldat unter Höchstrang steigt auf.
+	var b := WorldState.Building.new()
+	b.garrison = 2; b.ranks = [2, 0, 0, 0, 0]
+	_check(eco._promote_one(b), "#52: Beförderung möglich")
+	_check(b.ranks[0] == 1 and b.ranks[1] == 1, "#52: ein Gefreiter wird Obergefreiter")
+
+	# General (Rang 4) ist nicht weiter beförderbar.
+	var g := WorldState.Building.new()
+	g.garrison = 1; g.ranks = [0, 0, 0, 0, 1]
+	_check(not eco._promote_one(g), "#52: General nicht weiter beförderbar")
+
+	# Kampf: ein Obergefreiter (Rang 1) hält 2 Treffer aus.
+	var d := WorldState.Building.new()
+	d.garrison = 1; d.ranks = [0, 1, 0, 0, 0]
+	eco._damage_defender(d)
+	_check(d.garrison == 1, "#52: Obergefreiter überlebt den 1. Treffer")
+	eco._damage_defender(d)
+	_check(d.garrison == 0, "#52: Obergefreiter fällt beim 2. Treffer")
+
+	# Reconcile: direkt gesetzte Garnison ohne Rang-Daten zählt als Gefreite.
+	var c := WorldState.Building.new()
+	c.garrison = 3
+	_check(c.ranks_normalized()[0] == 3, "#52: direkt gesetzte Garnison = Gefreite (Reconcile)")
 
 
 ## Werkzeugmacher-Produktion (Prioritäten/Bestellungen), Schmiede Schwert/Schild
@@ -2478,22 +2522,24 @@ func _test_promotion() -> void:
 	_check(gh != null, "Wachhaus baubar")
 	if gh == null:
 		return
-	gh.garrison = 3
+	gh.garrison = 2  # volle Wachhaus-Kapazität (BQ_HUT)
+	eco.occupy_interior = 8  # Hinterland-Wachhaus voll besetzt halten (#52)
 	state.build_road(state.buildings[map.idx(10, 10)].flag_pos, gh.flag_pos)
 	eco.resync()
 	eco.hq_stock[Goods.COINS] = 5
 	for t in 2500:
 		eco.tick()
-	_check(gh.promotions > 0, "Münzen befördern die Garnison (Rang +%d)" % gh.promotions)
+	var promoted := gh.garrison - gh.ranks_normalized()[0]  # Soldaten über Gefreiter
+	_check(promoted > 0, "Münzen befördern die Garnison rangweise (%s)" % eco.garrison_rank_text(gh))
 
 	# Münzanforderung abschalten (S2: Goldmünzen aus) -> keine weitere Beförderung,
 	# obwohl Münzen im HQ liegen.
 	gh.wants_coins = false
-	var promo_before := gh.promotions
+	var ranks_before := gh.ranks_normalized()
 	eco.hq_stock[Goods.COINS] = 5
 	for t in 2500:
 		eco.tick()
-	_check(gh.promotions == promo_before,
+	_check(gh.ranks_normalized() == ranks_before,
 		"Münzen AUS: keine weitere Beförderung trotz Gold im HQ")
 	_check(eco.hq_stock.get(Goods.COINS, 0) == 5,
 		"Münzen AUS: HQ-Gold bleibt unangetastet")
@@ -2607,11 +2653,16 @@ func _test_door_transport() -> void:
 	state2.build_road(state2.buildings[map2.idx(10, 10)].flag_pos, gh.flag_pos)
 	eco2.resync()
 	eco2.hq_stock[Goods.COINS] = 5
-	for t in 6000:
+	for t in 9000:
 		eco2.tick()
-	_check(gh.promotions == 2, "Tür-Münzen: ganze Garnison befördert (%d)" % gh.promotions)
-	_check(eco2.hq_stock.get(Goods.COINS, 0) == 5 - gh.promotions,
-		"Tür-Münzen: aus dem HQ verschwinden genau so viele Münzen wie Beförderungen (kein Verlust)")
+	var rn2 := gh.ranks_normalized()
+	var levels := 0
+	for r in 5:
+		levels += r * rn2[r]
+	_check(gh.garrison - rn2[0] == 2,
+		"Tür-Münzen: ganze Garnison befördert (%s)" % eco2.garrison_rank_text(gh))
+	_check(eco2.hq_stock.get(Goods.COINS, 0) == 5 - levels,
+		"Tür-Münzen: aus dem HQ verschwinden genau so viele Münzen wie Beförderungsstufen (kein Verlust)")
 	var gbs: Economy.BState = eco2.bstates.get(map2.idx(gh.pos.x, gh.pos.y))
 	_check(gbs != null and int(gbs.delivered.get(Goods.COINS, 0)) == 0,
 		"Tür-Münzen: keine Münze bleibt unverbraucht im Gebäude liegen")

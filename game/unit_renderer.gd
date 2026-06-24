@@ -576,7 +576,21 @@ func _draw_marchers() -> void:
 			_unit("worker", p, facing, m.attacker_owner)
 		else:
 			_unit("soldier", p, facing, m.attacker_owner)
+			_draw_rank_chevrons(p, m.rank)  # sichtbarer Rang (#52/#28)
 		_occlude(p)
+
+
+## Kleine goldene Rang-Winkel über einem Soldaten (Rang 0 = keiner … General = vier).
+func _draw_rank_chevrons(p: Vector2, rank: int) -> void:
+	if rank <= 0:
+		return
+	var us := GameTheme.unit_size()
+	var top := p.y - us - 4.0
+	var gold := Color(0.96, 0.84, 0.32)
+	for k in rank:
+		var y := top - k * 2.6
+		draw_line(Vector2(p.x - 3.0, y + 2.0), Vector2(p.x, y), gold, 1.2, true)
+		draw_line(Vector2(p.x, y), Vector2(p.x + 3.0, y + 2.0), gold, 1.2, true)
 
 
 ## Verirrte Träger (Straße abgerissen): laufen frei mit ihrer Ware herum.
