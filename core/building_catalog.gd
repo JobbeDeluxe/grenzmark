@@ -101,11 +101,16 @@ static func defs() -> Dictionary:
 		# automatisch als Storage mit eigenem Tür-Träger registriert (#31) und ist über
 		# Schiffe mit anderen Häfen derselben See verbunden (Waren-Pendeln). Einzel-
 		# Fußabdruck (Größe M), Sonder-Baubarkeit am Ufer (siehe can_place_building).
+		# Der Hafen ist Lager UND leichtes Militärgebäude (#46): er projiziert Territorium
+		# (influence) und hat eine Garnison — sonst gäbe eine gegründete Kolonie kein Land
+		# und ein feindlicher Inselhafen wäre nicht eroberbar. Garnison füllt sich wie bei
+		# Militärgebäuden vom HQ (über Land, falls verbunden); gegründete/eroberte Häfen
+		# starten mit 1 Mann, damit sofort Territorium entsteht.
 		"harbor": {
 			id = "harbor", name = "Hafen", size = M,
 			cost = { Goods.BOARDS: 4, Goods.STONE: 6 },
 			inputs = {}, output = -1, work = 0, resource = "",
-			needs_water = true, influence = 0, category = "lager",
+			needs_water = true, influence = 6, category = "lager",
 		},
 		# Werft (#46): baut aus Brettern Boote (für Wasserstraßen/Fähre) oder im
 		# Schiffe-Modus See-Schiffe. S2/10th-nah: Werft 2 Bretter + 3 Stein,

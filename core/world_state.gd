@@ -773,10 +773,17 @@ func found_harbor(p: Vector2i, owner: int) -> Building:
 	b.def_id = "harbor"
 	b.owner = owner
 	b.under_construction = false
+	# Kolonie-/Expeditionshafen ist sofort militärisch wirksam (#46): Einfluss + 1 Mann
+	# Startgarnison, damit er Territorium auf der neuen Insel projiziert und verteidigt/
+	# eroberbar ist. Kapazität wie ein mittleres Militärgebäude.
+	b.influence = int(BuildingCatalog.get_def("harbor").get("influence", 6))
+	b.capacity = 4
+	b.garrison = 1
 	var i := map.idx(p.x, p.y)
 	buildings[i] = b
 	occupied[i] = OBJ_BUILDING
 	invalidate_routes()
+	recompute_territory()
 	return b
 
 

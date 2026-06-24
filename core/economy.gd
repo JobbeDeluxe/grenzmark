@@ -1039,17 +1039,20 @@ func _tick_soldiers() -> void:
 	var w := state.map.width
 	var hq_pos := Vector2i(hq_flag % w, hq_flag / w)
 	for i in state.buildings:
-		if not bstates.has(i):
+		var b: WorldState.Building = state.buildings[i]
+		if b.owner != 0 or b.under_construction:
 			continue
-		var bs: BState = bstates[i]
-		if bs.bld.owner != 0:
+		# Militärgebäude UND Hafen (#46): Hafen ist ein Storage (kein bstate), wird hier aber
+		# wie ein Militärgebäude vom HQ über Land besetzt, sofern road-verbunden.
+		if int(BuildingCatalog.get_def(b.def_id).get("influence", 0)) <= 0:
 			continue
-		if bs.is_construction or int(bs.def.get("influence", 0)) <= 0:
+		if bstates.has(i) and bstates[i].is_construction:
 			continue
+		var cap: int = b.capacity if b.capacity > 0 else _capacity_for(b.size)
 		var inc: int = _inc_soldiers.get(i, 0)
-		if bs.bld.garrison + inc >= bs.bld.capacity:
+		if b.garrison + inc >= cap:
 			continue
-		var route := state.find_route(hq_pos, Vector2i(bs.flag_idx % w, bs.flag_idx / w))
+		var route := state.find_route(hq_pos, b.flag_pos)
 		if route.size() < 2:
 			continue
 		# Soldaten losschicken (einer pro Tick).
@@ -1184,6 +1187,11 @@ func _arrive_marcher(m: Marcher) -> void:
 		bstates[m.dest_building].bld.garrison += 1
 		state.recompute_territory()
 		dirty = true
+	elif state.buildings.has(m.dest_building):
+		# Hafen (#46): Storage ohne bstate, aber militärisch — Garnison direkt am Gebäude.
+		state.buildings[m.dest_building].garrison += 1
+		state.recompute_territory()
+		dirty = true
 	_inc_soldiers[m.dest_building] = maxi(0, _inc_soldiers.get(m.dest_building, 0) - 1)
 
 
@@ -1224,6 +1232,10 @@ func _is_storage_def(def_id: String) -> bool:
 ## eigener (anfangs leerer) Bestand. Idempotent — ein bereits registriertes Lager
 ## (gleiche Flagge) wird nur aufgefrischt, nicht doppelt angelegt.
 func _register_storage(idx: int, b: WorldState.Building) -> void:
+	# Militärisches Lager (Hafen, #46): Garnison-Kapazität setzen, damit _tick_soldiers es
+	# wie ein Militärgebäude vom HQ besetzt. Reine Lagerhäuser (influence 0) bleiben unberührt.
+	if int(BuildingCatalog.get_def(b.def_id).get("influence", 0)) > 0 and b.capacity <= 0:
+		b.capacity = _capacity_for(b.size)
 	var fidx := state.map.idx(b.flag_pos.x, b.flag_pos.y)
 	for st in storages:
 		if st.flag_idx == fidx:
