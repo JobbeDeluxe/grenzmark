@@ -54,6 +54,15 @@ const RIVER_BRANCH_CHANCE := 0.010
 # RIVER_BANK_RISE Höheneinheiten über RIVER_BANK_WIDTH Knoten hinweg an.
 const RIVER_BANK_WIDTH := 3        # Knoten breiter Uferhang beidseits des Betts
 const RIVER_BANK_RISE := 1.6       # Höhenanstieg pro Uferknoten (kleiner = sanfter)
+# Ufer-Abflachung (#58): GLOBALER Nachbearbeitungs-Schritt für ALLE Wasserflächen
+# (Noise-See, Insel-Meer, Flüsse, Not-Teiche). Ohne ihn stanzt das Wasser ein tiefes
+# Loch ins höhere Land — Teiche wirken als Schacht, Flüsse als Klamm, und es entsteht
+# kein flaches, bebaubares Ufer (kein Hafen: Slope ≤2 nötig; keine Werft: bebaubares
+# Land nie nah genug am Wasser). Der Pass legt eine flache Untiefe ans Ufer und lässt
+# das Land von dort mit höchstens SHORE_MAX_SLOPE pro Knoten ansteigen (Multi-Source-
+# BFS vom Wasser aus). Senkt nur ab — höher liegendes Land weiter weg bleibt unberührt.
+const WATER_SHELF_LEVEL := 4       # flache Ufer-Untiefe (< H_WATER_MAX → bleibt Wasser)
+const SHORE_MAX_SLOPE := 2         # max. Höhenanstieg pro Knoten weg vom Wasser (≤2 → bebaubar/hafenfähig)
 # Gewässer-Größe (#58): schmale Gewässer (Flüsse, kleine Teiche) sind kleiner als
 # SEA_MIN_SIZE Knoten und bekommen Wiesenufer statt Strand; größere = Meer/See.
 const SEA_MIN_SIZE := 48
@@ -171,6 +180,10 @@ static func generate(width: int, height: int, seed: int = 12345, options: Dictio
 
 	# Fisch-Teich (#59): garantiert Fischgründe, falls die Karte zu trocken geriet.
 	_ensure_fishing_water(map, seed)
+
+	# Ufer-Abflachung (#58): alle Gewässer bekommen sanfte, bebaubare Ufer (kein Steilloch),
+	# damit Hafen/Werft am Wasser möglich sind. Muss VOR der Terrain-Klassifizierung laufen.
+	_smooth_water_banks(map)
 
 	# Feuchtigkeits-Maske: niedrige, feuchte Flächen werden Sumpf (nicht bebaubar).
 	var wet := FastNoiseLite.new()
@@ -309,6 +322,66 @@ static func _carve_pond(map: MapData, px: int, py: int, level: int) -> void:
 			elif d <= POND_RADIUS:
 				# abgestuftes Ufer (analog Flüsse): kein Steilrand
 				map.set_height(nx, ny, mini(map.get_height(nx, ny), level + 1))
+
+
+## Ufer-Abflachung (#58): macht aus jedem Steilufer einen sanften, bebaubaren Hang.
+## Zwei Schritte, beide nur höhenSENKEND bzw. Untiefen-anhebend — nie wird trockenes
+## Land angehoben:
+##  1. Untiefen-Schelf: Wasserknoten, die an Land grenzen, auf WATER_SHELF_LEVEL heben
+##     (flaches Ufer statt Steilabfall ins tiefe Wasser → Slope Ufer↔Wasser klein).
+##  2. Land-Rampe: Multi-Source-BFS von allen Wasserknoten; jeder Knoten darf höchstens
+##     SHORE_MAX_SLOPE höher liegen als sein wassernäherer Nachbar. So steigt das Land mit
+##     gleichmäßig sanftem Hang an, bis es sein natürliches (niedrigeres) Niveau erreicht —
+##     dort stoppt die Absenkung. Hohe Berge fern vom Wasser bleiben unberührt.
+## Läuft NACH allem Wasser-Setzen und VOR der Terrain-Klassifizierung, damit Sand/Wiese
+## auf den neuen, flachen Ufern landen.
+static func _smooth_water_banks(map: MapData) -> void:
+	var waterline := int(H_WATER_MAX)
+	var w := map.width
+	var h := map.height
+	# Schritt 1: flacher Ufer-Schelf an Wasser/Land-Grenzen.
+	for y in h:
+		for x in w:
+			if map.get_height(x, y) >= waterline:
+				continue  # Land
+			var at_shore := false
+			for dir in Grid.DIRS:
+				var n := map.neighbor(x, y, dir)
+				if n.x >= 0 and map.get_height(n.x, n.y) >= waterline:
+					at_shore = true
+					break
+			if at_shore:
+				map.set_height(x, y, maxi(map.get_height(x, y), WATER_SHELF_LEVEL))
+	# Schritt 2: Land-Rampe per BFS. cap[i] = erlaubte Maximalhöhe an Knoten i.
+	var cap := PackedInt32Array()
+	cap.resize(w * h)
+	var queue: Array[int] = []
+	for y in h:
+		for x in w:
+			var i := map.idx(x, y)
+			if map.get_height(x, y) < waterline:
+				cap[i] = WATER_SHELF_LEVEL
+				queue.append(i)
+			else:
+				cap[i] = 0x3fffffff
+	var qi := 0
+	while qi < queue.size():
+		var ci := queue[qi]
+		qi += 1
+		var cx := ci % w
+		@warning_ignore("integer_division")
+		var cy := ci / w
+		var ncap := cap[ci] + SHORE_MAX_SLOPE
+		for dir in Grid.DIRS:
+			var n := map.neighbor(cx, cy, dir)
+			if n.x < 0:
+				continue
+			var ni := map.idx(n.x, n.y)
+			if ncap < cap[ni]:
+				cap[ni] = ncap
+				if map.get_height(n.x, n.y) > ncap:
+					map.set_height(n.x, n.y, ncap)
+				queue.append(ni)
 
 
 ## Stabile String->Seed-Abbildung fuer Spieler-Seeds. Nicht Godots hash() nutzen:

@@ -18,6 +18,7 @@ func _initialize() -> void:
 	_test_world_code()
 	_test_map_types()
 	_test_harbor_points()
+	_test_shore_buildable()
 	_test_worldgen_96()
 	_test_mountain_meadow_plateaus()
 	_test_mapgen_cleanup_and_stone_clusters()
@@ -310,6 +311,33 @@ func _test_harbor_points() -> void:
 		if not min_sep_ok:
 			break
 	_check(min_sep_ok, "Hafenpunkte: Mindestabstand zueinander eingehalten")
+
+
+## Ufer-Abflachung (#58): Gewässer dürfen keine Steilufer mehr ins Land stanzen — sonst
+## sind Teiche "tiefe Löcher", Flüsse Klammen, und Hafen/Werft am Wasser sind unmöglich.
+## Jeder Land-Knoten direkt am Wasser muss bebaubar sein (max_slope <= 3).
+func _test_shore_buildable() -> void:
+	for mt in ["flach", "fluss", "insel"]:
+		var map := MapGenerator.generate(96, 96, 2134835298, { "map_type": mt })
+		var shore := 0
+		var steep := 0
+		for y in map.height:
+			for x in map.width:
+				if map.get_height(x, y) < int(MapGenerator.H_WATER_MAX):
+					continue  # Wasser
+				var at_shore := false
+				for dir in Grid.DIRS:
+					var n := map.neighbor(x, y, dir)
+					if n.x >= 0 and map.get_height(n.x, n.y) < int(MapGenerator.H_WATER_MAX):
+						at_shore = true
+						break
+				if not at_shore:
+					continue
+				shore += 1
+				if map.max_slope(x, y) > 3:
+					steep += 1
+		_check(shore > 0, "Ufer (%s): es gibt Land am Wasser (%d Knoten)" % [mt, shore])
+		_check(steep == 0, "Ufer (%s): kein Steilufer, alle Uferknoten bebaubar (%d steil)" % [mt, steep])
 
 
 func _count_terrain(map: MapData, kind: int) -> int:
