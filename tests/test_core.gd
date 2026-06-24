@@ -62,6 +62,7 @@ func _initialize() -> void:
 	_test_demolish_returns_garrison()
 	_test_harbor_no_planing()
 	_test_military_settings()
+	_test_occupation_by_frontier()
 	_test_tools_and_recruitment()
 	_test_combat()
 	_test_enemy_road_people()
@@ -1177,6 +1178,44 @@ func _test_military_settings() -> void:
 	eco.reset_military_settings()
 	_check(eco.mil_defense == 3 and eco.occupy_border == 8 and eco.occupy_interior == 0,
 		"#52: Reset stellt RTTR-Standard wieder her")
+
+
+## #52: Besatzung nach Grenznähe — Zone (Inneres/Mitte/Grenze) bestimmt die
+## Sollbesatzung; überzählige Soldaten kehren in die HQ-Reserve zurück.
+func _test_occupation_by_frontier() -> void:
+	var map := _flat_map(60, 40)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(5, 20, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+	var wt := state.place_building(10, 20, WorldState.BQ_HOUSE, false, "watchtower", 7, false)
+	_check(wt != null, "#52: Wachturm platzierbar")
+	if wt == null:
+		return
+	var cap := eco._capacity_for(wt.size)
+
+	# Kein Feind → Inneres. occupy_interior default 0 → Soll 1; bei 8 volle Kapazität.
+	_check(eco._occupy_setting_for(wt) == eco.occupy_interior, "#52: ohne Feind → Inneres-Zone")
+	_check(eco._required_troops(wt) == 1, "#52: Inneres (occupy 0) → Soll 1")
+	eco.occupy_interior = 8
+	_check(eco._required_troops(wt) == cap, "#52: Inneres bei occupy 8 → volle Kapazität")
+	eco.occupy_interior = 0
+
+	# Überbesatzung wird heruntergeregelt; die Differenz landet in der Reserve.
+	wt.garrison = cap
+	eco.soldiers = 0
+	eco._regulate_garrisons()
+	_check(wt.garrison == 1 and eco.soldiers == cap - 1,
+		"#52: Überzählige kehren in die Reserve (Garnison %d, Reserve %d)" % [wt.garrison, eco.soldiers])
+
+	# Feind in mittlerer Distanz (Hex 22) → Mitte-Zone.
+	_raw(state, Vector2i(32, 20), "guardhouse", 5, 1, 2, 2, false)
+	_check(eco._occupy_setting_for(wt) == eco.occupy_center, "#52: mittlerer Feind → Mitte-Zone")
+
+	# Näherer Feind (Hex 8) → Grenz-Zone; occupy_border 8 → volle Kapazität.
+	_raw(state, Vector2i(18, 20), "guardhouse", 5, 1, 2, 2, false)
+	_check(eco._occupy_setting_for(wt) == eco.occupy_border, "#52: naher Feind → Grenz-Zone")
+	_check(eco._required_troops(wt) == cap, "#52: Grenze (occupy 8) → volle Kapazität")
 
 
 ## Werkzeugmacher-Produktion (Prioritäten/Bestellungen), Schmiede Schwert/Schild
@@ -2556,6 +2595,7 @@ func _test_door_transport() -> void:
 	var map2 := _flat_map(40, 40)
 	var state2 := WorldState.new(map2)
 	var eco2 := Economy.new(state2)
+	eco2.occupy_interior = 8  # Hinterland-Wachhaus voll besetzt halten (#52), sonst Soll=1
 	var hq2 := state2.place_building(10, 10, WorldState.BQ_CASTLE, true, "hq", 9, false)
 	if hq2 == null:
 		return
@@ -2563,13 +2603,13 @@ func _test_door_transport() -> void:
 	var gh := state2.place_building(13, 13, WorldState.BQ_HUT, false, "guardhouse", 5, false)
 	if gh == null:
 		return
-	gh.garrison = 3
+	gh.garrison = 2  # volle Wachhaus-Kapazität (BQ_HUT)
 	state2.build_road(state2.buildings[map2.idx(10, 10)].flag_pos, gh.flag_pos)
 	eco2.resync()
 	eco2.hq_stock[Goods.COINS] = 5
 	for t in 6000:
 		eco2.tick()
-	_check(gh.promotions == 3, "Tür-Münzen: ganze Garnison befördert (%d)" % gh.promotions)
+	_check(gh.promotions == 2, "Tür-Münzen: ganze Garnison befördert (%d)" % gh.promotions)
 	_check(eco2.hq_stock.get(Goods.COINS, 0) == 5 - gh.promotions,
 		"Tür-Münzen: aus dem HQ verschwinden genau so viele Münzen wie Beförderungen (kein Verlust)")
 	var gbs: Economy.BState = eco2.bstates.get(map2.idx(gh.pos.x, gh.pos.y))

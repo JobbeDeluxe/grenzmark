@@ -1107,6 +1107,56 @@ func _tick_catapults() -> void:
 			dirty = true
 
 
+## Grenzdistanz-Zone eines eigenen Militärgebäudes → zugehöriger Besatzungs-Regler
+## (#52, RTTR FrontierDistance). Distanz = Hex-Abstand zum nächsten FEINDLICHEN
+## Militärgebäude: <= NEAR Grenze, <= MIDDLE Mitte, sonst Inneres. Ohne Feindgebäude
+## ist alles Inneres (wie S2: Hinterland dünn besetzen).
+func _occupy_setting_for(b: WorldState.Building) -> int:
+	var nearest := 1 << 30
+	for j in state.buildings:
+		var e: WorldState.Building = state.buildings[j]
+		if e.owner == b.owner or e.under_construction:
+			continue
+		if int(BuildingCatalog.get_def(e.def_id).get("influence", 0)) <= 0:
+			continue
+		nearest = mini(nearest, WorldState.hex_distance(b.pos, e.pos))
+	if nearest <= MIL_DIST_NEAR:
+		return occupy_border
+	if nearest <= MIL_DIST_MIDDLE:
+		return occupy_center
+	return occupy_interior
+
+
+## Sollbesatzung eines eigenen Militärgebäudes (#52, RTTR CalcRequiredNumTroops):
+## (Kapazität − 1) · Regler / Skala + 1. Immer ≥ 1 (ein Mann hält das Gebäude).
+func _required_troops(b: WorldState.Building) -> int:
+	var cap: int = b.capacity if b.capacity > 0 else _capacity_for(b.size)
+	var setting := _occupy_setting_for(b)
+	return (cap - 1) * setting / MIL_SCALE_OCCUPY + 1
+
+
+## Überzählige Garnison (Besatzung höher als für die Grenz-Zone nötig) kehrt in die
+## HQ-Reserve zurück (#52, RTTR RegulateTroops — vereinfacht als sofortige Rückbuchung;
+## einquartierte Soldaten sind unsichtbar). Es bleibt immer mindestens 1 Soldat.
+func _regulate_garrisons() -> void:
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		if b.owner != 0 or b.is_hq or b.under_construction:
+			continue
+		if int(BuildingCatalog.get_def(b.def_id).get("influence", 0)) <= 0:
+			continue
+		if bstates.has(i) and bstates[i].is_construction:
+			continue
+		var excess := b.garrison - _required_troops(b)
+		while excess > 0 and b.garrison > 1:
+			b.garrison -= 1
+			soldiers += 1
+			excess -= 1
+			dirty = true
+		if b.promotions > b.garrison:
+			b.promotions = b.garrison  # Rüstung kann nie über die Garnison hinausgehen
+
+
 ## Soldaten ausbilden, Marschierende bewegen, neue Soldaten entsenden.
 func _tick_soldiers() -> void:
 	if hq_flag < 0:
@@ -1116,6 +1166,7 @@ func _tick_soldiers() -> void:
 		_soldier_timer = SOLDIER_TICKS
 		_try_recruit()
 	_tick_marchers()
+	_regulate_garrisons()
 	if soldiers <= 0:
 		return
 	var w := state.map.width
@@ -1130,10 +1181,9 @@ func _tick_soldiers() -> void:
 			continue
 		if bstates.has(i) and bstates[i].is_construction:
 			continue
-		var cap: int = b.capacity if b.capacity > 0 else _capacity_for(b.size)
 		var inc: int = _inc_soldiers.get(i, 0)
-		if b.garrison + inc >= cap:
-			continue
+		if b.garrison + inc >= _required_troops(b):
+			continue  # Sollbesatzung der Grenz-Zone erreicht (#52)
 		var route := state.find_route(hq_pos, b.flag_pos)
 		if route.size() < 2:
 			continue
