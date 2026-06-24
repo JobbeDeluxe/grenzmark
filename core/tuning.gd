@@ -195,6 +195,30 @@ static func recruiting_ratio_default() -> int:
 	return clampi(int(_num("recruiting_ratio", 10)), 0, 10)
 
 
+## Militär-Regler nach RTTR (#52). Skalen MILITARY_SETTINGS_SCALE = {10,5,5,5,8,8,8,8};
+## Defaults aus GamePlayer::LoadStandardMilitarySettings {10,3,5,3,0,1,8,8}. Wir nutzen
+## die nicht-Addon-Regler: Verteidigerstärke(1), Angriffsstärke(3), Besatzung
+## Inneres(4)/Mitte(5)/Grenze(7). Override je Schlüssel via tuning.json.
+static func mil_defense_default() -> int:
+	return clampi(int(_num("mil_defense", 3)), 0, 5)
+
+
+static func mil_attack_default() -> int:
+	return clampi(int(_num("mil_attack", 3)), 0, 5)
+
+
+static func occupy_interior_default() -> int:
+	return clampi(int(_num("occupy_interior", 0)), 0, 8)
+
+
+static func occupy_center_default() -> int:
+	return clampi(int(_num("occupy_center", 1)), 0, 8)
+
+
+static func occupy_border_default() -> int:
+	return clampi(int(_num("occupy_border", 8)), 0, 8)
+
+
 ## Standard-Warenverteilung (#43, RTTR distributionMap, auf vorhandene Gebäude
 ## reduziert): je verteilter Ware ein Gewicht 0..10 pro konkurrierendem Abnehmer.
 ## Nur Waren mit MEHREREN Abnehmern stehen hier — bei knappem Bestand bekommt der

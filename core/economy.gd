@@ -36,7 +36,21 @@ const FIELD_MAX_SLOPE := 3     # RTTR/S2: direkte Höhendifferenz > 3 ist nur Fl
 const SOLDIER_TICKS := 120     # Ticks, um aus einem Schwert einen Soldaten zu machen
 const MARCH_SPEED := 0.07      # Tempo marschierender Soldaten (Segmente/Tick)
 const ATTACK_SPEED := 1.3      # Tempo angreifender Soldaten (Weltpixel/Tick)
-const PROMO_TICKS := 200       # Münze → Beförderung (Verteidigungsrüstung)
+const PROMO_TICKS := 200       # Münze → Beförderung (echte Rangstufe, #52)
+# Soldaten-Ränge (#52/#28, RTTR: 5 Stufen 0..4). HP je Rang aus RTTR MilitaryConsts.
+const SOLDIER_RANKS := 5
+const RANK_MAX := 4
+const RANK_HP: Array[int] = [3, 4, 5, 6, 7]
+const RANK_NAMES: Array[String] = ["Gefreiter", "Obergefreiter", "Feldwebel", "Offizier", "General"]
+# RTTR MILITARY_SETTINGS_SCALE (Nenner je Regler, #52): Verteidiger/Angriff 0..5,
+# Besatzung nach Grenznähe 0..8. (Rekrutierung 0..10 = recruiting_ratio, #41.)
+const MIL_SCALE_DEFENSE := 5
+const MIL_SCALE_ATTACK := 5
+const MIL_SCALE_OCCUPY := 8
+# Grenzdistanz-Zonen (#52, RTTR MAX_MILITARY_DISTANCE_NEAR/MIDDLE in Knoten zum nächsten
+# feindlichen Militärgebäude): <= NEAR = Grenze, <= MIDDLE = Mitte, sonst Inneres.
+const MIL_DIST_NEAR := 18
+const MIL_DIST_MIDDLE := 26
 const CATAPULT_TICKS := 260    # Katapult-Schussintervall
 const CATAPULT_RANGE := 6      # zusätzliche Reichweite des Katapults (Hex)
 # See-Transport (#46): Schiffe gleichen Hafenbestände derselben Meeres-Komponente aus
@@ -291,6 +305,13 @@ var tool_orders: Dictionary = {}     # Werkzeug-Gut -> noch offene Bestellmenge 
 var distribution: Dictionary = {}    # Ware -> { def_id -> Gewicht 0..10 } (#43 Verteilung)
 var transport_order: Array = []      # Waren nach Transport-Priorität (Index 0 = zuerst, #43)
 var recruiting_ratio := 10           # Soldaten-Rekrutierungsrate 0..10 (RTTR MilSetting 0)
+# Militär-Regler (#52, RTTR MilitarySettings). Skalen siehe MIL_SCALE_*; Defaults aus
+# Tuning. Verteidigerstärke/Angriffsstärke 0..5, Besatzung nach Grenznähe 0..8.
+var mil_defense := 3                  # Verteidigerstärke (RTTR Setting 1): Rangwahl Verteidiger
+var mil_attack := 3                   # Angriffsstärke (Setting 3): wie viele Soldaten losziehen
+var occupy_interior := 0             # Besatzung Landesinneres (Setting 4)
+var occupy_center := 1               # Besatzung Landesmitte (Setting 5)
+var occupy_border := 8              # Besatzung Grenzgebiet (Setting 7)
 var mines_accept_beer := false       # Hausregel: Minen nehmen zusätzlich Bier als Nahrung
                                      # (Original: nur Fisch/Fleisch/Brot). Default aus.
 var output_via_carrier := false      # #66: Ausgang per Straßenträger (Arbeiter füllt nur
@@ -341,6 +362,11 @@ func _init_settings() -> void:
 	for g in Goods.tools():
 		tool_orders[g] = 0
 	recruiting_ratio = Tuning.recruiting_ratio_default()
+	mil_defense = Tuning.mil_defense_default()
+	mil_attack = Tuning.mil_attack_default()
+	occupy_interior = Tuning.occupy_interior_default()
+	occupy_center = Tuning.occupy_center_default()
+	occupy_border = Tuning.occupy_border_default()
 	distribution = Tuning.distribution_default()
 	transport_order = Tuning.transport_order_default()
 
@@ -358,6 +384,37 @@ func set_tool_order(tool_good: int, count: int) -> void:
 
 func set_recruiting_ratio(ratio: int) -> void:
 	recruiting_ratio = clampi(ratio, 0, 10)
+
+
+## --- Militär-Regler (#52); clampen auf RTTR-Skalen. ---
+func set_mil_defense(v: int) -> void:
+	mil_defense = clampi(v, 0, MIL_SCALE_DEFENSE)
+
+
+func set_mil_attack(v: int) -> void:
+	mil_attack = clampi(v, 0, MIL_SCALE_ATTACK)
+
+
+func set_occupy_interior(v: int) -> void:
+	occupy_interior = clampi(v, 0, MIL_SCALE_OCCUPY)
+
+
+func set_occupy_center(v: int) -> void:
+	occupy_center = clampi(v, 0, MIL_SCALE_OCCUPY)
+
+
+func set_occupy_border(v: int) -> void:
+	occupy_border = clampi(v, 0, MIL_SCALE_OCCUPY)
+
+
+## Setzt alle Militär-Regler auf die RTTR-Standardwerte zurück ("Standard"-Button).
+func reset_military_settings() -> void:
+	recruiting_ratio = Tuning.recruiting_ratio_default()
+	mil_defense = Tuning.mil_defense_default()
+	mil_attack = Tuning.mil_attack_default()
+	occupy_interior = Tuning.occupy_interior_default()
+	occupy_center = Tuning.occupy_center_default()
+	occupy_border = Tuning.occupy_border_default()
 
 
 func set_mines_accept_beer(on: bool) -> void:

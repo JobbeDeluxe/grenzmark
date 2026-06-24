@@ -3527,6 +3527,12 @@ func _build_save_data() -> Dictionary:
 		tool_orders = economy.tool_orders.duplicate(),
 		recruiting_ratio = economy.recruiting_ratio,
 		recruit_accum = economy._recruit_accum,
+		# Militär-Regler (#52)
+		mil_defense = economy.mil_defense,
+		mil_attack = economy.mil_attack,
+		occupy_interior = economy.occupy_interior,
+		occupy_center = economy.occupy_center,
+		occupy_border = economy.occupy_border,
 		mines_accept_beer = economy.mines_accept_beer,
 		output_via_carrier = economy.output_via_carrier,  # Ausgangsweg (#66)
 		distribution = economy.distribution.duplicate(true),  # Warenverteilung (#43)
@@ -3696,6 +3702,12 @@ func _apply_save_data(data: Dictionary) -> void:
 		economy.tool_orders = to
 	economy.recruiting_ratio = clampi(int(data.get("recruiting_ratio", economy.recruiting_ratio)), 0, 10)
 	economy._recruit_accum = int(data.get("recruit_accum", 0))
+	# Militär-Regler (#52); ältere Saves ohne diese Schlüssel behalten die Defaults.
+	economy.set_mil_defense(int(data.get("mil_defense", economy.mil_defense)))
+	economy.set_mil_attack(int(data.get("mil_attack", economy.mil_attack)))
+	economy.set_occupy_interior(int(data.get("occupy_interior", economy.occupy_interior)))
+	economy.set_occupy_center(int(data.get("occupy_center", economy.occupy_center)))
+	economy.set_occupy_border(int(data.get("occupy_border", economy.occupy_border)))
 	economy.mines_accept_beer = bool(data.get("mines_accept_beer", false))
 	economy.output_via_carrier = bool(data.get("output_via_carrier", false))  # Ausgangsweg (#66)
 	var dist = data.get("distribution", null)

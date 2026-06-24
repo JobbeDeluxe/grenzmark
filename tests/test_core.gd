@@ -61,6 +61,7 @@ func _initialize() -> void:
 	_test_military()
 	_test_demolish_returns_garrison()
 	_test_harbor_no_planing()
+	_test_military_settings()
 	_test_tools_and_recruitment()
 	_test_combat()
 	_test_enemy_road_people()
@@ -1147,6 +1148,35 @@ func _test_harbor_no_planing() -> void:
 		wb.def_id = water_def
 		_check(not eco._needs_planing(wb),
 			"Planier: %s (needs_water) wird NICHT planiert" % water_def)
+
+
+## #52: Militär-Regler — RTTR-Defaults, Clamp auf die Skalen, Reset auf Standard.
+func _test_military_settings() -> void:
+	var map := _flat_map(20, 20)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+
+	# RTTR-Defaults: Verteidiger 3, Angriff 3, Inneres 0, Mitte 1, Grenze 8.
+	_check(eco.mil_defense == 3, "#52: Default Verteidigerstärke 3")
+	_check(eco.mil_attack == 3, "#52: Default Angriffsstärke 3")
+	_check(eco.occupy_interior == 0, "#52: Default Besatzung Inneres 0")
+	_check(eco.occupy_center == 1, "#52: Default Besatzung Mitte 1")
+	_check(eco.occupy_border == 8, "#52: Default Besatzung Grenze 8")
+
+	# Clamp auf die Skalen (Verteidiger/Angriff 0..5, Besatzung 0..8).
+	eco.set_mil_defense(99)
+	_check(eco.mil_defense == 5, "#52: Verteidigerstärke clamped auf 5")
+	eco.set_mil_attack(-3)
+	_check(eco.mil_attack == 0, "#52: Angriffsstärke clamped auf 0")
+	eco.set_occupy_border(99)
+	_check(eco.occupy_border == 8, "#52: Besatzung Grenze clamped auf 8")
+	eco.set_occupy_interior(4)
+	_check(eco.occupy_interior == 4, "#52: Besatzung Inneres setzbar (4)")
+
+	# Reset stellt die Standardwerte wieder her.
+	eco.reset_military_settings()
+	_check(eco.mil_defense == 3 and eco.occupy_border == 8 and eco.occupy_interior == 0,
+		"#52: Reset stellt RTTR-Standard wieder her")
 
 
 ## Werkzeugmacher-Produktion (Prioritäten/Bestellungen), Schmiede Schwert/Schild
