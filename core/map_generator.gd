@@ -6,7 +6,7 @@ extends RefCounted
 
 const TERRAIN_CLEANUP_PASSES := 2
 const STONE_CLUSTER_AREA := 1400
-const MAP_GENERATOR_VERSION := "grenzmark-map-v6"
+const MAP_GENERATOR_VERSION := "grenzmark-map-v7"
 const MOUNTAIN_MEADOW_PATCH_AREA := 1800
 const MOUNTAIN_MEADOW_RADIUS := 2
 const MOUNTAIN_MEADOW_MIN_SEPARATION := 10
