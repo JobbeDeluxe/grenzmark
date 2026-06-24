@@ -1454,7 +1454,10 @@ func _update_stats_panel() -> void:
 	lines.append("Flaggen: %d" % state.flags.size())
 	lines.append("Wege: %d" % state.roads.size())
 	lines.append("Traeger (aktiv): %d" % active_carriers)
-	lines.append("Soldaten-Reserve: %d" % economy.soldiers)
+	lines.append("Soldaten (Lager): %d" % economy.soldiers)
+	var rrt := economy.reserve_rank_text()
+	if rrt != "":
+		lines.append("  %s" % rrt)
 	lines.append("Land (Knoten): %d" % state.territory.size())
 	_stats_label.text = "\n".join(lines)
 
@@ -3262,9 +3265,16 @@ func _update_economy_panel() -> void:
 		pl.text = "%s: %d" % [Jobs.name_of(j), c]
 		pl.modulate = Color(1, 1, 1, 1.0 if c > 0 else 0.3)
 	if _economy_panel != null and _economy_panel.has_meta("soldiers_label"):
-		var soldiers_text := "Soldaten-Reserve: %d" % economy.soldiers
+		var soldiers_text := ""
 		if st.bld != null and st.bld.def_id == "harbor":
 			soldiers_text = "Hafen-Garnison: siehe Hafenfenster"
+		else:
+			# Soldaten werden je Rang einzeln eingebucht (Gefreiter … Brigadegeneral), #52.
+			var rc := economy.reserve_rank_counts()
+			var sl: Array[String] = ["Soldaten (Lager):"]
+			for r in range(Economy.RANK_MAX, -1, -1):
+				sl.append("  %s: %d" % [Economy.RANK_NAMES[r], rc[r]])
+			soldiers_text = "\n".join(sl)
 		(_economy_panel.get_meta("soldiers_label") as Label).text = soldiers_text
 
 

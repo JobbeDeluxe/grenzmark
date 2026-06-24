@@ -1106,6 +1106,21 @@ func _test_demolish_returns_garrison() -> void:
 	eco.resync()
 	_check(eco.soldiers == 3, "#69: keine doppelte Rückgabe (%d)" % eco.soldiers)
 
+	# #52: Beim Abriss dürfen RÄNGE NICHT verloren gehen — ein beförderter Soldat
+	# kehrt rangerhaltend in die Reserve zurück (nicht als frischer Gefreiter).
+	eco.soldiers = 0
+	eco.soldier_ranks = [0, 0, 0, 0, 0]
+	var gh2 := state.place_building(12, 19, WorldState.BQ_HOUSE, false, "watchtower", 7, false)
+	_check(gh2 != null, "#52: Wachturm platzierbar")
+	if gh2 != null:
+		eco.resync()
+		gh2.garrison = 3
+		gh2.ranks = [1, 0, 0, 0, 2]  # 1 Gefreiter + 2 Brigadegeneräle
+		_check(state.remove_at(gh2.pos), "#52: Wachturm abreißbar")
+		eco.resync()
+		_check(eco.soldier_ranks[4] == 2 and eco.soldier_ranks[0] == 1,
+			"#52: Ränge überleben den Abriss (Reserve: %s)" % eco.reserve_rank_text())
+
 	# Hafen (#46, militärisches Lager) gibt seine Garnison ebenfalls zurück.
 	var hmap := _channel_map(34, 16, 12, 21)
 	hmap.set_harbor_point(10, 8, true)

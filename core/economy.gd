@@ -899,6 +899,24 @@ func garrison_rank_text(b: WorldState.Building) -> String:
 	return ", ".join(parts)
 
 
+## Rang-Aufschlüsselung der HQ-Reserve (#52): die Reserve hält BEFÖRDERTE Soldaten
+## rangerhaltend — ein zurückgekehrter Brigadegeneral bleibt Brigadegeneral.
+func reserve_rank_text() -> String:
+	_reserve_normalize()
+	var parts: Array[String] = []
+	for r in range(RANK_MAX, -1, -1):
+		if soldier_ranks[r] > 0:
+			parts.append("%d×%s" % [soldier_ranks[r], RANK_NAMES[r]])
+	return ", ".join(parts)
+
+
+## Normalisierte Reserve-Rangzählung (Index 0..RANK_MAX), für die Lager-Anzeige: Soldaten
+## werden je Rang einzeln „eingebucht" (Gefreiter … Brigadegeneral), nicht als pauschale Reserve.
+func reserve_rank_counts() -> Array[int]:
+	_reserve_normalize()
+	return [soldier_ranks[0], soldier_ranks[1], soldier_ranks[2], soldier_ranks[3], soldier_ranks[4]]
+
+
 ## Eine Münze befördert in [b] eine "Treppe" von Soldaten (RTTR nobMilitary upgrade-Event):
 ## von oben durchgehen, je Rangstufe der höchste noch nicht maximale Soldat steigt auf,
 ## solange der Rang unter dem zuletzt beförderten liegt. So wächst die Zahl der pro Münze
@@ -4199,7 +4217,8 @@ func goods_on_flag(flag_idx: int) -> int:
 func building_status(bld: WorldState.Building) -> String:
 	var name := String(BuildingCatalog.get_def(bld.def_id).get("name", "?"))
 	if bld.is_hq:
-		return "%s — Lager & Soldaten-Reserve: %d" % [name, soldiers]
+		var rt := reserve_rank_text()
+		return "%s — Lager. Soldaten: %s" % [name, rt if rt != "" else "keine"]
 	var bs: BState = bstates.get(state.map.idx(bld.pos.x, bld.pos.y))
 	if bs == null:
 		return name
