@@ -191,6 +191,7 @@ class Storage:
 	extends RefCounted
 	var flag_idx := -1                # Flaggen-Index (Anschluss ans Straßennetz)
 	var idx := -1                     # Gebäude-Index in state.buildings
+	var bld: WorldState.Building = null # Gebäude-Referenz (Garnison-Rückgabe bei Abriss, #69)
 	var owner := 0                    # Besitzer (aktuell nur Spieler 0 hat ein Lager)
 	var stock: Dictionary = {}        # good -> Anzahl
 	var people: Dictionary = {}       # job -> Anzahl (Träger + Spezialisten)
@@ -522,10 +523,18 @@ func resync() -> void:
 		else:
 			bstates[i].bld = b
 	for i in bstates.keys():
-		if not state.buildings.has(i) or state.buildings[i].is_hq:
+		var gone := not state.buildings.has(i)
+		if gone or state.buildings[i].is_hq:
 			var bs_gone: BState = bstates[i]
 			if bs_gone.has_person:
 				_return_person(bs_gone.person_job, bs_gone.bld.owner)  # Arbeiter kehrt zurück (#9)
+			# Garnison eines abgerissenen eigenen Militärgebäudes kehrt in die HQ-Reserve
+			# zurück (#69). Münz-Beförderungen (promotions) sind verbrauchtes Gold und
+			# verfallen mit dem Gebäude (S2-getreu). Nur echter Abriss (gone), nicht
+			# Eroberung (Besitzerwechsel bleibt in state.buildings).
+			if gone and bs_gone.bld != null and bs_gone.bld.owner == 0 and bs_gone.bld.garrison > 0:
+				soldiers += bs_gone.bld.garrison
+				bs_gone.bld.garrison = 0
 			_release_target(bs_gone)  # reservierten Arbeitsplatz freigeben (#66)
 			bstates.erase(i)
 
@@ -534,8 +543,13 @@ func resync() -> void:
 	# HQ-Lager übernehmen, damit beim Abriss keine Ware verloren geht.
 	for si in range(storages.size() - 1, 0, -1):
 		var st := storages[si]
-		if st.idx < 0 or not state.buildings.has(st.idx) \
-				or state.buildings[st.idx].is_hq or state.buildings[st.idx].under_construction:
+		var st_gone := st.idx < 0 or not state.buildings.has(st.idx)
+		if st_gone or state.buildings[st.idx].is_hq or state.buildings[st.idx].under_construction:
+			# Garnison eines abgerissenen eigenen Hafens (#46 militärisches Lager) kehrt
+			# in die HQ-Reserve zurück (#69), analog zu Militärgebäuden mit bstate.
+			if st_gone and st.bld != null and st.bld.owner == 0 and st.bld.garrison > 0:
+				soldiers += st.bld.garrison
+				st.bld.garrison = 0
 			for g in st.stock:
 				storages[0].stock[g] = int(storages[0].stock.get(g, 0)) + int(st.stock[g])
 			for good in st.outbox:
@@ -1203,6 +1217,10 @@ func _arrive_marcher(m: Marcher) -> void:
 		state.buildings[m.dest_building].garrison += 1
 		state.recompute_territory()
 		dirty = true
+	else:
+		# Ziel-Militärgebäude wurde abgerissen, während der Soldat marschierte (#69):
+		# er kehrt in die HQ-Reserve zurück statt zu verschwinden.
+		soldiers += 1
 	_inc_soldiers[m.dest_building] = maxi(0, _inc_soldiers.get(m.dest_building, 0) - 1)
 
 
@@ -1251,6 +1269,7 @@ func _register_storage(idx: int, b: WorldState.Building) -> void:
 	for st in storages:
 		if st.flag_idx == fidx:
 			st.idx = idx
+			st.bld = b
 			st.owner = b.owner
 			if st.house == null:
 				st.house = HouseCarrier.new()
@@ -1258,6 +1277,7 @@ func _register_storage(idx: int, b: WorldState.Building) -> void:
 	var ns := Storage.new()
 	ns.flag_idx = fidx
 	ns.idx = idx
+	ns.bld = b
 	ns.owner = b.owner
 	ns.house = HouseCarrier.new()
 	storages.append(ns)

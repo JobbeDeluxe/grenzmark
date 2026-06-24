@@ -59,6 +59,7 @@ func _initialize() -> void:
 	_test_distribution()
 	_test_transport_priority()
 	_test_military()
+	_test_demolish_returns_garrison()
 	_test_tools_and_recruitment()
 	_test_combat()
 	_test_enemy_road_people()
@@ -1070,6 +1071,54 @@ func _test_military() -> void:
 	_check(not gh.under_construction, "Wachhaus wird gebaut")
 	_check(gh.garrison >= 1, "Wachhaus erhält Soldaten (Garnison %d)" % gh.garrison)
 	_check(state.in_territory(12, 24), "Wachhaus erweitert das Gebiet nach Besatzung")
+
+
+## #69: Abriss eines eigenen Militärgebäudes gibt die Garnison-Soldaten in die
+## HQ-Reserve zurück, statt sie verschwinden zu lassen — inkl. Hafen (#46) und
+## marschierender Soldaten; keine doppelte Rückgabe.
+func _test_demolish_returns_garrison() -> void:
+	var map := _flat_map(36, 36)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	state.place_building(12, 12, WorldState.BQ_CASTLE, true, "hq", 9, false)
+	eco.resync()
+
+	# Fertiges eigenes Wachhaus mit 3 Soldaten Garnison (genug Abstand zum HQ, #15).
+	var gh := state.place_building(12, 19, WorldState.BQ_HUT, false, "guardhouse", 5, false)
+	_check(gh != null, "#69: Wachhaus platzierbar")
+	if gh == null:
+		return
+	eco.resync()
+	gh.garrison = 3
+	eco.soldiers = 0
+	_check(eco.bstates.has(map.idx(12, 19)), "#69: Wachhaus hat bstate")
+
+	_check(state.remove_at(gh.pos), "#69: Wachhaus abreißbar")
+	eco.resync()
+	_check(eco.soldiers == 3,
+		"#69: 3 Garnison-Soldaten kehren in die Reserve zurück (%d)" % eco.soldiers)
+
+	# Erneuter resync darf nicht erneut gutschreiben (keine Doppel-Rückgabe).
+	eco.resync()
+	_check(eco.soldiers == 3, "#69: keine doppelte Rückgabe (%d)" % eco.soldiers)
+
+	# Hafen (#46, militärisches Lager) gibt seine Garnison ebenfalls zurück.
+	var hmap := _channel_map(34, 16, 12, 21)
+	hmap.set_harbor_point(10, 8, true)
+	var hstate := WorldState.new(hmap)
+	var heco := Economy.new(hstate)
+	heco.ai_enabled = false
+	var ha := hstate.place_building(10, 8, WorldState.BQ_HOUSE, false, "harbor", 6, false, 0)
+	_check(ha != null, "#69: Hafen platzierbar")
+	if ha == null:
+		return
+	heco.resync()
+	ha.garrison = 2
+	heco.soldiers = 0
+	_check(hstate.remove_at(ha.pos), "#69: Hafen abreißbar")
+	heco.resync()
+	_check(heco.soldiers == 2,
+		"#69: 2 Hafen-Garnison-Soldaten kehren in die Reserve zurück (%d)" % heco.soldiers)
 
 
 ## Werkzeugmacher-Produktion (Prioritäten/Bestellungen), Schmiede Schwert/Schild

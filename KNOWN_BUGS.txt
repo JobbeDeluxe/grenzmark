@@ -4,6 +4,34 @@ Format: [Datum] (Status) Titel — Beschreibung / Verdacht / mögliche Lösung
 Status: OFFEN | IN ARBEIT | BEHOBEN
 
 
+[2026-06-24] (BEHOBEN) Abriss eines Militärgebäudes verschluckte die Garnison
+------------------------------------------------------------------------
+  GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/69
+
+  Symptom: Beim Abreißen eines eigenen Militärgebäudes (Wachhaus, Wachturm, Burg,
+  auch Hafen #46) verschwanden die stationierten Soldaten ersatzlos. In S2 kehren
+  sie ins HQ/Lager zurück.
+
+  Ursache: Beim Abriss (Economy.resync() diffte das verschwundene Gebäude) wurde nur
+  der Arbeiter zurückgegeben (_return_person, #9). Die garrison des Gebäudes wurde
+  nirgends verrechnet — die Soldaten gingen verloren.
+
+  Fix (core/economy.gd):
+  - bstate-Abriss-Loop: garrison eines abgerissenen EIGENEN Gebäudes (owner 0) fließt
+    in die Reserve (soldiers += garrison), garrison wird genullt. Nur bei echtem
+    Abriss (gone), nicht bei Eroberung (Besitzerwechsel bleibt in state.buildings).
+  - Hafen (#46) ist ein Storage ohne bstate: Storage hält jetzt eine bld-Referenz,
+    der Storage-Abriss-Loop gibt dessen garrison genauso zurück.
+  - Marschierende Soldaten, deren Ziel-Gebäude während des Anmarschs abgerissen wird,
+    kehren in _arrive_marcher in die Reserve zurück statt zu verschwinden.
+  - Münz-Beförderungen (promotions) verfallen mit dem Gebäude (verbrauchtes Gold,
+    S2-getreu).
+
+  Verifikation: 1053 Kern-Tests grün (neuer Test _test_demolish_returns_garrison:
+  Wachhaus + Hafen, keine Doppel-Rückgabe bei erneutem resync), Smoke-Test Exit 0.
+  Bitte in der GUI gegenprüfen, dann Issue #69 schließen.
+
+
 [2026-06-15] (BEHOBEN, GUI-bestätigt) Träger verschwinden östlich am HQ
 ------------------------------------------------------------------------
   GitHub: https://github.com/JobbeDeluxe/grenzmark/issues/39
