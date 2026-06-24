@@ -550,7 +550,7 @@ func resync() -> void:
 			continue
 		flag_to_building[state.map.idx(b.flag_pos.x, b.flag_pos.y)] = i
 		if int(BuildingCatalog.get_def(b.def_id).get("influence", 0)) > 0:
-			b.capacity = _capacity_for(b.size)
+			b.capacity = _capacity_for_building(b)
 		if not bstates.has(i):
 			var bs := BState.new()
 			bs.idx = i
@@ -785,6 +785,14 @@ func _capacity_for(size: int) -> int:
 	return 2
 
 
+## Truppen-Kapazität eines Militärgebäudes (#52): originalgetreu aus dem Katalog
+## (troops: Wachhaus 3, Wachturm 6, Festung 9, Hafen 9, Katapult 2); fehlt der Wert,
+## Fallback auf die größenbasierte Kapazität.
+func _capacity_for_building(b: WorldState.Building) -> int:
+	var t := int(BuildingCatalog.get_def(b.def_id).get("troops", 0))
+	return t if t > 0 else _capacity_for(b.size)
+
+
 # --------------------------------------------------------------------------
 #  Soldaten-Ränge (#52/#28) — Reserve und Garnison rangweise verwalten
 # --------------------------------------------------------------------------
@@ -891,18 +899,27 @@ func garrison_rank_text(b: WorldState.Building) -> String:
 	return ", ".join(parts)
 
 
-## Eine Münze befördert in [b] den stärksten noch nicht maximalen Soldaten um einen Rang
-## (RTTR: Beförderung von oben). Liefert true, wenn jemand befördert wurde.
-func _promote_one(b: WorldState.Building) -> bool:
+## Eine Münze befördert in [b] eine "Treppe" von Soldaten (RTTR nobMilitary upgrade-Event):
+## von oben durchgehen, je Rangstufe der höchste noch nicht maximale Soldat steigt auf,
+## solange der Rang unter dem zuletzt beförderten liegt. So wächst die Zahl der pro Münze
+## Beförderten mit der Rang-Vielfalt: erst 1, dann 2, dann 3 … Liefert true bei Aufstieg.
+func _promote_coin(b: WorldState.Building) -> bool:
 	if b.garrison <= 0:
 		return false
-	b.ranks = b.ranks_normalized()
+	var rn := b.ranks_normalized()
+	var to_promote: Array[int] = []   # Ränge, von denen je einer aufsteigt
+	var last := RANK_MAX              # zuletzt beförderter Rang; Start = Max → General bleibt
 	for r in range(RANK_MAX - 1, -1, -1):
-		if b.ranks[r] > 0:
-			b.ranks[r] -= 1
-			b.ranks[r + 1] += 1
-			return true
-	return false
+		if rn[r] > 0 and r < last:
+			to_promote.append(r)
+			last = r
+	if to_promote.is_empty():
+		return false
+	for r in to_promote:
+		rn[r] -= 1
+		rn[r + 1] += 1
+	b.ranks = rn
+	return true
 
 
 func _init_tree_growth_from_map() -> void:
@@ -1202,7 +1219,7 @@ func _tick_promotions() -> void:
 		var bs: BState = bstates.get(i)
 		if bs == null or int(bs.delivered.get(Goods.COINS, 0)) <= 0:
 			continue
-		if _promote_one(b):
+		if _promote_coin(b):
 			bs.delivered[Goods.COINS] = int(bs.delivered[Goods.COINS]) - 1
 			dirty = true
 			return
@@ -1257,7 +1274,7 @@ func _occupy_setting_for(b: WorldState.Building) -> int:
 ## Sollbesatzung eines eigenen Militärgebäudes (#52, RTTR CalcRequiredNumTroops):
 ## (Kapazität − 1) · Regler / Skala + 1. Immer ≥ 1 (ein Mann hält das Gebäude).
 func _required_troops(b: WorldState.Building) -> int:
-	var cap: int = b.capacity if b.capacity > 0 else _capacity_for(b.size)
+	var cap: int = b.capacity if b.capacity > 0 else _capacity_for_building(b)
 	var setting := _occupy_setting_for(b)
 	return (cap - 1) * setting / MIL_SCALE_OCCUPY + 1
 
@@ -1512,7 +1529,7 @@ func _register_storage(idx: int, b: WorldState.Building) -> void:
 	# Militärisches Lager (Hafen, #46): Garnison-Kapazität setzen, damit _tick_soldiers es
 	# wie ein Militärgebäude vom HQ besetzt. Reine Lagerhäuser (influence 0) bleiben unberührt.
 	if int(BuildingCatalog.get_def(b.def_id).get("influence", 0)) > 0 and b.capacity <= 0:
-		b.capacity = _capacity_for(b.size)
+		b.capacity = _capacity_for_building(b)
 	var fidx := state.map.idx(b.flag_pos.x, b.flag_pos.y)
 	for st in storages:
 		if st.flag_idx == fidx:

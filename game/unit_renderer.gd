@@ -575,22 +575,29 @@ func _draw_marchers() -> void:
 		elif m.purpose_worker or m.purpose_return:
 			_unit("worker", p, facing, m.attacker_owner)
 		else:
-			_unit("soldier", p, facing, m.attacker_owner)
-			_draw_rank_chevrons(p, m.rank)  # sichtbarer Rang (#52/#28)
+			_unit_tex(GameTheme.soldier_rank_texture(m.rank, m.attacker_owner),
+				p, facing, m.attacker_owner)  # eigenes Rang-Sprite (#52/#28)
 		_occlude(p)
 
 
-## Kleine goldene Rang-Winkel über einem Soldaten (Rang 0 = keiner … General = vier).
-func _draw_rank_chevrons(p: Vector2, rank: int) -> void:
-	if rank <= 0:
+## Zeichnet eine Einheit mit einer KONKRETEN Sheet-Textur (z. B. rang-spezifisches
+## Soldaten-Sprite); fällt auf die Platzhalter-Figur zurück, wenn die Textur fehlt.
+func _unit_tex(tex: Texture2D, p: Vector2, facing: Vector2, owner := 0) -> void:
+	if tex == null:
+		_figure(p, GameTheme.player_color(owner))
 		return
-	var us := GameTheme.unit_size()
-	var top := p.y - us - 4.0
-	var gold := Color(0.96, 0.84, 0.32)
-	for k in rank:
-		var y := top - k * 2.6
-		draw_line(Vector2(p.x - 3.0, y + 2.0), Vector2(p.x, y), gold, 1.2, true)
-		draw_line(Vector2(p.x, y), Vector2(p.x + 3.0, y + 2.0), gold, 1.2, true)
+	var cols := GameTheme.ANIM_FRAMES
+	var rows := GameTheme.ANIM_DIRS
+	var cw := float(tex.get_width()) / cols
+	var ch := float(tex.get_height()) / rows
+	var sc := GameTheme.unit_size() / maxf(ch, 1.0)
+	var dw := cw * sc
+	var dh := ch * sc
+	var moving := facing.length() > 0.01
+	var diri := _dir6(facing) if moving else 2
+	var frame := (int(_anim_time * 7.0) % cols) if moving else 0
+	var region := Rect2(frame * cw, diri * ch, cw, ch)
+	draw_texture_rect_region(tex, Rect2(p.x - dw * 0.5, p.y - dh, dw, dh), region)
 
 
 ## Verirrte Träger (Straße abgerissen): laufen frei mit ihrer Ware herum.

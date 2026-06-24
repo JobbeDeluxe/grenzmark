@@ -2616,14 +2616,23 @@ func _update_window_military(entry: Dictionary, b: WorldState.Building) -> void:
 	for i in maxi(b.capacity, b.garrison):
 		if i < slot_ranks.size():
 			var rr: int = slot_ranks[i]
-			var slot := Label.new()
-			slot.custom_minimum_size = Vector2(px * 0.8, px)
-			slot.text = ">".repeat(rr + 1)  # Rang 0 = ">", General = ">>>>>"
-			slot.add_theme_font_size_override("font_size", maxi(8, int(px * 0.55)))
-			slot.add_theme_color_override("font_color", col.lightened(rr * 0.16))
-			slot.tooltip_text = "%s (Garnison %d/%d)" % [Economy.RANK_NAMES[rr], b.garrison, b.capacity]
-			slot.mouse_filter = Control.MOUSE_FILTER_PASS
-			mil_box.add_child(slot)
+			var badge := GameTheme.rank_badge_texture(rr)
+			if badge != null:
+				var icon := TextureRect.new()
+				icon.custom_minimum_size = Vector2(px, px)
+				icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+				icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+				icon.texture = badge
+				icon.tooltip_text = "%s (Garnison %d/%d)" % [Economy.RANK_NAMES[rr], b.garrison, b.capacity]
+				icon.mouse_filter = Control.MOUSE_FILTER_PASS
+				mil_box.add_child(icon)
+			else:
+				var slot := ColorRect.new()
+				slot.custom_minimum_size = Vector2(px * 0.7, px)
+				slot.color = col.lightened(rr * 0.16)
+				slot.tooltip_text = "%s (%d/%d)" % [Economy.RANK_NAMES[rr], b.garrison, b.capacity]
+				slot.mouse_filter = Control.MOUSE_FILTER_PASS
+				mil_box.add_child(slot)
 		else:
 			var empty := ColorRect.new()
 			empty.custom_minimum_size = Vector2(px * 0.7, px)

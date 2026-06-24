@@ -156,6 +156,25 @@ static func object_texture(name: String) -> Texture2D:
 	return _tex("res://assets/objects/%s.png" % name)
 
 
+## Rang-Abzeichen fürs UI (Gebäudefenster): assets/ui/ranks/rank_<0..4>.png (#52/#28).
+static func rank_badge_texture(rank: int) -> Texture2D:
+	return _tex("res://assets/ui/ranks/rank_%d.png" % clampi(rank, 0, 4))
+
+
+## Soldaten-Sprite je Rang für die Karte: assets/units/soldier_rank<0..4>.png, pro Spieler
+## soldier_rank<r>_<owner>.png. Fällt auf das generische soldier-Sheet zurück (#52/#28).
+static func soldier_rank_texture(rank: int, owner := 0) -> Texture2D:
+	var r := clampi(rank, 0, 4)
+	if owner != 0:
+		var t := _tex("res://assets/units/soldier_rank%d_%d.png" % [r, owner])
+		if t != null:
+			return t
+	var base := _tex("res://assets/units/soldier_rank%d.png" % r)
+	if base != null:
+		return base
+	return unit_texture("soldier", owner)
+
+
 ## Terrain-Kurzname für Datei-Pfade (water/meadow/mountain/sand/swamp/snow).
 static func terrain_name(t: int) -> String:
 	match t:

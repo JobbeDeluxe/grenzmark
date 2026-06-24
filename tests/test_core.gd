@@ -1193,7 +1193,7 @@ func _test_occupation_by_frontier() -> void:
 	_check(wt != null, "#52: Wachturm platzierbar")
 	if wt == null:
 		return
-	var cap := eco._capacity_for(wt.size)
+	var cap := eco._capacity_for_building(wt)  # Wachturm: troops=6 (#52)
 
 	# Kein Feind → Inneres. occupy_interior default 0 → Soll 1; bei 8 volle Kapazität.
 	_check(eco._occupy_setting_for(wt) == eco.occupy_interior, "#52: ohne Feind → Inneres-Zone")
@@ -1240,13 +1240,20 @@ func _test_soldier_ranks() -> void:
 	# Beförderung: stärkster Soldat unter Höchstrang steigt auf.
 	var b := WorldState.Building.new()
 	b.garrison = 2; b.ranks = [2, 0, 0, 0, 0]
-	_check(eco._promote_one(b), "#52: Beförderung möglich")
+	_check(eco._promote_coin(b), "#52: Beförderung möglich")
 	_check(b.ranks[0] == 1 and b.ranks[1] == 1, "#52: ein Gefreiter wird Unteroffizier")
+
+	# Staircase: aus [2,1,0,0,0] steigen ZWEI auf (je einer pro Rangstufe) → [1,1,1,0,0].
+	var st := WorldState.Building.new()
+	st.garrison = 3; st.ranks = [2, 1, 0, 0, 0]
+	_check(eco._promote_coin(st), "#52: Staircase-Beförderung möglich")
+	_check(st.ranks == [1, 1, 1, 0, 0],
+		"#52: eine Münze befördert je Rangstufe einen (Treppe 1→2→3): %s" % str(st.ranks))
 
 	# Brigadegeneral (Rang 4) ist nicht weiter beförderbar.
 	var g := WorldState.Building.new()
 	g.garrison = 1; g.ranks = [0, 0, 0, 0, 1]
-	_check(not eco._promote_one(g), "#52: Brigadegeneral nicht weiter beförderbar")
+	_check(not eco._promote_coin(g), "#52: Brigadegeneral nicht weiter beförderbar")
 
 	# Kampf: ein Unteroffizier (Rang 1) hält 2 Treffer aus.
 	var d := WorldState.Building.new()
@@ -2524,7 +2531,7 @@ func _test_promotion() -> void:
 	_check(gh != null, "Wachhaus baubar")
 	if gh == null:
 		return
-	gh.garrison = 2  # volle Wachhaus-Kapazität (BQ_HUT)
+	gh.garrison = 3  # volle Wachhaus-Kapazität (troops=3)
 	eco.occupy_interior = 8  # Hinterland-Wachhaus voll besetzt halten (#52)
 	state.build_road(state.buildings[map.idx(10, 10)].flag_pos, gh.flag_pos)
 	eco.resync()
@@ -2651,20 +2658,18 @@ func _test_door_transport() -> void:
 	var gh := state2.place_building(13, 13, WorldState.BQ_HUT, false, "guardhouse", 5, false)
 	if gh == null:
 		return
-	gh.garrison = 2  # volle Wachhaus-Kapazität (BQ_HUT)
+	gh.garrison = 3  # volle Wachhaus-Kapazität (troops=3)
 	state2.build_road(state2.buildings[map2.idx(10, 10)].flag_pos, gh.flag_pos)
 	eco2.resync()
 	eco2.hq_stock[Goods.COINS] = 5
 	for t in 9000:
 		eco2.tick()
 	var rn2 := gh.ranks_normalized()
-	var levels := 0
-	for r in 5:
-		levels += r * rn2[r]
-	_check(gh.garrison - rn2[0] == 2,
+	_check(gh.garrison - rn2[0] == 3,
 		"Tür-Münzen: ganze Garnison befördert (%s)" % eco2.garrison_rank_text(gh))
-	_check(eco2.hq_stock.get(Goods.COINS, 0) == 5 - levels,
-		"Tür-Münzen: aus dem HQ verschwinden genau so viele Münzen wie Beförderungsstufen (kein Verlust)")
+	# 5 Münzen geliefert + lokal verbraucht; keine geht verloren (HQ leer, nichts liegt im Haus).
+	_check(eco2.hq_stock.get(Goods.COINS, 0) == 0,
+		"Tür-Münzen: alle 5 Münzen aus dem HQ verbraucht (kein Verlust)")
 	var gbs: Economy.BState = eco2.bstates.get(map2.idx(gh.pos.x, gh.pos.y))
 	_check(gbs != null and int(gbs.delivered.get(Goods.COINS, 0)) == 0,
 		"Tür-Münzen: keine Münze bleibt unverbraucht im Gebäude liegen")

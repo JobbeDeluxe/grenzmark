@@ -110,7 +110,7 @@ static func defs() -> Dictionary:
 			id = "harbor", name = "Hafen", size = M,
 			cost = { Goods.BOARDS: 4, Goods.STONE: 6 },
 			inputs = {}, output = -1, work = 0, resource = "",
-			needs_water = true, influence = 6, category = "lager",
+			needs_water = true, influence = 6, troops = 9, category = "lager",
 		},
 		# Werft (#46): baut aus Brettern Boote (für Wasserstraßen/Fähre) oder im
 		# Schiffe-Modus See-Schiffe. S2/10th-nah: Werft 2 Bretter + 3 Stein,
@@ -184,28 +184,30 @@ static func defs() -> Dictionary:
 			outputs = [Goods.SWORD, Goods.SHIELD],
 			work = 160, resource = "", influence = 0, category = "metall",
 		},
+		# Truppen-Kapazität (troops) original nach S2/RTTR NUM_TROOPS: Wachhaus 3,
+		# Wachturm 6, Festung 9; Hafen wird wie eine Festung gewertet (#52).
 		"guardhouse": {
 			id = "guardhouse", name = "Wachhaus", size = H,
 			cost = { Goods.BOARDS: 2, Goods.STONE: 2 }, inputs = {},
-			output = -1, work = 0, resource = "", influence = 5,
+			output = -1, work = 0, resource = "", influence = 5, troops = 3,
 			category = "militaer",
 		},
 		"watchtower": {
 			id = "watchtower", name = "Wachturm", size = M,
 			cost = { Goods.BOARDS: 3, Goods.STONE: 5 }, inputs = {},
-			output = -1, work = 0, resource = "", influence = 7,
+			output = -1, work = 0, resource = "", influence = 7, troops = 6,
 			category = "militaer",
 		},
 		"fortress": {
 			id = "fortress", name = "Festung", size = C,
 			cost = { Goods.BOARDS: 5, Goods.STONE: 9 }, inputs = {},
-			output = -1, work = 0, resource = "", influence = 10,
+			output = -1, work = 0, resource = "", influence = 10, troops = 9,
 			category = "militaer",
 		},
 		"catapult": {
 			id = "catapult", name = "Katapult", size = M,
 			cost = { Goods.BOARDS: 4, Goods.STONE: 6 }, inputs = {},
-			output = -1, work = 0, resource = "", influence = 4,
+			output = -1, work = 0, resource = "", influence = 4, troops = 2,
 			category = "militaer",
 		},
 	}
