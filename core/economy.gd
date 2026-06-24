@@ -1384,10 +1384,19 @@ func _tick_marchers() -> void:
 		marchers.erase(m)
 
 
-## Einen Angreifer-Trupp von [param src] gegen [param tgt] schicken.
-## Jeder mitgeschickte Soldat zieht einen aus der Garnison von src ab.
+## Anzahl Soldaten, die [src] für einen Angriff stellt (#52, RTTR GetNumSoldiersForAttack):
+## (Garnison−1)·Angriffsstärke/Skala — einer bleibt immer als Besatzung zurück.
+func attackers_available(src: WorldState.Building) -> int:
+	if src.garrison <= 1:
+		return 0
+	return (src.garrison - 1) * mil_attack / MIL_SCALE_ATTACK
+
+
+## Einen Angreifer-Trupp von [param src] gegen [param tgt] schicken. Es ziehen die
+## STÄRKSTEN Soldaten los (Angriffsstärke-Regler bestimmt die Anzahl, #52); ein
+## Verteidiger bleibt zurück.
 func send_attackers(src: WorldState.Building, tgt: WorldState.Building) -> int:
-	var n := src.garrison
+	var n := attackers_available(src)
 	if n <= 0:
 		return 0
 	var from := state.map.node_world(src.pos.x, src.pos.y)
@@ -1402,9 +1411,7 @@ func send_attackers(src: WorldState.Building, tgt: WorldState.Building) -> int:
 		m.dest_building = tgt_idx
 		m.t = -0.18 * k  # gestaffelt loslaufen
 		marchers.append(m)
-	src.garrison = 0
-	src.ranks = [0, 0, 0, 0, 0]
-	src.def_hp = 0
+		_garrison_take_strongest(src)  # die Stärksten ziehen in den Angriff
 	state.recompute_territory()
 	dirty = true
 	return n

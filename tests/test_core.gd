@@ -1390,8 +1390,10 @@ func _test_combat() -> void:
 	eco.resync()
 	_check(state.enemy_territory.size() > 0, "Gegner hat Territorium")
 
+	eco.mil_attack = 5  # volle Angriffsstärke → maximal viele Angreifer (#52)
 	var n := eco.send_attackers(pg, eb)
-	_check(n == 3, "Drei Angreifer losgeschickt")
+	_check(n == 2, "Angreifer nach Angriffsstärke: (3-1)*5/5 = 2 (einer bleibt zurück)")
+	_check(pg.garrison == 1, "Ein Verteidiger bleibt im angreifenden Gebäude")
 	for t in 3000:
 		eco.tick()
 	_check(eb.owner == 0, "Gegnergebäude erobert (Besitzer %d)" % eb.owner)

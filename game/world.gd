@@ -80,6 +80,8 @@ var _tools_prio_labels: Dictionary = {}    # Werkzeug-Gut -> Label (Gewichtsanze
 var _tools_order_labels: Dictionary = {}   # Werkzeug-Gut -> Label (Bestellmenge)
 var _recruit_slider: HSlider
 var _recruit_value_label: Label
+var _mil_sliders: Dictionary = {}   # Militär-Regler (#52): key -> HSlider
+var _mil_labels: Dictionary = {}    # key -> Wert-Label
 var _distribution_panel: PanelContainer    # Warenverteilung (#43)
 var _dist_sliders: Dictionary = {}         # "good:def_id" -> HSlider
 var _dist_labels: Dictionary = {}          # "good:def_id" -> Label (Gewichtsanzeige)
@@ -1580,24 +1582,27 @@ func _build_tools_panel() -> void:
 ## Militär-Fenster (#41): Rekrutierungsrate als Regler mit −/+ Schrittbuttons.
 ## Einstieg: Verwaltung → „Militaer" und der Schmiede-Button.
 func _build_military_panel() -> void:
-	_military_panel = _floating_panel(Vector2(0.5, 0.5), Vector2(-180, -70), Vector2(180, 70))
+	_mil_sliders.clear()
+	_mil_labels.clear()
+	_military_panel = _floating_panel(Vector2(0.5, 0.5), Vector2(-210, -165), Vector2(210, 165))
 	_military_panel.visible = false
 	var box := _add_window_chrome(_military_panel, "Militär", _toggle_military_settings)
 
 	var hint := Label.new()
-	hint.text = "Rekrutierungsrate: wie viele Soldaten aus Schwert+Schild+Bier+Träger entstehen."
+	hint.text = "RTTR-Militäreinstellungen: Rekrutierung, Stärke und Besatzung nach Grenznähe."
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.mouse_filter = Control.MOUSE_FILTER_PASS
 	UISkin.apply_label(hint, true, 10)
 	box.add_child(hint)
 
+	# Rekrutierungsrate (#41) — eigener Regler 0..10.
 	var mil := HBoxContainer.new()
 	mil.add_theme_constant_override("separation", 4)
 	mil.mouse_filter = Control.MOUSE_FILTER_PASS
 	box.add_child(mil)
 	var mil_label := Label.new()
-	mil_label.text = "Rate"
-	mil_label.custom_minimum_size = Vector2(34, 0)
+	mil_label.text = "Rekrutierung"
+	mil_label.custom_minimum_size = Vector2(118, 0)
 	UISkin.apply_label(mil_label, false, 11)
 	mil.add_child(mil_label)
 	_step_btn(mil, "−", _step_recruit.bind(-1))
@@ -1616,6 +1621,52 @@ func _build_military_panel() -> void:
 	_recruit_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	UISkin.apply_label(_recruit_value_label, true, 11)
 	mil.add_child(_recruit_value_label)
+
+	box.add_child(HSeparator.new())
+	# Stärke- und Besatzungsregler (#52). Skala: Verteidiger/Angriff 0..5, Besatzung 0..8.
+	_mil_row(box, "defense", "Verteidigerstärke", Economy.MIL_SCALE_DEFENSE)
+	_mil_row(box, "attack", "Angriffsstärke", Economy.MIL_SCALE_ATTACK)
+	_mil_row(box, "interior", "Besatzung Inneres", Economy.MIL_SCALE_OCCUPY)
+	_mil_row(box, "center", "Besatzung Mitte", Economy.MIL_SCALE_OCCUPY)
+	_mil_row(box, "border", "Besatzung Grenze", Economy.MIL_SCALE_OCCUPY)
+
+	var std := Button.new()
+	std.text = "Standard"
+	std.tooltip_text = "Alle Militär-Regler auf die S2-Standardwerte zurücksetzen."
+	std.pressed.connect(_on_military_reset)
+	UISkin.apply_button(std)
+	box.add_child(std)
+
+
+## Eine Reglerzeile für einen Militär-Regler (#52): Beschriftung, −/Slider/+, Wert.
+func _mil_row(box: VBoxContainer, key: String, title: String, maxv: int) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	row.mouse_filter = Control.MOUSE_FILTER_PASS
+	box.add_child(row)
+	var lab := Label.new()
+	lab.text = title
+	lab.custom_minimum_size = Vector2(118, 0)
+	UISkin.apply_label(lab, false, 11)
+	row.add_child(lab)
+	_step_btn(row, "−", _step_mil.bind(key, -1))
+	var sl := HSlider.new()
+	sl.min_value = 0
+	sl.max_value = maxv
+	sl.step = 1
+	sl.scrollable = false
+	sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	sl.value_changed.connect(_on_mil_changed.bind(key))
+	row.add_child(sl)
+	_step_btn(row, "+", _step_mil.bind(key, 1))
+	var val := Label.new()
+	val.custom_minimum_size = Vector2(22, 0)
+	val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UISkin.apply_label(val, true, 11)
+	row.add_child(val)
+	_mil_sliders[key] = sl
+	_mil_labels[key] = val
 
 
 ## Verteilungs-Fenster (#43): je knapper Mehrfach-Ware ein Abschnitt (Waren-Icon +
@@ -1901,7 +1952,58 @@ func _refresh_military_panel() -> void:
 	_tools_loading = true
 	_recruit_slider.set_value_no_signal(economy.recruiting_ratio)
 	_recruit_value_label.text = str(economy.recruiting_ratio)
+	for key in _mil_sliders:
+		var v := _mil_get(String(key))
+		(_mil_sliders[key] as HSlider).set_value_no_signal(v)
+		(_mil_labels[key] as Label).text = str(v)
 	_tools_loading = false
+
+
+## Aktueller Wert eines Militär-Reglers (#52).
+func _mil_get(key: String) -> int:
+	match key:
+		"defense": return economy.mil_defense
+		"attack": return economy.mil_attack
+		"interior": return economy.occupy_interior
+		"center": return economy.occupy_center
+		"border": return economy.occupy_border
+	return 0
+
+
+## Setzt einen Militär-Regler über die geclampte Economy-API (#52).
+func _mil_set(key: String, v: int) -> void:
+	match key:
+		"defense": economy.set_mil_defense(v)
+		"attack": economy.set_mil_attack(v)
+		"interior": economy.set_occupy_interior(v)
+		"center": economy.set_occupy_center(v)
+		"border": economy.set_occupy_border(v)
+
+
+func _on_mil_changed(value: float, key: String) -> void:
+	if _tools_loading or economy == null:
+		return
+	_mil_set(key, int(value))
+	if _mil_labels.has(key):
+		(_mil_labels[key] as Label).text = str(_mil_get(key))
+
+
+func _step_mil(key: String, delta: int) -> void:
+	if economy == null:
+		return
+	_mil_set(key, _mil_get(key) + delta)
+	var v := _mil_get(key)
+	if _mil_sliders.has(key):
+		(_mil_sliders[key] as HSlider).set_value_no_signal(v)
+	if _mil_labels.has(key):
+		(_mil_labels[key] as Label).text = str(v)
+
+
+func _on_military_reset() -> void:
+	if economy == null:
+		return
+	economy.reset_military_settings()
+	_refresh_military_panel()
 
 
 func _on_tool_priority_changed(value: float, tool_good: int) -> void:
@@ -2739,6 +2841,9 @@ func _attack_target(target: WorldState.Building) -> void:
 		_flash("Kein eigenes Militaergebaeude mit Soldaten in Reichweite.")
 		return
 	var n := economy.send_attackers(best, target)
+	if n <= 0:
+		_flash("Zu wenige Soldaten oder Angriffsstärke zu niedrig (Militär-Regler).")
+		return
 	_flash("Angriff mit %d Soldaten!" % n)
 
 
