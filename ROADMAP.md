@@ -151,13 +151,23 @@ Das Skelett, auf dem alles aufbaut.
 - [x] Gegner-KI: bildet Soldaten aus, besetzt, expandiert Richtung Spieler, greift an
 - [x] KI als austauschbares Plugin (Standard/Passiv + eigene aus res://ai/, Taste J)
 - [x] Sieg/Niederlage (HQ erobert → Spielende)
-- [x] Soldaten-Beförderung durch Münzen (Verteidigungs-Rüstung am Gebäude)
+- [x] Soldaten-Beförderung durch Münzen — jetzt **echte Rangstufen** (RTTR-Treppe),
+      nicht mehr nur „Rüstung" (2026-06-24, #52)
 - [x] Katapult (beschießt feindliche Militärgebäude auf Distanz)
 - [x] KI baut eigene Wirtschaftsgebäude (mehr Wirtschaft → schneller Soldaten)
 - [x] KI baut keine Militärgebäude auf Bergen (nur Minen erlaubt)
 - [x] KI baut sichtbare eigene Straßen, Gegnerträger und einfache Gegnerarbeiter
       (2026-06-09, Issue #22)
-- [ ] Soldaten-Ränge mit eigener Grafik/Aufstiegsstufen, mehr Waffenarten
+- [x] **Militär-Einstellungen vollständig** (2026-06-24, #52): Verteidiger-/Angriffs-
+      stärke, Besatzung nach Grenznähe (Inneres/Mitte/Grenze), Militärfenster mit allen
+      Reglern + „Standard". Original-Truppenzahlen (Wachhaus 3 / Wachturm 6 / Festung 9 /
+      Hafen 9). Angriffsstärke bestimmt die Angreiferzahl.
+- [x] **Soldaten-Ränge** (Gefreiter/Unteroffizier/Leutnant/Major/Brigadegeneral, #52/#28):
+      rangweise Reserve+Garnison, Münz-Beförderung als Treppe (1→2→3…), Kampf-Zähigkeit
+      Rang+1, Rangerhalt im Lager (je Rang eingebucht), Rang-PNGs in UI + auf der Karte.
+- [ ] Sichtbares Tür-Marschieren der Soldaten (rein/raus) + Rückmarsch ins Lager statt
+      Teleport — #73 (geplant 2026-06-25)
+- [ ] Mehr Waffenarten / weitere Militär-Stufen (Baracke)
 
 ### Stufe 5 — Spielfluss & Inhalt
 - [x] Speichern/Laden (Struktur + HQ-Lager) — F2/F3
