@@ -53,10 +53,10 @@
     ]
   },
   "boat_size": [
-    30.0,
-    30.0
+    36.0,
+    36.0
   ],
-  "boat_carrier_size": 28.0,
+  "boat_carrier_size": 30.0,
   "building_offset": {
     "bakery": [
       0.0,
@@ -359,8 +359,8 @@
     0.0
   ],
   "ship_size": [
-    48.0,
-    48.0
+    62.0,
+    62.0
   ],
   "sizes": {
     "castle": [

@@ -628,9 +628,9 @@ func _draw_shipyard_progress() -> void:
 			var dock_p := state.map.node_world(dock.x, dock.y)
 			p = base_p.lerp(dock_p, 0.35) + GameTheme.ship_build_offset()
 			facing = dock_p - base_p
-		var stage1_sheet := GameTheme.ship_construction_stage1_sheet_texture()
+		var stage1_sheet := GameTheme.ship_construction_stage1_sheet_texture(bs.bld.owner)
 		var fin_sheet := GameTheme.ship_sheet_texture(bs.bld.owner)
-		var stage1 := GameTheme.ship_construction_stage1_texture()
+		var stage1 := GameTheme.ship_construction_stage1_texture(bs.bld.owner)
 		var fin := GameTheme.ship_texture(bs.bld.owner)
 		var sz := GameTheme.ship_draw_size()
 		if stage1_sheet == null and fin_sheet == null and stage1 == null and fin == null:

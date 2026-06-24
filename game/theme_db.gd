@@ -426,11 +426,19 @@ static func ship_sheet_texture(owner := 0) -> Texture2D:
 	return _tex("res://assets/ships/ship_sheet.png")
 
 
-static func ship_construction_stage1_texture() -> Texture2D:
+static func ship_construction_stage1_texture(owner := 0) -> Texture2D:
+	if owner != 0:
+		var t := _tex("res://assets/ships/ship_stage1_%d.png" % owner)
+		if t != null:
+			return t
 	return _tex("res://assets/ships/ship_stage1.png")
 
 
-static func ship_construction_stage1_sheet_texture() -> Texture2D:
+static func ship_construction_stage1_sheet_texture(owner := 0) -> Texture2D:
+	if owner != 0:
+		var t := _tex("res://assets/ships/ship_stage1_sheet_%d.png" % owner)
+		if t != null:
+			return t
 	return _tex("res://assets/ships/ship_stage1_sheet.png")
 
 
