@@ -17,6 +17,7 @@ const PLAYER_ANCHOR_JITTER := 0.18   # Spieler-Start max. ~18% vom Zentrum verse
 const ENEMY_DIST_FRAC := 0.7         # Gegner zufällig aus den 70%+ entferntesten Plätzen
 const SPAWN_BUILD_MIN := 300         # Spawn nur in zusammenhängender Baufläche >= so vielen
                                      # Wiesen-Knoten (#63) — Platz für HQ + Wachhaus + Ausbau
+const DEV_STOCK_STEP := 10           # Schrittweite der Dev-Lager-Buttons (−/+ je Klick)
 const TICK_HZ := 30.0
 const BUILD_TILE_SIZE := Vector2(92, 108)
 
@@ -2964,8 +2965,12 @@ func _build_inventory_content(parent: VBoxContainer) -> void:
 	UISkin.apply_label(goods_cap, false, 12)
 	goods_cap.text = "Waren"
 	body.add_child(goods_cap)
+	# Dev/Test (#): "Ressourcen manipulierbar" blendet hinter jeder Ware −/+ ein, um den
+	# HQ-Lagerbestand zur Laufzeit von Hand zu ändern (z. B. prüfen, ob Nahrung korrekt
+	# entnommen wird). Schmaleres Raster, weil die Zellen mit Buttons breiter werden.
+	var editable := UISkin.option_bool("dev_resources_editable", false)
 	var goods_grid := GridContainer.new()
-	goods_grid.columns = 6
+	goods_grid.columns = 3 if editable else 6
 	goods_grid.add_theme_constant_override("h_separation", 4)
 	goods_grid.add_theme_constant_override("v_separation", 4)
 	body.add_child(goods_grid)
@@ -2973,7 +2978,7 @@ func _build_inventory_content(parent: VBoxContainer) -> void:
 	for g in Goods.COUNT:
 		var cell := HBoxContainer.new()
 		cell.add_theme_constant_override("separation", 2)
-		cell.custom_minimum_size = Vector2(48, icon_px + 2)
+		cell.custom_minimum_size = Vector2(96 if editable else 48, icon_px + 2)
 		cell.tooltip_text = Goods.name_of(g)
 		goods_grid.add_child(cell)
 		var ic := TextureRect.new()
@@ -2982,10 +2987,17 @@ func _build_inventory_content(parent: VBoxContainer) -> void:
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ic.texture = UISkin.good_texture(g)
 		cell.add_child(ic)
+		if editable:
+			cell.add_child(_dev_stock_button("−", g, -DEV_STOCK_STEP))
 		var lbl := Label.new()
 		UISkin.apply_label(lbl, false, 12)
 		lbl.text = "0"
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		if editable:
+			lbl.custom_minimum_size = Vector2(24, 0)
 		cell.add_child(lbl)
+		if editable:
+			cell.add_child(_dev_stock_button("+", g, DEV_STOCK_STEP))
 		_inv_goods[g] = lbl
 
 	var ppl_cap := Label.new()
@@ -3011,6 +3023,33 @@ func _build_inventory_content(parent: VBoxContainer) -> void:
 	soldiers.name = "SoldiersLine"
 	body.add_child(soldiers)
 	_economy_panel.set_meta("soldiers_label", soldiers)
+
+
+## Dev/Test: kleiner −/+ Button für die Hand-Manipulation eines HQ-Lagerbestands.
+func _dev_stock_button(text: String, good: int, delta: int) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(18, 18) * UISkin.ui_scale()
+	b.add_theme_font_size_override("font_size", roundi(12 * UISkin.ui_scale()))
+	b.pressed.connect(_dev_adjust_stock.bind(good, delta))
+	return b
+
+
+## Dev/Test: ändert den HQ-Lagerbestand einer Ware um delta (>=0 geklemmt) und frischt
+## Inventur + obere Leiste auf. hq_stock = storages[0].stock ist die echte Quelle, aus
+## der auch Produktion/Nahrung schöpfen — die Änderung wirkt also sofort im Spiel.
+func _dev_adjust_stock(good: int, delta: int) -> void:
+	if economy == null:
+		return
+	var cur: int = int(economy.hq_stock.get(good, 0))
+	var nv: int = maxi(0, cur + delta)
+	if nv == 0:
+		economy.hq_stock.erase(good)
+	else:
+		economy.hq_stock[good] = nv
+	_update_economy_panel()
+	_update_stock()
 
 
 func _update_economy_panel() -> void:
@@ -3199,15 +3238,9 @@ func _handle_click() -> void:
 
 
 func _handle_build_spot_click() -> bool:
-	if state.can_place_road_flag(hover.x, hover.y):
-		var f := state.place_flag(hover.x, hover.y)
-		if f != null:
-			economy.resync()
-			renderer.queue_redraw()
-			_flash("Strassen-Flagge gesetzt.")
-		return true
-	# Hafenpunkt (#46): hier ist (nur) der Hafen baubar — das Küsten-Sondergebäude, das
-	# compute_bq am Ufer nicht als Bauplatz ausweist. Baufenster mit Hafen-Auswahl öffnen.
+	# Hafenpunkt (#46) ZUERST prüfen — Vorrang vor der Straßen-Flagge: auf einem Hafenpunkt
+	# ist NUR der Hafen baubar (das Küsten-Sondergebäude, das compute_bq am Ufer nicht als
+	# Bauplatz ausweist). Sonst würde hier eine Flagge gesetzt statt das Hafen-Fenster zu öffnen.
 	if state.map.is_harbor_point(hover.x, hover.y) \
 			and state._occ(hover.x, hover.y) == WorldState.OBJ_NONE \
 			and state.has_building_territory_margin(hover.x, hover.y):
@@ -3221,6 +3254,13 @@ func _handle_build_spot_click() -> bool:
 			_position_build_panel_near_node(hover)
 		_show_category("harbor")
 		_flash("Hafenpunkt gewaehlt: Hafen baubar.")
+		return true
+	if state.can_place_road_flag(hover.x, hover.y):
+		var f := state.place_flag(hover.x, hover.y)
+		if f != null:
+			economy.resync()
+			renderer.queue_redraw()
+			_flash("Strassen-Flagge gesetzt.")
 		return true
 	var bq := state.actual_build_spot_bq(hover.x, hover.y)
 	if bq < WorldState.BQ_FLAG:

@@ -172,7 +172,6 @@ func _draw() -> void:
 	# Reihenfolge: Straßen zuerst (flach auf Boden), dann Objekte (Bäume davor), dann Gebäude.
 	_draw_roads()
 	_draw_entrance_paths()
-	_draw_harbor_points()
 	# Alle aufrechten Sprites (Bäume, Steine, Erz, Gebäude, Flaggen) in EINEM nach
 	# Fußpunkt (y) sortierten Durchgang zeichnen — so verdeckt korrekt immer das
 	# weiter vorne (größeres y) stehende Objekt das dahinterliegende. Vorher lagen
@@ -311,7 +310,9 @@ func _draw_build_spots() -> void:
 	# Immer die fertige Liste zeichnen (während eines Aufbaus die bisherige).
 	for it in _spot_cache:
 		var p: Vector2 = it.p
-		if it.road:
+		if it.get("harbor", false):
+			_draw_build_spot_harbor(p)
+		elif it.road:
 			_draw_build_spot_road_flag(p)
 		else:
 			_draw_build_spot_symbol(p, it.bq)
@@ -361,6 +362,14 @@ func _step_spot_rebuild(budget: int) -> void:
 
 func _collect_build_spot(x: int, y: int) -> void:
 	var p := state.map.node_world(x, y)
+	# Hafenpunkt (#46): Sondersymbol (Burg mit Anker). Hat Vorrang vor Flagge/normalem
+	# Bauplatz — auf einem Hafenpunkt ist NUR der Hafen baubar. Erscheint nur in der
+	# Bauvorschau (Leertaste) und nur, wenn der Punkt im eigenen Gebiet wirklich baubar
+	# ist (gleiche Bedingung wie der Klick-Handler), also kein dauerhafter Marker mehr.
+	if state.map.is_harbor_point(x, y) and state._occ(x, y) == WorldState.OBJ_NONE \
+			and state.has_building_territory_margin(x, y):
+		_spot_build.append({ p = p, bq = WorldState.BQ_CASTLE, road = false, harbor = true })
+		return
 	if state.can_place_road_flag(x, y):
 		_spot_build.append({ p = p, bq = WorldState.BQ_FLAG, road = true })
 		return
@@ -464,28 +473,21 @@ func _draw_ore_hint(p: Vector2, kind: int) -> void:
 		_paint_ore(p, kind)
 
 
-## Hafenpunkte (#46): dezenter, flacher Boden-Marker (Anker-Ring) auf jedem festen
-## Hafenpunkt — zeigt dem Spieler, wo ein Hafen gebaut werden kann. Liegt flach, wird
-## von Gebäuden/Bäumen im y-Pass überzeichnet; der Fog-Overlay verdeckt Unerkundetes.
-func _draw_harbor_points() -> void:
-	var map := state.map
-	if map.harbor_points.is_empty():
+## Hafen-Bauplatzsymbol (#46): Burg-Rahmen mit Anker. Erscheint NUR in der Bauvorschau
+## (Leertaste) auf einem baubaren Hafenpunkt im eigenen Gebiet — kein Dauer-Marker mehr.
+## Klick darauf öffnet das Hafen-Baufenster (siehe _handle_build_spot_click).
+func _draw_build_spot_harbor(p: Vector2) -> void:
+	var col := Color(0.35, 0.78, 1.0)   # Wasserblau, hebt sich von den Wiesen-Symbolen ab
+	if _draw_build_spot_texture(p, "harbor"):
 		return
-	var col := Color(0.95, 0.88, 0.35, 0.85)
-	for i in map.harbor_points:
-		var x := int(i) % map.width
-		@warning_ignore("integer_division")
-		var y := int(i) / map.width
-		var p := map.node_world(x, y)
-		if not _in_view(p):
-			continue
-		# Wenn dort schon ein Hafen steht, keinen Marker mehr (Gebäude zeigt es selbst).
-		if state._occ(x, y) != WorldState.OBJ_NONE:
-			continue
-		draw_arc(p, 7.0, 0.0, TAU, 20, col, 1.5)
-		draw_arc(p, 3.0, 0.0, TAU, 12, col, 1.5)
-		draw_line(p + Vector2(0, -6), p + Vector2(0, 6), col, 1.5)
-		draw_line(p + Vector2(-5, 4), p + Vector2(5, 4), col, 1.5)
+	# Burg-Rahmen
+	_draw_build_spot_box(p, Vector2(24, 18), col, 2.0)
+	# Anker mittig
+	var a := p + Vector2(0, 1)
+	draw_arc(a + Vector2(0, -5), 2.2, 0.0, TAU, 12, col, 1.5)        # Öse oben
+	draw_line(a + Vector2(0, -3), a + Vector2(0, 6), col, 1.6)        # Schaft
+	draw_arc(a + Vector2(0, 2), 5.0, deg_to_rad(20), deg_to_rad(160), 16, col, 1.6)  # Flunken-Bogen
+	draw_line(a + Vector2(-4, -1), a + Vector2(4, -1), col, 1.5)      # Stockholm-Querbalken
 
 
 func _draw_ore_debug() -> void:
