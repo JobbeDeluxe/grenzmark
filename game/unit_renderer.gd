@@ -15,6 +15,7 @@ var preview_path: Array[Vector2i] = []
 var preview_ok := false
 var build_preview_id := ""   # im Bau-Modus: Geist dieses Gebäudes am Mauszeiger
 var show_hover_build_marker := false # Bauplatz-Badge nur in explizitem Baukontext
+var show_harbor_build_marker := false # Hafen-Sonderbadge nur in der Bauhilfe/Harbor-Auswahl
 var _anim_time := 0.0
 var _font: Font = ThemeDB.fallback_font
 
@@ -362,7 +363,9 @@ func _draw_construction() -> void:
 		if bs.planing:
 			_draw_planing_site(ground)
 			if economy.has_build_figure(bs):
-				_unit("worker", economy.build_figure_world(bs), economy.build_figure_facing(bs), bs.bld.owner)
+				var wp := economy.build_figure_world(bs)
+				_unit("worker", wp, economy.build_figure_facing(bs), bs.bld.owner)
+				_occlude(wp)  # hinter davorstehenden Gebäuden (z. B. HQ) verdecken (#64)
 			continue
 
 		if stage1 != null:
@@ -392,7 +395,9 @@ func _draw_construction() -> void:
 		# Bauarbeiter sichtbar an der Baustelle (S2: die ganze Bauzeit über, nicht nur
 		# auf dem Anmarsch) — solange die Baustelle besetzt ist.
 		if economy.has_build_figure(bs):
-			_unit("worker", economy.build_figure_world(bs), economy.build_figure_facing(bs), bs.bld.owner)
+			var wp := economy.build_figure_world(bs)
+			_unit("worker", wp, economy.build_figure_facing(bs), bs.bld.owner)
+			_occlude(wp)  # hinter davorstehenden Gebäuden (z. B. HQ) verdecken (#64)
 
 
 ## Markierung einer noch zu planierenden Haus-/Burg-Baustelle (#49/#65): flaches
@@ -712,6 +717,9 @@ func _draw_hover() -> void:
 		return
 	var p := state.map.node_world(hover.x, hover.y)
 	if show_hover_build_marker:
+		if show_harbor_build_marker and _is_harbor_build_spot(hover.x, hover.y):
+			_draw_hover_build_marker(p, WorldState.BQ_CASTLE, false, true)
+			return
 		var road_flag := state.can_place_road_flag(hover.x, hover.y)
 		var build_bq := state.actual_build_spot_bq(hover.x, hover.y)
 		var shown_bq := build_bq if build_bq != WorldState.BQ_NOTHING \
@@ -725,12 +733,18 @@ func _draw_hover() -> void:
 		draw_circle(sp, 7.0, Color(0.3, 0.6, 1.0, 0.85))
 
 
-func _draw_hover_build_marker(p: Vector2, bq: int, road_flag := false) -> void:
-	var col := _bq_color(bq)
+func _is_harbor_build_spot(x: int, y: int) -> bool:
+	return state.map.is_harbor_point(x, y) \
+		and state._occ(x, y) == WorldState.OBJ_NONE \
+		and state.has_building_territory_margin(x, y)
+
+
+func _draw_hover_build_marker(p: Vector2, bq: int, road_flag := false, harbor := false) -> void:
+	var col := Color(0.35, 0.78, 1.0) if harbor else _bq_color(bq)
 	if bq < WorldState.BQ_FLAG:
 		draw_circle(p, 4.0, Color(0.6, 0.6, 0.6, 0.55))
 		return
-	var key := _bq_key(bq, road_flag)
+	var key := "harbor" if harbor else _bq_key(bq, road_flag)
 	var tex := GameTheme.build_spot_texture(key)
 	var icon_p := p + Vector2(0.0, 22.0)
 	if tex != null:
@@ -756,7 +770,7 @@ func _draw_hover_build_marker(p: Vector2, bq: int, road_flag := false) -> void:
 			WorldState.BQ_FLAG:
 				draw_line(icon_p + Vector2(0, -24), icon_p + Vector2(0, -10), col, 1.5, true)
 				draw_rect(Rect2(icon_p.x, icon_p.y - 24, 9, 6), col)
-	var text := "Weg-F" if road_flag else _bq_short(bq)
+	var text := "Hafen" if harbor else ("Weg-F" if road_flag else _bq_short(bq))
 	var badge := Rect2(icon_p.x + 11, icon_p.y - 31, maxf(30.0, float(text.length()) * 6.2), 14)
 	draw_rect(badge, Color(0.05, 0.04, 0.03, 0.72))
 	draw_rect(badge, col, false, 1.0)
