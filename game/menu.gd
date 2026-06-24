@@ -241,7 +241,14 @@ func _input(event: InputEvent) -> void:
 	if UISkin.option_bool("dev_menu_unlocked", false):
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
-		var key := OS.get_keycode_string(event.keycode).to_lower()
+		# Layout-robust: zuerst das tatsaechlich getippte Zeichen (unicode) nehmen.
+		# Bei vielen Nicht-US-Layouts liefert Godot keycode == 0, dann waere
+		# get_keycode_string() leer und der Code wuerde nie erkannt.
+		var key := ""
+		if event.unicode >= 32:
+			key = String.chr(event.unicode).to_lower()
+		elif event.keycode != 0:
+			key = OS.get_keycode_string(event.keycode).to_lower()
 		if key.length() != 1:
 			return
 		_dev_unlock_buffer += key
