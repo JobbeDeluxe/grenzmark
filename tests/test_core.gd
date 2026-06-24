@@ -32,6 +32,9 @@ func _initialize() -> void:
 	_test_sea_navigation()
 	_test_harbor_and_ships()
 	_test_expedition()
+	_test_harbor_military()
+	_test_expedition_prep()
+	_test_sea_raid()
 	_test_waterway()
 	_test_farm_fields()
 	_test_catalog_complete()
@@ -1942,6 +1945,94 @@ func _test_expedition() -> void:
 
 	# Schiff-Sicht: der Nebel ist entlang der Route aufgedeckt (explored gesetzt).
 	_check(state.explored.has(state.map.idx(16, 8)), "Expedition: Schiff deckt Nebel auf See auf")
+
+
+## Hafen als Militärgebäude (#46): mit Garnison projiziert er Territorium.
+func _test_harbor_military() -> void:
+	var map := _channel_map(34, 16, 12, 21)
+	map.set_harbor_point(10, 8, true)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	eco.ai_enabled = false
+	var ha := state.place_building(10, 8, WorldState.BQ_HOUSE, false, "harbor", 6, false, 0)
+	_check(ha != null, "Hafen-Militär: Hafen platziert")
+	if ha == null:
+		return
+	ha.garrison = 2
+	eco.resync()
+	state.recompute_territory()
+	_check(state.in_owner_territory(0, 10, 8), "Hafen-Militär: mit Garnison projiziert Territorium")
+	_check(ha.capacity > 0, "Hafen-Militär: Garnison-Kapazität gesetzt (%d)" % ha.capacity)
+	# Ohne Garnison kein Territorium (wie Wachhaus).
+	ha.garrison = 0
+	state.recompute_territory()
+	_check(not state.in_owner_territory(0, 10, 8), "Hafen-Militär: ohne Garnison kein Territorium")
+
+
+## Expedition VORBEREITEN (#46): startet automatisch, sobald Material + Schiff da sind,
+## und gründet eine Kolonie mit Startgarnison.
+func _test_expedition_prep() -> void:
+	var map := _channel_map(34, 16, 12, 21)
+	map.set_harbor_point(10, 8, true)
+	map.set_harbor_point(23, 8, true)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	eco.ai_enabled = false
+	var ha := state.place_building(10, 8, WorldState.BQ_HOUSE, false, "harbor", 6, false, 0)
+	if ha == null:
+		_check(false, "Exp-Prep: Hafen platziert")
+		return
+	eco.resync()
+	var sa := eco._storage_by_flag(state.map.idx(ha.flag_pos.x, ha.flag_pos.y))
+	sa.stock[Goods.BOARDS] = 10
+	sa.stock[Goods.STONE] = 10
+	var ship := eco._spawn_ship(state.dock_node(ha.pos), 0)
+	ship.home = state.map.idx(ha.flag_pos.x, ha.flag_pos.y)
+	var msg := eco.prepare_expedition(state.map.idx(ha.flag_pos.x, ha.flag_pos.y), 0)
+	_check(msg == "", "Exp-Prep: Vorbereitung gestartet (kein Fehler: '%s')" % msg)
+	_check(eco.is_expedition_prep(state.map.idx(ha.flag_pos.x, ha.flag_pos.y)),
+		"Exp-Prep: Hafen ist im Vorbereitungs-Zustand")
+	for _t in 2000:
+		eco.tick()
+		if state.buildings.get(state.map.idx(23, 8)) != null:
+			break
+	var nb: WorldState.Building = state.buildings.get(state.map.idx(23, 8))
+	_check(nb != null and nb.def_id == "harbor", "Exp-Prep: Kolonie automatisch gegründet")
+	_check(nb != null and nb.garrison >= 1, "Exp-Prep: Kolonie hat Startgarnison")
+
+
+## Seeangriff (#46, RTTR-Seeangriff): Schiff lädt Soldaten aus der Hafen-Garnison und
+## erobert einen erreichbaren feindlichen Hafen.
+func _test_sea_raid() -> void:
+	var map := _channel_map(34, 16, 12, 21)
+	map.set_harbor_point(10, 8, true)
+	map.set_harbor_point(23, 8, true)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	eco.ai_enabled = false
+	var ha := state.place_building(10, 8, WorldState.BQ_HOUSE, false, "harbor", 6, false, 0)
+	var hb := state.place_building(23, 8, WorldState.BQ_HOUSE, false, "harbor", 6, false, 1)
+	_check(ha != null and hb != null, "Seeangriff: Spieler- und Feindhafen platziert")
+	if ha == null or hb == null:
+		return
+	ha.garrison = 3   # geladene Angreifer
+	hb.garrison = 2   # Verteidiger
+	eco.resync()
+	var ship := eco._spawn_ship(state.dock_node(ha.pos), 0)
+	ship.home = state.map.idx(ha.flag_pos.x, ha.flag_pos.y)
+	var msg := eco.prepare_raid(state.map.idx(ha.flag_pos.x, ha.flag_pos.y), 0)
+	_check(msg == "", "Seeangriff: Vorbereitung gestartet (kein Fehler: '%s')" % msg)
+	var captured := false
+	for _t in 2000:
+		eco.tick()
+		var t: WorldState.Building = state.buildings.get(state.map.idx(23, 8))
+		if t != null and t.owner == 0:
+			captured = true
+			break
+	_check(captured, "Seeangriff: feindlicher Hafen erobert (Besitzerwechsel)")
+	var nb: WorldState.Building = state.buildings.get(state.map.idx(23, 8))
+	_check(nb != null and nb.garrison >= 1, "Seeangriff: eroberter Hafen hat eigene Garnison")
+	_check(eco._harbor_storages().size() == 2, "Seeangriff: eroberter Hafen als eigenes Lager registriert")
 
 
 ## Wasserstraße / Fähre (#46): kurze Querung über schmales Wasser zwischen zwei Ufer-

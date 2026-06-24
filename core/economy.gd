@@ -152,6 +152,9 @@ class Ship:
 	var facing := Vector2.RIGHT
 	var expedition := false              # #46: unterwegs, um einen neuen Hafen zu gründen
 	var target_point := Vector2i(-1, -1) # Ziel-Hafenpunkt der Expedition
+	var raid := false                    # #46: Seeangriff — Soldaten an Bord, greift einen Hafen an
+	var raid_soldiers := 0               # mitgeführte Soldaten
+	var attack_building := -1            # Ziel-Gebäudeindex (feindlicher Hafen) des Seeangriffs
 
 
 # Tür↔Flagge-Träger (nur HQ/Lager): bewegt Waren zwischen Gebäudetür und Flagge.
@@ -758,6 +761,7 @@ func ships_state() -> Array:
 			home = s.home, dest = s.dest, path = s.path.duplicate(),
 			path_i = s.path_i, cargo = cargo_types,
 			expedition = s.expedition, target_point = s.target_point,
+			raid = s.raid, raid_soldiers = s.raid_soldiers, attack_building = s.attack_building,
 		})
 	return out
 
@@ -781,6 +785,9 @@ func restore_ships(arr) -> void:
 		s.path_i = int(d.get("path_i", 0))
 		s.expedition = bool(d.get("expedition", false))
 		s.target_point = d.get("target_point", Vector2i(-1, -1))
+		s.raid = bool(d.get("raid", false))
+		s.raid_soldiers = int(d.get("raid_soldiers", 0))
+		s.attack_building = int(d.get("attack_building", -1))
 		var cargo = d.get("cargo", [])
 		if cargo is Array:
 			for t in cargo:
@@ -3279,6 +3286,8 @@ func _advance_ship(s: Ship) -> void:
 func _ship_arrived(s: Ship) -> void:
 	if s.expedition:
 		_found_harbor(s)
+	elif s.raid:
+		_resolve_sea_raid(s)
 	else:
 		_ship_arrive(s)
 
@@ -3405,9 +3414,141 @@ func _pull_to_storage(dst_st: Storage, g: int) -> bool:
 	return true
 
 
-## Seeangriff-Vorbereitung pro Takt (#46) — wird in Phase 3 (Seeangriff) gefüllt.
-func _tick_raid_prep(_st: Storage) -> void:
-	pass
+## Schaltet die Seeangriffs-VORBEREITUNG eines Hafens um (#46, RTTR-Seeangriff): ein Schiff
+## lädt Soldaten aus der Hafen-Garnison und greift den nächsten erreichbaren feindlichen
+## Hafen an. Erneuter Klick bricht ab. Liefert "" oder einen Hinweis.
+func prepare_raid(harbor_flag: int, owner := 0) -> String:
+	var src := _storage_by_flag(harbor_flag)
+	if src == null:
+		return "Kein Hafen."
+	if src.raid_prep:
+		src.raid_prep = false
+		dirty = true
+		return "Seeangriff abgebrochen."
+	src.expedition_prep = false   # nur EINE Vorbereitung gleichzeitig
+	src.raid_prep = true
+	dirty = true
+	return ""
+
+
+## Status der Seeangriffs-Vorbereitung für die UI.
+func raid_status(harbor_flag: int) -> String:
+	var src := _storage_by_flag(harbor_flag)
+	if src == null or not src.raid_prep:
+		return ""
+	var gar := 0
+	var b: WorldState.Building = state.buildings.get(src.idx)
+	if b != null:
+		gar = b.garrison
+	var has_ship := false
+	for s in ships:
+		if s.state == SHIP_IDLE and not s.expedition and not s.raid and s.home == harbor_flag:
+			has_ship = true
+			break
+	var has_target := _nearest_enemy_harbor(src) != null
+	return "Seeangriff: Soldaten %d, Schiff: %s, Ziel: %s" % [
+		gar, "ja" if has_ship else "nein", "ja" if has_target else "keins erreichbar"]
+
+
+## Nächster über See erreichbarer FEINDLicher Hafen (gleiche Meereskomponente). Oder null.
+func _nearest_enemy_harbor(src: Storage) -> WorldState.Building:
+	var src_dock := _harbor_dock(src)
+	if src_dock.x < 0:
+		return null
+	var src_comp := state.sea_component_at(src_dock.x, src_dock.y)
+	var best: WorldState.Building = null
+	var best_len := 1 << 30
+	for i in state.buildings:
+		var b: WorldState.Building = state.buildings[i]
+		if b.def_id != "harbor" or b.owner == src.owner or b.under_construction:
+			continue
+		var dock := state.dock_node(b.pos)
+		if dock.x < 0 or state.sea_component_at(dock.x, dock.y) != src_comp:
+			continue
+		var path := state.find_sea_path(src_dock, dock)
+		if path.is_empty():
+			continue
+		if path.size() < best_len:
+			best_len = path.size()
+			best = b
+	return best
+
+
+## Seeangriff-Vorbereitung pro Takt (#46): sobald Soldaten + Schiff + erreichbares Ziel da
+## sind, lädt das Schiff die Soldaten und sticht in See.
+func _tick_raid_prep(st: Storage) -> void:
+	var b: WorldState.Building = state.buildings.get(st.idx)
+	if b == null or b.garrison <= 0:
+		return  # noch keine Soldaten in der Garnison — warten
+	var ship: Ship = null
+	for s in ships:
+		if s.state == SHIP_IDLE and not s.expedition and not s.raid and s.home == st.flag_idx:
+			ship = s
+			break
+	if ship == null:
+		return  # kein Schiff am Hafen — warten
+	var tgt := _nearest_enemy_harbor(st)
+	if tgt == null:
+		return  # kein erreichbares Ziel — warten
+	var src_dock := _harbor_dock(st)
+	var tgt_dock := state.dock_node(tgt.pos)
+	var path := state.find_sea_path(src_dock, tgt_dock)
+	if path.is_empty():
+		return
+	var n: int = mini(b.garrison, SHIP_CAPACITY)
+	b.garrison -= n
+	state.recompute_territory()
+	ship.raid = true
+	ship.raid_soldiers = n
+	ship.attack_building = state.map.idx(tgt.pos.x, tgt.pos.y)
+	ship.dest = -1
+	ship.path = path
+	ship.path_i = 1 if path.size() > 1 else 0
+	ship.state = SHIP_SAILING
+	st.raid_prep = false
+	dirty = true
+
+
+## Schiff hat den feindlichen Hafen erreicht: Soldaten gehen von Bord und greifen an
+## (#46). Übersteht der Angriff die Verteidigung, wechselt der Hafen den Besitzer und die
+## übrigen Soldaten bilden die neue Garnison — Brückenkopf auf der Insel.
+func _resolve_sea_raid(s: Ship) -> void:
+	var tgt: WorldState.Building = state.buildings.get(s.attack_building)
+	var n := s.raid_soldiers
+	s.raid = false
+	s.raid_soldiers = 0
+	s.attack_building = -1
+	s.state = SHIP_IDLE
+	s.path = []
+	s.path_i = 0
+	if tgt == null or n <= 0:
+		dirty = true
+		return
+	if tgt.owner == s.owner:
+		# Inzwischen schon eigen → Soldaten verstärken die Garnison.
+		tgt.garrison = mini(tgt.garrison + n, maxi(tgt.capacity, 1))
+		state.recompute_territory()
+		dirty = true
+		return
+	# Gefecht: jeder Soldat räumt erst Rang (Münz-Beförderung), dann je einen Verteidiger.
+	while n > 0 and (tgt.garrison > 0 or tgt.promotions > 0):
+		if tgt.promotions > 0:
+			tgt.promotions -= 1
+		else:
+			tgt.garrison -= 1
+		n -= 1
+	if tgt.garrison <= 0 and tgt.promotions <= 0:
+		# Erobert → Besitzerwechsel; verbleibende Angreifer bilden die Garnison.
+		tgt.owner = s.owner
+		tgt.promotions = 0
+		tgt.garrison = clampi(n, 1, maxi(tgt.capacity, 1))
+		var f := state.flag_at(tgt.flag_pos)
+		if f != null:
+			f.owner = s.owner
+		resync()  # Simulation/Lager an neuen Besitzer anpassen
+		s.home = state.map.idx(tgt.flag_pos.x, tgt.flag_pos.y)
+	state.recompute_territory()
+	dirty = true
 
 
 ## Startet eine Expedition (#46): ein am Hafen liegendes Schiff lädt Baumaterial und segelt

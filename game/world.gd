@@ -2359,8 +2359,9 @@ func _open_building_window(b: WorldState.Building) -> void:
 	var settings_btn := _tbutton(actions, "Werkzeuge", _open_building_settings.bind(idx))
 	# Werft (#46): zwischen Boot- und Schiffbau umschalten.
 	var shipmode_btn := _tbutton(actions, "Baut: Boote", _toggle_shipyard_mode_window.bind(idx))
-	# Hafen (#46): Expedition zum nächsten freien Hafenpunkt starten.
+	# Hafen (#46): Expedition vorbereiten + Seeangriff vorbereiten.
 	var expedition_btn := _tbutton(actions, "Expedition", _start_expedition_window.bind(idx))
+	var raid_btn := _tbutton(actions, "Seeangriff", _start_raid_window.bind(idx))
 
 	_building_windows[idx] = {
 		panel = panel, title = title, icon = icon, info = info,
@@ -2369,7 +2370,7 @@ func _open_building_window(b: WorldState.Building) -> void:
 		stop = stop, coins = coins,
 		goto_btn = goto_btn, demolish = demolish, attack = attack,
 		settings_btn = settings_btn, shipmode_btn = shipmode_btn,
-		expedition_btn = expedition_btn,
+		expedition_btn = expedition_btn, raid_btn = raid_btn,
 	}
 	_update_one_building_window(idx)
 
@@ -2456,6 +2457,8 @@ func _update_one_building_window(idx: int) -> void:
 	# Expeditions-Knopf nur am eigenen Hafen (#46): zeigt Vorbereitungs-Status.
 	var expedition_btn: Button = entry["expedition_btn"]
 	expedition_btn.visible = own and b.def_id == "harbor"
+	var raid_btn: Button = entry["raid_btn"]
+	raid_btn.visible = own and b.def_id == "harbor"
 	if expedition_btn.visible:
 		var hflag := state.map.idx(b.flag_pos.x, b.flag_pos.y)
 		if economy.is_expedition_prep(hflag):
@@ -2464,6 +2467,12 @@ func _update_one_building_window(idx: int) -> void:
 		else:
 			expedition_btn.text = "Expedition"
 			expedition_btn.tooltip_text = "Expedition vorbereiten (ordert Material + Schiff)"
+		if economy.is_raid_prep(hflag):
+			raid_btn.text = "Angriff läuft…"
+			raid_btn.tooltip_text = economy.raid_status(hflag)
+		else:
+			raid_btn.text = "Seeangriff"
+			raid_btn.tooltip_text = "Seeangriff vorbereiten (Schiff lädt Soldaten, erobert feindlichen Hafen)"
 
 
 ## Garnison + Rang als Icons (statt Textzeile): gefüllte Spielerfarb-Plätze für
@@ -2616,6 +2625,23 @@ func _start_expedition_window(idx: int) -> void:
 	var msg := economy.prepare_expedition(state.map.idx(b.flag_pos.x, b.flag_pos.y), 0)
 	if msg == "":
 		_flash("Expedition wird vorbereitet — Material & Schiff werden geordert.")
+	else:
+		_flash(msg)
+	_update_one_building_window(idx)
+	renderer.queue_redraw()
+
+
+## Hafen (#46): Seeangriff VORBEREITEN — Schiff lädt Soldaten aus der Hafen-Garnison und
+## greift den nächsten erreichbaren feindlichen Hafen an. Erneuter Klick bricht ab.
+func _start_raid_window(idx: int) -> void:
+	if not state.buildings.has(idx):
+		return
+	var b: WorldState.Building = state.buildings[idx]
+	if b.owner != 0 or b.def_id != "harbor":
+		return
+	var msg := economy.prepare_raid(state.map.idx(b.flag_pos.x, b.flag_pos.y), 0)
+	if msg == "":
+		_flash("Seeangriff wird vorbereitet — Schiff lädt Soldaten, sobald bereit.")
 	else:
 		_flash(msg)
 	_update_one_building_window(idx)
