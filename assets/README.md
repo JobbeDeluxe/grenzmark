@@ -118,6 +118,7 @@ Die Leertaste zeigt nur Plätze, die **tatsächlich im eigenen Gebiet gebaut**
 werden können. Nicht baubare Knoten bleiben leer. Die Symbole sind austauschbare
 PNG-Sprites mit Transparenz und weichem Schlagschatten:
 - `castle.png`, `house.png`, `hut.png`, `mine.png`
+- `harbor.png` für baubare Hafenpunkte an der Küste
 - `flag.png` für reine Flaggenplätze
 - `road_flag.png` für Flagge-auf-Straße / Straßen teilen
 
@@ -268,7 +269,7 @@ Die Größen sind **nicht fest im Code**, sondern in `assets/design.json` einste
 - `building_offset`: Bild-Versatz eines Gebäudes zur Flagge (Position), per `def_id`.
 - `flag_size`: Zeichengröße der Spielflaggen-PNG (Fuß auf dem Knoten).
 - `build_spot_offsets`: Versatz der Bauhilfe-Icons (Leertaste) vom Knotenmittel-
-  punkt, je Symbol (`flag`, `road_flag`, `castle`, `house`, `hut`, `mine`,
+  punkt, je Symbol (`flag`, `road_flag`, `castle`, `house`, `hut`, `mine`, `harbor`,
   `blocked`). Damit sitzen z. B. Flaggen-Icons nicht mehr mittig auf dem Knoten,
   sondern an der richtigen Stelle. Bequem per Design-Editor einstellbar (s. u.).
 - `unit_size`: Ziel-Höhe der Figuren in px — **stellt zu große Einheiten-Sprites

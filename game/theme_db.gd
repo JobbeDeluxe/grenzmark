@@ -188,7 +188,7 @@ static func road_texture(terrain := -1, level := WorldState.ROAD_DIRT) -> Textur
 	return _tex("res://assets/roads/road.png")
 
 
-## assets/ui/build_spots/<kind>.png (castle/house/hut/mine/flag/road_flag/blocked).
+## assets/ui/build_spots/<kind>.png (castle/house/hut/mine/harbor/flag/road_flag/blocked).
 static func build_spot_texture(kind: String) -> Texture2D:
 	return _tex("res://assets/ui/build_spots/%s.png" % kind)
 
@@ -321,6 +321,7 @@ static func build_spot_size(kind: String) -> Vector2:
 		"house": return Vector2(30, 30)
 		"hut": return Vector2(26, 26)
 		"mine": return Vector2(30, 30)
+		"harbor": return Vector2(34, 34)
 		"flag", "road_flag", "blocked": return Vector2(24, 24)
 	return Vector2(26, 26)
 

@@ -47,6 +47,7 @@ var _toast_t := 0.0                 # Restzeit der Toast-Anzeige in Sekunden
 var _stock_counts: Dictionary = {}  # good -> Label (Warenleiste oben)
 var _inv_goods: Dictionary = {}     # good -> Label (Inventur-Fenster)
 var _inv_people: Dictionary = {}    # job -> Label (Inventur-Fenster)
+var _inventory_storage_flag := -1   # aktuell angezeigtes Lager (Flaggen-Index)
 var _selection_panel: PanelContainer
 var _sel_label: Label
 var _sel_title_label: Label
@@ -1351,6 +1352,8 @@ func _toggle_economy_panel() -> void:
 	var next := not _economy_panel.visible
 	_economy_panel.visible = next
 	if next:
+		if economy != null:
+			_inventory_storage_flag = economy.hq_flag
 		_economy_panel.move_to_front()
 		_update_economy_panel()
 
@@ -1364,10 +1367,20 @@ func _toggle_mainsel() -> void:
 		_mainsel_panel.move_to_front()
 
 
-func _open_inventory() -> void:
+func _open_inventory(storage_flag := -1) -> void:
+	if _economy_panel == null or economy == null:
+		return
+	_inventory_storage_flag = storage_flag if storage_flag >= 0 else economy.hq_flag
 	_economy_panel.visible = true
 	_economy_panel.move_to_front()
 	_update_economy_panel()
+
+
+func _storage_flag_for_building(b: WorldState.Building) -> int:
+	if b == null or economy == null:
+		return -1
+	var flag_idx := state.map.idx(b.flag_pos.x, b.flag_pos.y)
+	return flag_idx if economy._storage_by_flag(flag_idx) != null else -1
 
 
 func _open_buildings() -> void:
@@ -3065,7 +3078,7 @@ func _build_inventory_content(parent: VBoxContainer) -> void:
 	_economy_panel.set_meta("soldiers_label", soldiers)
 
 
-## Dev/Test: kleiner −/+ Button für die Hand-Manipulation eines HQ-Lagerbestands.
+## Dev/Test: kleiner -/+ Button fuer die Hand-Manipulation des angezeigten Lagers.
 func _dev_stock_button(text: String, good: int, delta: int) -> Button:
 	var b := Button.new()
 	b.text = text
@@ -3076,18 +3089,38 @@ func _dev_stock_button(text: String, good: int, delta: int) -> Button:
 	return b
 
 
-## Dev/Test: ändert den HQ-Lagerbestand einer Ware um delta (>=0 geklemmt) und frischt
-## Inventur + obere Leiste auf. hq_stock = storages[0].stock ist die echte Quelle, aus
-## der auch Produktion/Nahrung schöpfen — die Änderung wirkt also sofort im Spiel.
-func _dev_adjust_stock(good: int, delta: int) -> void:
+## Aktuelles Lager fuer die Inventur. Ohne konkrete Auswahl faellt es auf das HQ zurueck.
+func _inventory_storage() -> Economy.Storage:
 	if economy == null:
+		return null
+	var st: Economy.Storage = economy._storage_by_flag(_inventory_storage_flag)
+	if st == null and not economy.storages.is_empty():
+		st = economy.storages[0]
+		_inventory_storage_flag = st.flag_idx
+	return st
+
+
+func _inventory_title(st: Economy.Storage) -> String:
+	if st == null:
+		return "Inventur"
+	if economy != null and st.flag_idx == economy.hq_flag:
+		return "Inventur (HQ-Lager)"
+	if st.bld != null:
+		var bname := String(BuildingCatalog.get_def(st.bld.def_id).get("name", st.bld.def_id))
+		return "Inventur (%s)" % bname
+	return "Inventur (HQ-Lager)"
+
+
+func _dev_adjust_stock(good: int, delta: int) -> void:
+	var st := _inventory_storage()
+	if st == null:
 		return
-	var cur: int = int(economy.hq_stock.get(good, 0))
+	var cur: int = int(st.stock.get(good, 0))
 	var nv: int = maxi(0, cur + delta)
 	if nv == 0:
-		economy.hq_stock.erase(good)
+		st.stock.erase(good)
 	else:
-		economy.hq_stock[good] = nv
+		st.stock[good] = nv
 	_update_economy_panel()
 	_update_stock()
 
@@ -3095,19 +3128,26 @@ func _dev_adjust_stock(good: int, delta: int) -> void:
 func _update_economy_panel() -> void:
 	if _inv_goods.is_empty():
 		return
+	var st := _inventory_storage()
+	if st == null:
+		return
+	if _economy_panel != null and _economy_panel.has_meta("title_label"):
+		(_economy_panel.get_meta("title_label") as Label).text = _inventory_title(st)
 	for g in _inv_goods:
-		var n: int = economy.hq_stock.get(g, 0)
+		var n: int = st.stock.get(g, 0)
 		var l: Label = _inv_goods[g]
 		l.text = str(n)
 		l.modulate = Color(1, 1, 1, 1.0 if n > 0 else 0.32)
 	for j in _inv_people:
-		var c: int = economy.hq_people.get(j, 0)
+		var c: int = st.people.get(j, 0)
 		var pl: Label = _inv_people[j]
 		pl.text = "%s: %d" % [Jobs.name_of(j), c]
 		pl.modulate = Color(1, 1, 1, 1.0 if c > 0 else 0.3)
 	if _economy_panel != null and _economy_panel.has_meta("soldiers_label"):
-		(_economy_panel.get_meta("soldiers_label") as Label).text = \
-			"Soldaten-Reserve: %d" % economy.soldiers
+		var soldiers_text := "Soldaten-Reserve: %d" % economy.soldiers
+		if st.bld != null and st.bld.def_id == "harbor":
+			soldiers_text = "Hafen-Garnison: siehe Hafenfenster"
+		(_economy_panel.get_meta("soldiers_label") as Label).text = soldiers_text
 
 
 func _update_selection_panel() -> void:
@@ -3216,6 +3256,7 @@ func _sync_hover_context() -> void:
 	var build_context := mode == MODE_FLAG or mode == MODE_ROAD or mode == MODE_BUILD \
 		or (renderer != null and renderer.show_build_spots)
 	unit_renderer.show_hover_build_marker = build_context
+	unit_renderer.show_harbor_build_marker = (renderer != null and renderer.show_build_spots) or build_harbor
 
 
 func _update_hover() -> void:
@@ -3250,10 +3291,15 @@ func _handle_click() -> void:
 				# Gebäude (eigen ODER Gegner) auswählen; Angriff läuft über das
 				# kontextabhängige Auswahlfenster (Issue #16).
 				selected = clicked
-				if clicked != null and clicked.is_hq and clicked.owner == 0:
-					# Wie im Original: Klick aufs eigene HQ/Lager öffnet DIREKT die
+				if clicked != null and clicked.owner == 0 and clicked.is_hq:
+					# Wie im Original: Klick aufs eigene HQ öffnet DIREKT die
 					# Inventur (Waren + Berufe), kein Zwischenfenster (#10).
-					_open_inventory()
+					_open_inventory(_storage_flag_for_building(clicked))
+				elif clicked != null and clicked.owner == 0 and _storage_flag_for_building(clicked) >= 0:
+					# Lagerhaus/Hafen sind Lager UND Gebäude: beide Infofenster zeigen.
+					# Beim Hafen steht die Garnison im Gebäudefenster, der Bestand in der Inventur.
+					_open_building_window(clicked)
+					_open_inventory(_storage_flag_for_building(clicked))
 				elif clicked != null:
 					_open_building_window(clicked)
 				_close_flag_menu()

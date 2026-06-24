@@ -208,5 +208,93 @@ func _check_placement_and_cancel() -> bool:
 		return false
 	print("Smoketest: HQ-Klick oeffnet Inventur direkt ok")
 
+	if not _check_storage_click_windows(hq):
+		return false
+
 	print("Smoketest: Einzelplatzierung + Rechtsklick-Abbruch ok")
+	return true
+
+
+func _find_house_spot_around(hq, used: Dictionary = {}, needs_military_clear := false) -> Vector2i:
+	var state = _world.get("state")
+	for r in range(3, 20):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				var x: int = hq.pos.x + dx
+				var y: int = hq.pos.y + dy
+				var p := Vector2i(x, y)
+				if used.has(p):
+					continue
+				if needs_military_clear and not state.military_placement_clear(x, y):
+					continue
+				if state.can_place_building(x, y, WorldState.BQ_HOUSE):
+					return p
+	return Vector2i(-1, -1)
+
+
+func _check_storage_click_windows(hq) -> bool:
+	var state = _world.get("state")
+	var eco = _world.get("economy")
+	var used := {}
+
+	var store_spot := _find_house_spot_around(hq, used)
+	if store_spot.x < 0:
+		print("Smoketest FEHLER: kein Platz fuer Lagerhaus-Klicktest gefunden")
+		quit(1)
+		return false
+	used[store_spot] = true
+	var store = state.place_building(store_spot.x, store_spot.y, WorldState.BQ_HOUSE,
+		false, "storehouse", 0, false)
+	if store == null:
+		print("Smoketest FEHLER: Lagerhaus fuer Klicktest nicht platzierbar")
+		quit(1)
+		return false
+	eco.resync()
+	if not _click_storage_and_expect_windows(store, "Lagerhaus"):
+		return false
+
+	var harbor_spot := _find_house_spot_around(hq, used, true)
+	if harbor_spot.x < 0:
+		print("Smoketest FEHLER: kein Platz fuer Hafen-Klicktest gefunden")
+		quit(1)
+		return false
+	state.map.set_harbor_point(harbor_spot.x, harbor_spot.y, true)
+	var harbor = state.place_building(harbor_spot.x, harbor_spot.y, WorldState.BQ_HOUSE,
+		false, "harbor", 6, false)
+	if harbor == null:
+		print("Smoketest FEHLER: Hafen fuer Klicktest nicht platzierbar")
+		quit(1)
+		return false
+	eco.resync()
+	if not _click_storage_and_expect_windows(harbor, "Hafen"):
+		return false
+
+	print("Smoketest: Lagerhaus/Hafen oeffnen Gebaeude- und Lagerfenster ok")
+	return true
+
+
+func _click_storage_and_expect_windows(b, label: String) -> bool:
+	var state = _world.get("state")
+	var MODE_SELECT: int = _world.get("MODE_SELECT")
+	var inv = _world.get("_economy_panel")
+	if inv != null:
+		inv.visible = false
+	_world.set("mode", MODE_SELECT)
+	_world.set("hover", b.pos)
+	_world.call("_handle_click")
+	var windows = _world.get("_building_windows")
+	var idx: int = state.map.idx(b.pos.x, b.pos.y)
+	if not windows.has(idx):
+		print("Smoketest FEHLER: %s-Klick oeffnet kein Gebaeudefenster" % label)
+		quit(1)
+		return false
+	if inv == null or not inv.visible:
+		print("Smoketest FEHLER: %s-Klick oeffnet kein Lagerfenster" % label)
+		quit(1)
+		return false
+	var expected_flag: int = state.map.idx(b.flag_pos.x, b.flag_pos.y)
+	if int(_world.get("_inventory_storage_flag")) != expected_flag:
+		print("Smoketest FEHLER: %s-Klick zeigt falsches Lager" % label)
+		quit(1)
+		return false
 	return true

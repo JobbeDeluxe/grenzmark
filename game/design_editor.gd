@@ -7,10 +7,11 @@ extends Control
 const DESIGN_PATH := "res://assets/design.json"
 
 # Bauplatz-Symbole (Leertaste-Menü) mit deutscher Bezeichnung für die Liste.
-const BSPOT_KEYS := ["flag", "road_flag", "castle", "house", "hut", "mine", "blocked"]
+const BSPOT_KEYS := ["flag", "road_flag", "castle", "house", "hut", "mine", "harbor", "blocked"]
 const BSPOT_NAMES := {
 	"flag": "Flagge", "road_flag": "Straßen-Flagge", "castle": "Burg-/HQ-Platz",
 	"house": "Haus-Platz", "hut": "Hütte-Platz", "mine": "Minen-Platz",
+	"harbor": "Hafen-Platz",
 	"blocked": "Gesperrt-Marker",
 }
 
