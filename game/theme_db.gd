@@ -387,13 +387,27 @@ static func boat_texture(owner := 0) -> Texture2D:
 	return _tex("res://assets/ships/boat.png")
 
 
-## Richtungs-/Paddel-Sheet fuer Wasserstrassenboote: 4 Frames x 6 Richtungen.
-static func boat_sheet_texture(owner := 0) -> Texture2D:
+## Wassertraeger/Faehrmann: Einheit im Boot, 4 Frames x 6 Richtungen.
+## Primaerer Pfad: assets/units/water_carrier.png, rote Variante water_carrier_1.png.
+static func water_carrier_texture(owner := 0) -> Texture2D:
 	if owner != 0:
-		var t := _tex("res://assets/ships/boat_sheet_%d.png" % owner)
+		var t := _tex("res://assets/units/water_carrier_%d.png" % owner)
 		if t != null:
 			return t
+	var base := _tex("res://assets/units/water_carrier.png")
+	if base != null:
+		return base
+	# Fallback fuer alte Assetstaende vor der Umbenennung.
+	if owner != 0:
+		var old_owner := _tex("res://assets/ships/boat_sheet_%d.png" % owner)
+		if old_owner != null:
+			return old_owner
 	return _tex("res://assets/ships/boat_sheet.png")
+
+
+## Altname fuer Kompatibilitaet: heute ist das der Wassertraeger-Sprite.
+static func boat_sheet_texture(owner := 0) -> Texture2D:
+	return water_carrier_texture(owner)
 
 
 static func boat_draw_size() -> Vector2:

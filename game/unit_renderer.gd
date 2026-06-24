@@ -584,7 +584,7 @@ func _draw_strays() -> void:
 
 
 func _draw_boat_driver(p: Vector2, facing: Vector2, owner: int, carrying := -1) -> void:
-	var tex := GameTheme.boat_sheet_texture(owner)
+	var tex := GameTheme.water_carrier_texture(owner)
 	if tex != null:
 		var sz := GameTheme.boat_draw_size()
 		_draw_vehicle_sheet(tex, p, facing, sz)

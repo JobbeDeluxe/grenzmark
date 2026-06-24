@@ -26,8 +26,8 @@ Typ Ordner, Dateiname und empfohlene Größe.
 | `assets/buildings/` | `<def_id>.png` | Gebäude-Sprite = **fertiger Bau / Baustufe 2** (Boden = untere Kante) | ~64×64 |
 | `assets/objects/`   | `tree_<typ>.png`, `tree_<typ>_seed.png`, `tree_<typ>_small.png`, `field_seed.png`, `field_young.png`, `field_growing.png`, `field_ripe.png`, `field_cut.png`, `field_withered.png`, `stone.png`, `stone_stage2.png`, `stone_stage3.png`, `ore.png` | Karten-Objekte, Baumtypen, Kornfeld- & Stein-Stufen | frei; Bäume werden per Zielhöhe skaliert |
 | `assets/goods/`     | `<nummer>.png` | Waren-Symbol | ~16×16 |
-| `assets/ships/`     | `boat_sheet.png`, optional `boat_sheet_<spieler>.png`, `ship_stage1_sheet.png`, optional `ship_stage1_sheet_<spieler>.png`, `ship_sheet.png`, optional `ship_sheet_<spieler>.png` (+ Einzelbild-Fallbacks) | Wasserstraßen-Boot mit Bootsfahrer, Schiffbau-Gerippe, fertiges See-Schiff (je 4×6) | Zelle ~96×96 / ~128×128 |
-| `assets/units/`     | `carrier.png`, `boat_carrier.png`, `worker.png`, `soldier.png`, `builder.png` (+ `_<spieler>` Varianten) | Lauf-Sprite-Sheet (4×6) | Zelle ~32×32 |
+| `assets/ships/`     | `ship_stage1_sheet.png`, optional `ship_stage1_sheet_<spieler>.png`, `ship_sheet.png`, optional `ship_sheet_<spieler>.png` (+ Einzelbild-Fallbacks) | Schiffbau-Gerippe und fertiges See-Schiff (je 4×6) | Zelle ~128×128 |
+| `assets/units/`     | `carrier.png`, `boat_carrier.png`, `water_carrier.png`, `worker.png`, `soldier.png`, `builder.png` (+ `_<spieler>` Varianten) | Lauf-Sprite-Sheet bzw. Wasserträger im Boot (4×6) | Zelle ~32×32 / Boot ~96×96 |
 | `assets/ui/`        | `main_menu_background.png`, `flag_<spieler>.png`, `build_spots/*.png` | Hauptmenü, Spielflaggen & Bauhilfe-Symbole | 16:9 / ~64×64 |
 | `assets/`           | `ui.json` | UI-Skin/Layouts: Farben, Randabstände, Panel-/Buttongrößen | Text/JSON |
 
@@ -79,7 +79,8 @@ ist eindeutig. Schema: an den Basisnamen `_<spielernummer>` anhängen
 | **Flagge** | `assets/ui/flag.png` | `assets/ui/flag_0.png`, `flag_1.png`, … |
 | **Gebäude** | `assets/buildings/<def_id>.png` | `assets/buildings/<def_id>_1.png`, … |
 | **Einheiten** | `assets/units/<kind>.png` | `assets/units/<kind>_1.png`, … |
-| **Schiffe** | `assets/ships/boat_sheet.png`, `ship_stage1_sheet.png`, `ship_sheet.png` | `assets/ships/boat_sheet_1.png`, `ship_stage1_sheet_1.png`, `ship_sheet_1.png`, … |
+| **Wasserträger im Boot** | `assets/units/water_carrier.png` | `assets/units/water_carrier_1.png`, … |
+| **Schiffe** | `assets/ships/ship_stage1_sheet.png`, `ship_sheet.png` | `assets/ships/ship_stage1_sheet_1.png`, `ship_sheet_1.png`, … |
 
 - Liegt **keine** `_<nummer>`-Variante vor, gilt die gemeinsame Datei für alle.
   So musst du z. B. Wirtschaftsgebäude nur einmal zeichnen, aber Militärgebäude
@@ -89,10 +90,11 @@ ist eindeutig. Schema: an den Basisnamen `_<spielernummer>` anhängen
   Für Gebäude sind aktuell die roten Gegnervarianten `assets/buildings/*_1.png`
   dort erzeugt, wo die Basisgrafik blaue Spielerflächen enthält. Weitere
   Gebäudefarben (`_2`–`_5`) werden erst festgelegt, wenn das Multiplayer-Farbschema
-  entschieden ist. Für Schiffe sind aktuell `assets/ships/boat_sheet_1.png`,
+  entschieden ist. Für den Wasserträger sind aktuell `assets/units/boat_carrier_1.png`
+  für den Land-Anmarsch mit Boot und `assets/units/water_carrier_1.png` für das
+  Paddeln auf der Wasserstraße vorhanden. Für Schiffe sind aktuell
   `assets/ships/ship_stage1_sheet_1.png` und `assets/ships/ship_sheet_1.png`
-  als rote Gegnervarianten vorhanden; der Land-Anmarsch des Wasserträgers nutzt
-  `assets/units/boat_carrier_1.png`.
+  als rote Gegnervarianten vorhanden.
 - Flaggengröße in `assets/design.json` über `"flag_size": [breite, höhe]`
   (Pfahl-Fuß sitzt auf dem Knoten, Bild geht nach oben). Fehlt ein PNG, zeichnet
   das Spiel eine einfache Platzhalter-Flagge in der Spieler-Standardfarbe
@@ -553,8 +555,9 @@ Alle Feldphasen: `same camera angle, same footprint, transparent background,
 top-down dimetric 2.5D, no text, no border, no building, no farmer`.
 
 **Menschen / Animationen (Sprite-Sheets) — wird automatisch genutzt:**
-Ablage: `assets/units/<kind>.png` mit `kind` = `carrier`, `worker`, `soldier`,
-`builder`. **Raster: 4 Spalten (Lauf-Phasen) × 6 Zeilen (Weg-Richtungen)**, Reihenfolge
+Ablage: `assets/units/<kind>.png` mit `kind` = `carrier`, `boat_carrier`,
+`water_carrier`, `worker`, `soldier`, `builder`. **Raster: 4 Spalten
+(Lauf-/Paddel-Phasen) × 6 Zeilen (Weg-Richtungen)**, Reihenfolge
 der Zeilen: **NE, E, SE, SW, W, NW**. Die Zellgröße
 wird aus der Bildgröße abgeleitet (Breite/4 × Höhe/6); jede Zelle wird unten am
 Knoten zentriert gezeichnet. Fehlt das Sheet, zeichnet das Spiel die Platzhalter-
