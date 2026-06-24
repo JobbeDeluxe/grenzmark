@@ -2453,9 +2453,17 @@ func _update_one_building_window(idx: int) -> void:
 	if shipmode_btn.visible:
 		var sm_bs: Economy.BState = economy.bstates.get(idx)
 		shipmode_btn.text = "Baut: Schiffe" if (sm_bs != null and sm_bs.build_ships) else "Baut: Boote"
-	# Expeditions-Knopf nur am eigenen Hafen (#46).
+	# Expeditions-Knopf nur am eigenen Hafen (#46): zeigt Vorbereitungs-Status.
 	var expedition_btn: Button = entry["expedition_btn"]
 	expedition_btn.visible = own and b.def_id == "harbor"
+	if expedition_btn.visible:
+		var hflag := state.map.idx(b.flag_pos.x, b.flag_pos.y)
+		if economy.is_expedition_prep(hflag):
+			expedition_btn.text = "Exp. läuft…"
+			expedition_btn.tooltip_text = economy.expedition_status(hflag)
+		else:
+			expedition_btn.text = "Expedition"
+			expedition_btn.tooltip_text = "Expedition vorbereiten (ordert Material + Schiff)"
 
 
 ## Garnison + Rang als Icons (statt Textzeile): gefüllte Spielerfarb-Plätze für
@@ -2597,15 +2605,20 @@ func _toggle_shipyard_mode_window(idx: int) -> void:
 	_update_one_building_window(idx)
 
 
-## Hafen (#46): Expedition zum nächsten freien Hafenpunkt starten.
+## Hafen (#46): Expedition VORBEREITEN (wie im Original) — ordert Material + Schiff und
+## startet automatisch, sobald alles da ist. Erneuter Klick bricht ab.
 func _start_expedition_window(idx: int) -> void:
 	if not state.buildings.has(idx):
 		return
 	var b: WorldState.Building = state.buildings[idx]
 	if b.owner != 0 or b.def_id != "harbor":
 		return
-	var msg := economy.start_expedition(state.map.idx(b.flag_pos.x, b.flag_pos.y), 0)
-	_flash("Expedition gestartet!" if msg == "" else "Expedition: %s" % msg)
+	var msg := economy.prepare_expedition(state.map.idx(b.flag_pos.x, b.flag_pos.y), 0)
+	if msg == "":
+		_flash("Expedition wird vorbereitet — Material & Schiff werden geordert.")
+	else:
+		_flash(msg)
+	_update_one_building_window(idx)
 	renderer.queue_redraw()
 
 

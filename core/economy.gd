@@ -193,6 +193,9 @@ class Storage:
 	var people: Dictionary = {}       # job -> Anzahl (Träger + Spezialisten)
 	var outbox: Array = []            # Waren, die der Tür-Träger noch zur Flagge bringt
 	var house: HouseCarrier = null    # Tür↔Flagge-Träger dieses Lagers
+	var incoming: Dictionary = {}     # #46: zum Lager bestelltes, noch unterwegs befindliches Material
+	var expedition_prep := false      # #46: Hafen bereitet eine Expedition vor (ordert Material+Schiff)
+	var raid_prep := false            # #46: Hafen bereitet einen Seeangriff vor
 
 
 class BState:
@@ -687,6 +690,7 @@ func tick() -> void:
 		if carriers.has(r):
 			_tick_carrier(carriers[r])
 	_tick_strays()
+	_tick_harbor_prep()  # #46: Expeditions-/Seeangriffs-Vorbereitung an den Häfen
 	_tick_ships()
 
 
@@ -2853,6 +2857,7 @@ func _tick_carrier_door_storage(c: Carrier) -> void:
 			if c.dt >= 1.0:
 				if c.carrying != null:   # Eingang: Ware ins Lager einbuchen
 					st.stock[c.carrying.type] = int(st.stock.get(c.carrying.type, 0)) + 1
+					st.incoming[c.carrying.type] = maxi(0, int(st.incoming.get(c.carrying.type, 0)) - 1)
 					c.carrying = null
 					_mark_road_delivery(c.road)
 				# Bei aktiver Option einen fertigen Ausgang gleich mit hinausnehmen (#67).
@@ -3302,6 +3307,109 @@ func _harbor_at_point(p: Vector2i) -> bool:
 	return b != null and b.def_id == "harbor"
 
 
+## Schaltet die Expeditions-VORBEREITUNG eines Hafens um (#46, wie im Original): ein
+## erneuter Klick bricht ab. Während der Vorbereitung ordert der Hafen selbsttätig das
+## Baumaterial (Bretter/Steine) und wartet auf ein Schiff; sobald alles da ist, sticht die
+## Expedition automatisch in See (siehe _tick_harbor_prep). Liefert "" oder einen Hinweis.
+func prepare_expedition(harbor_flag: int, owner := 0) -> String:
+	var src := _storage_by_flag(harbor_flag)
+	if src == null:
+		return "Kein Hafen."
+	if src.expedition_prep:
+		src.expedition_prep = false
+		src.incoming.clear()
+		dirty = true
+		return "Expedition abgebrochen."
+	src.raid_prep = false   # nur EINE Vorbereitung gleichzeitig
+	src.expedition_prep = true
+	dirty = true
+	return ""
+
+
+func is_expedition_prep(harbor_flag: int) -> bool:
+	var st := _storage_by_flag(harbor_flag)
+	return st != null and st.expedition_prep
+
+
+func is_raid_prep(harbor_flag: int) -> bool:
+	var st := _storage_by_flag(harbor_flag)
+	return st != null and st.raid_prep
+
+
+## Kurzer Status für die UI: was fehlt der vorbereiteten Expedition noch?
+func expedition_status(harbor_flag: int) -> String:
+	var src := _storage_by_flag(harbor_flag)
+	if src == null or not src.expedition_prep:
+		return ""
+	var br := int(src.stock.get(Goods.BOARDS, 0))
+	var st := int(src.stock.get(Goods.STONE, 0))
+	var has_ship := false
+	for s in ships:
+		if s.state == SHIP_IDLE and not s.expedition and s.home == harbor_flag:
+			has_ship = true
+			break
+	return "Vorbereitung: %d/%d Bretter, %d/%d Steine, Schiff: %s" % [
+		mini(br, EXPEDITION_BOARDS), EXPEDITION_BOARDS,
+		mini(st, EXPEDITION_STONES), EXPEDITION_STONES, "ja" if has_ship else "nein"]
+
+
+## Pro Takt: vorbereitende Häfen mit Material versorgen und — sobald alles da ist —
+## Expedition/Seeangriff auslösen.
+func _tick_harbor_prep() -> void:
+	for st in storages:
+		if st.idx < 0 or st.owner != 0:
+			continue
+		var b: WorldState.Building = state.buildings.get(st.idx)
+		if b == null or b.def_id != "harbor" or b.under_construction:
+			if st.expedition_prep or st.raid_prep:
+				st.expedition_prep = false
+				st.raid_prep = false
+				st.incoming.clear()
+			continue
+		if st.expedition_prep:
+			_order_good_to_storage(st, Goods.BOARDS, EXPEDITION_BOARDS)
+			_order_good_to_storage(st, Goods.STONE, EXPEDITION_STONES)
+			if start_expedition(st.flag_idx, st.owner) == "":
+				st.expedition_prep = false
+				st.incoming.clear()
+				dirty = true
+		elif st.raid_prep:
+			_tick_raid_prep(st)
+
+
+## Ordert fehlendes Material [g] bis [need] zum Lager [dst_st] (Bestand + unterwegs).
+func _order_good_to_storage(dst_st: Storage, g: int, need: int) -> void:
+	var have := int(dst_st.stock.get(g, 0)) + int(dst_st.incoming.get(g, 0))
+	var guard := 0
+	while have < need and guard < need:
+		if not _pull_to_storage(dst_st, g):
+			break
+		have += 1
+		guard += 1
+
+
+## Reserviert ein Stück [g] im nächstgelegenen anderen Lager und schickt es zu [dst_st]
+## (dest = dessen Flagge → Straßenträger trägt es ins Lager). Zählt `incoming` mit, damit
+## nicht über den Bedarf hinaus bestellt wird. false, wenn nirgends vorrätig/erreichbar.
+func _pull_to_storage(dst_st: Storage, g: int) -> bool:
+	var src := _nearest_storage(dst_st.flag_idx, dst_st.owner, func(s: Storage) -> bool:
+		return s != dst_st and int(s.stock.get(g, 0)) > 0 and s.outbox.size() < FLAG_CAP)
+	if src == null:
+		return false
+	src.stock[g] = int(src.stock[g]) - 1
+	dst_st.incoming[g] = int(dst_st.incoming.get(g, 0)) + 1
+	var good := Good.new()
+	good.type = g
+	good.dest = dst_st.flag_idx
+	src.outbox.append(good)
+	return true
+
+
+## Seeangriff-Vorbereitung pro Takt (#46) — wird in Phase 3 (Seeangriff) gefüllt.
+func _tick_raid_prep(_st: Storage) -> void:
+	pass
+
+
 ## Startet eine Expedition (#46): ein am Hafen liegendes Schiff lädt Baumaterial und segelt
 ## zum nächsten erreichbaren leeren Hafenpunkt derselben See, um dort einen Hafen zu gründen.
 ## Liefert "" bei Erfolg oder einen Fehlertext (für die UI).
@@ -3471,6 +3579,13 @@ func _consume_delivery(g: Good, flag_idx: int) -> void:
 			bs.delivered[g.type] = bs.delivered.get(g.type, 0) + 1
 			bs.incoming[g.type] = maxi(0, bs.incoming.get(g.type, 0) - 1)
 			return
+	# Nicht-HQ-Lager (Hafen/Lagerhaus, #46): auf die Lagerflagge legen — der Tür-Träger holt
+	# es herein. Früher fiel das fälschlich ins HQ-Lager (Material ging "verloren").
+	var st := _storage_by_flag(flag_idx)
+	if st != null:
+		st.incoming[g.type] = maxi(0, int(st.incoming.get(g.type, 0)) - 1)
+		_push_good(flag_idx, g)
+		return
 	if hq_flag >= 0:
 		hq_stock[g.type] = hq_stock.get(g.type, 0) + 1
 
