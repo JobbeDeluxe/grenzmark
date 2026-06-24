@@ -1641,6 +1641,11 @@ func _dispatch_worker(bs: BState) -> void:
 func _needs_planing(b: WorldState.Building) -> bool:
 	if b.size != WorldState.BQ_HOUSE and b.size != WorldState.BQ_CASTLE:
 		return false
+	# Ufergebäude (Hafen/Werft) werden bewusst am Wasser gebaut — kein Planieren: die
+	# Wasser-Nachbarknoten liegen tiefer, dürfen aber nicht eingeebnet werden (sonst
+	# planiert der Planierer ins Wasser). #64-Folge.
+	if bool(BuildingCatalog.get_def(b.def_id).get("needs_water", false)):
+		return false
 	var h0 := state.map.get_height(b.pos.x, b.pos.y)
 	for dir in _planing_dirs_for(b.pos):
 		var n := state.map.neighbor(b.pos.x, b.pos.y, dir)

@@ -60,6 +60,7 @@ func _initialize() -> void:
 	_test_transport_priority()
 	_test_military()
 	_test_demolish_returns_garrison()
+	_test_harbor_no_planing()
 	_test_tools_and_recruitment()
 	_test_combat()
 	_test_enemy_road_people()
@@ -1119,6 +1120,33 @@ func _test_demolish_returns_garrison() -> void:
 	heco.resync()
 	_check(heco.soldiers == 2,
 		"#69: 2 Hafen-Garnison-Soldaten kehren in die Reserve zurück (%d)" % heco.soldiers)
+
+
+## Ufergebäude (Hafen/Werft) werden am Wasser gebaut und dürfen NICHT planiert
+## werden — sonst läuft der Planierer ins Wasser. Wirtschafts-Landhaus auf
+## unebenem Grund wird weiterhin planiert (Kontrolle).
+func _test_harbor_no_planing() -> void:
+	var map := _flat_map(20, 20)
+	var state := WorldState.new(map)
+	var eco := Economy.new(state)
+	# Höhenunterschied an einem Nachbarknoten — würde sonst Planieren auslösen.
+	map.set_height(10, 10, 4)
+	map.set_height(11, 10, 0)  # E-Nachbar tiefer
+
+	var house := WorldState.Building.new()
+	house.pos = Vector2i(10, 10)
+	house.size = WorldState.BQ_HOUSE
+	house.def_id = "sawmill"
+	_check(eco._needs_planing(house),
+		"Planier: Landhaus auf unebenem Grund wird planiert (Kontrolle)")
+
+	for water_def in ["harbor", "shipyard"]:
+		var wb := WorldState.Building.new()
+		wb.pos = Vector2i(10, 10)
+		wb.size = WorldState.BQ_HOUSE
+		wb.def_id = water_def
+		_check(not eco._needs_planing(wb),
+			"Planier: %s (needs_water) wird NICHT planiert" % water_def)
 
 
 ## Werkzeugmacher-Produktion (Prioritäten/Bestellungen), Schmiede Schwert/Schild
